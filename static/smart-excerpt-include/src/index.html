@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartExcerpt Include</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            padding: 20px;
+            padding-bottom: 40px;
+            margin: 0;
+            background: #FAFBFC;
+            min-height: 400px;
+        }
+
+        .container {
+            max-width: 100%;
+        }
+
+        .header {
+            background: #DEEBFF;
+            border-left: 4px solid #0052CC;
+            padding: 16px 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .header .icon {
+            font-size: 24px;
+        }
+
+        .header .title {
+            font-weight: 600;
+            color: #0052CC;
+            font-size: 16px;
+            flex: 1;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #172B4D;
+            font-size: 14px;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #DFE1E6;
+            border-radius: 3px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: #0052CC;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #6B778C;
+            margin-top: 4px;
+        }
+
+        .variable-inputs {
+            margin-top: 20px;
+            padding: 16px;
+            background: #F4F5F7;
+            border-radius: 3px;
+            display: none;
+        }
+
+        .variable-inputs.visible {
+            display: block;
+        }
+
+        .variable-inputs h3 {
+            margin: 0 0 16px 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: #172B4D;
+        }
+
+        .rendered-content {
+            margin-top: 20px;
+            margin-bottom: 20px;
+            padding: 16px 20px;
+            background: white;
+            border: 2px solid #00875A;
+            border-radius: 3px;
+            min-height: 100px;
+            display: none;
+            white-space: pre-wrap;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .rendered-content::before {
+            content: "📄 Rendered Content:";
+            display: block;
+            font-weight: 600;
+            color: #00875A;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+
+        .rendered-content.visible {
+            display: block;
+        }
+
+        .loading {
+            color: #6B778C;
+            font-style: italic;
+        }
+
+        .error {
+            color: #DE350B;
+            padding: 12px;
+            background: #FFEBE6;
+            border-radius: 3px;
+            margin-top: 16px;
+        }
+
+        .excerpt-info {
+            font-size: 12px;
+            color: #6B778C;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span class="icon">🔗</span>
+            <span class="title">SmartExcerpt Include</span>
+        </div>
+
+        <div class="form-group">
+            <label for="excerptSelect">Select Excerpt*</label>
+            <select id="excerptSelect">
+                <option value="">-- Select an excerpt --</option>
+            </select>
+            <div class="help-text">Choose which SmartExcerpt to include on this page</div>
+            <div class="excerpt-info" id="excerptInfo"></div>
+        </div>
+
+        <div id="variableInputs" class="variable-inputs">
+            <h3>Fill in Variables</h3>
+            <div id="variableFields"></div>
+        </div>
+
+        <div id="renderedContent" class="rendered-content"></div>
+
+        <div id="errorMessage" class="error" style="display: none;"></div>
+    </div>
+</body>
+</html>

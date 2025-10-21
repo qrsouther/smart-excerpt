@@ -1,0 +1,52 @@
+modules:
+  macro:
+    - key: smart-excerpt-source
+      title: SmartExcerpt
+      description: Create a reusable content block that can be included on other pages
+      layout: bodied
+      resource: source-display-resource
+      render: native
+      resolver:
+        function: resolver
+      config:
+        resource: source-config-resource
+        render: native
+
+    - key: smart-excerpt-include
+      title: SmartExcerpt Include
+      description: Include a SmartExcerpt from another page
+      resource: include-display
+      render: native
+      resolver:
+        function: resolver
+      config:
+        resource: include-config
+        render: native
+
+  function:
+    - key: resolver
+      handler: index.handler
+
+resources:
+  - key: source-display-resource
+    path: src/source-display.jsx
+
+  - key: source-config-resource
+    path: src/source-config.jsx
+
+  - key: include-display
+    path: src/include-display.jsx
+
+  - key: include-config
+    path: src/include-config-simple.jsx
+
+app:
+  id: ari:cloud:ecosystem::app/be1ff96b-d44d-4975-98d3-25b80a813bdd
+  runtime:
+    name: nodejs20.x
+
+permissions:
+  scopes:
+    - read:confluence-content.all
+    - read:confluence-space.summary
+    - storage:app

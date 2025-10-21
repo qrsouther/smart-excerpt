@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartExcerpt Source Configuration</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            padding: 20px;
+            margin: 0;
+            background: #FAFBFC;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: #172B4D;
+            font-size: 14px;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #DFE1E6;
+            border-radius: 3px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #0052CC;
+        }
+
+        textarea {
+            min-height: 200px;
+            resize: vertical;
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 13px;
+        }
+
+        .help-text {
+            font-size: 12px;
+            color: #6B778C;
+            margin-top: 4px;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 24px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 3px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .btn-primary {
+            background: #0052CC;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0747A6;
+        }
+
+        .btn-primary:disabled {
+            background: #B3D4FF;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 3px;
+            display: none;
+            font-size: 14px;
+        }
+
+        .status.success {
+            background: #E3FCEF;
+            color: #00875A;
+            border: 1px solid #00875A;
+        }
+
+        .status.error {
+            background: #FFEBE6;
+            color: #DE350B;
+            border: 1px solid #DE350B;
+        }
+
+        .excerpt-id {
+            font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+            font-size: 11px;
+            color: #6B778C;
+            margin-top: 4px;
+        }
+
+        .variable-preview {
+            margin-top: 8px;
+            padding: 8px;
+            background: #F4F5F7;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+
+        .variable-preview strong {
+            color: #0052CC;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="form-group">
+            <label for="excerptName">Excerpt Name*</label>
+            <input
+                type="text"
+                id="excerptName"
+                placeholder="e.g., Pricing Overview"
+                required
+            />
+            <div class="help-text">A unique, descriptive name for this excerpt</div>
+        </div>
+
+        <div class="form-group">
+            <label for="category">Category</label>
+            <select id="category">
+                <option value="General">General</option>
+                <option value="Pricing">Pricing</option>
+                <option value="CRM">CRM</option>
+                <option value="Printing">Printing and Access Control</option>
+                <option value="Integration">Integration</option>
+                <option value="Custom">Custom</option>
+            </select>
+            <div class="help-text">Organize excerpts by category for easier discovery</div>
+        </div>
+
+        <div class="form-group">
+            <label for="content">Excerpt Content*</label>
+            <textarea
+                id="content"
+                placeholder="Enter your excerpt content here...
+
+Use {{variable}} syntax for dynamic values, for example:
+{{client}} full {{subscriber-caption}}s are given right-of-refusal..."
+                required
+            ></textarea>
+            <div class="help-text">
+                Use <code>{{variable-name}}</code> for dynamic content that will be filled in when the excerpt is included
+            </div>
+            <div id="variablePreview" class="variable-preview" style="display: none;"></div>
+        </div>
+
+        <div class="form-group" id="excerptIdDisplay" style="display: none;">
+            <label>Excerpt ID</label>
+            <div class="excerpt-id" id="excerptIdValue"></div>
+        </div>
+
+        <div class="button-group">
+            <button type="button" class="btn-primary" id="saveBtn" onclick="saveExcerpt()">
+                Save SmartExcerpt
+            </button>
+        </div>
+
+        <div id="status" class="status"></div>
+    </div>
+
+    <script type="module">
+        import { invoke } from 'https://unpkg.com/@forge/bridge@3.6.0/out/browser/index.js';
+
+        let currentExcerptId = null;
+
+        // Initialize Forge bridge
+        window.AP.getContext((context) => {
+            console.log('Context loaded:', context);
+            // Store context for later use
+            window.appContext = context;
+
+            // Load existing config from macro data
+            window.AP.confluence.getMacroData((data) => {
+                console.log('Existing macro data:', data);
+
+                if (data.excerptId) {
+                    currentExcerptId = data.excerptId;
+                    document.getElementById('excerptIdDisplay').style.display = 'block';
+                    document.getElementById('excerptIdValue').textContent = data.excerptId;
+                }
+
+                if (data.excerptName) {
+                    document.getElementById('excerptName').value = data.excerptName;
+                }
+
+                if (data.category) {
+                    document.getElementById('category').value = data.category;
+                }
+
+                if (data.content) {
+                    document.getElementById('content').value = data.content;
+                    updateVariablePreview();
+                }
+            });
+        });
+
+        // Update variable preview
+        document.getElementById('content').addEventListener('input', updateVariablePreview);
+
+        function updateVariablePreview() {
+            const content = document.getElementById('content').value;
+            const variables = extractVariables(content);
+            const preview = document.getElementById('variablePreview');
+
+            if (variables.length > 0) {
+                preview.style.display = 'block';
+                preview.innerHTML = '<strong>Detected variables:</strong> ' + variables.join(', ');
+            } else {
+                preview.style.display = 'none';
+            }
+        }
+
+        function extractVariables(content) {
+            const regex = /\{\{([^}]+)\}\}/g;
+            const variables = [];
+            let match;
+
+            while ((match = regex.exec(content)) !== null) {
+                const varName = match[1].trim();
+                if (!variables.includes(varName)) {
+                    variables.push(varName);
+                }
+            }
+
+            return variables;
+        }
+
+        // Make saveExcerpt globally accessible
+        window.saveExcerpt = async function() {
+            const excerptName = document.getElementById('excerptName').value.trim();
+            const category = document.getElementById('category').value;
+            const content = document.getElementById('content').value.trim();
+            const saveBtn = document.getElementById('saveBtn');
+
+            if (!excerptName || !content) {
+                showStatus('error', 'Please fill in all required fields');
+                return;
+            }
+
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving...';
+
+            try {
+                // Use proper invoke from @forge/bridge
+                const result = await invoke('handler', {
+                    action: 'saveExcerpt',
+                    excerptName: excerptName,
+                    category: category,
+                    content: content,
+                    excerptId: currentExcerptId
+                });
+
+                console.log('Invoke result:', result);
+
+                if (result.success) {
+                    currentExcerptId = result.excerptId;
+
+                    // Save macro configuration
+                    window.AP.confluence.saveMacro({
+                        excerptId: result.excerptId,
+                        excerptName: excerptName,
+                        category: category,
+                        content: content
+                    });
+
+                    document.getElementById('excerptIdDisplay').style.display = 'block';
+                    document.getElementById('excerptIdValue').textContent = result.excerptId;
+
+                    showStatus('success', `SmartExcerpt "${excerptName}" saved successfully! (ID: ${result.excerptId})`);
+                } else {
+                    showStatus('error', 'Failed to save: ' + (result.error || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+                showStatus('error', 'Failed to save excerpt: ' + (error.message || 'Unknown error'));
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.textContent = 'Save SmartExcerpt';
+            }
+        };
+
+        function showStatus(type, message) {
+            const status = document.getElementById('status');
+            status.className = 'status ' + type;
+            status.textContent = message;
+            status.style.display = 'block';
+
+            if (type === 'success') {
+                setTimeout(() => {
+                    status.style.display = 'none';
+                }, 5000);
+            }
+        }
+    </script>
+</body>
+</html>
