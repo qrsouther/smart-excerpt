@@ -3,7 +3,8 @@ import ForgeReconciler, {
   Text,
   Strong,
   Button,
-  Textfield
+  Textfield,
+  Select
 } from '@forge/react';
 import { invoke, router } from '@forge/bridge';
 
@@ -13,6 +14,8 @@ const App = () => {
   const [error, setError] = useState(null);
   const [usageData, setUsageData] = useState({});
   const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [sortBy, setSortBy] = useState('name-asc');
 
   // Load excerpts and their usage data
   useEffect(() => {
@@ -109,10 +112,34 @@ const App = () => {
     );
   }
 
-  // Filter excerpts based on search term
-  const filteredExcerpts = excerpts.filter(excerpt =>
-    excerpt.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Filter excerpts based on search term and category
+  const filteredExcerpts = excerpts.filter(excerpt => {
+    const matchesSearch = excerpt.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = categoryFilter === 'All' || excerpt.category === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
+  // Sort filtered excerpts
+  const sortedExcerpts = [...filteredExcerpts].sort((a, b) => {
+    switch (sortBy) {
+      case 'name-asc':
+        return a.name.localeCompare(b.name);
+      case 'name-desc':
+        return b.name.localeCompare(a.name);
+      case 'usage-high':
+        const usageA = (usageData[a.id] || []).length;
+        const usageB = (usageData[b.id] || []).length;
+        return usageB - usageA;
+      case 'usage-low':
+        const usageALow = (usageData[a.id] || []).length;
+        const usageBLow = (usageData[b.id] || []).length;
+        return usageALow - usageBLow;
+      case 'category':
+        return (a.category || 'General').localeCompare(b.category || 'General');
+      default:
+        return 0;
+    }
+  });
 
   return (
     <Fragment>
@@ -127,8 +154,42 @@ const App = () => {
       />
       <Text>{' '}</Text>
 
-      {filteredExcerpts.length === 0 && searchTerm ? (
-        <Text>No excerpts match "{searchTerm}"</Text>
+      <Select
+        options={[
+          { label: 'All Categories', value: 'All' },
+          { label: 'General', value: 'General' },
+          { label: 'Pricing', value: 'Pricing' },
+          { label: 'Technical', value: 'Technical' },
+          { label: 'Legal', value: 'Legal' },
+          { label: 'Marketing', value: 'Marketing' }
+        ]}
+        value={{ label: categoryFilter === 'All' ? 'All Categories' : categoryFilter, value: categoryFilter }}
+        onChange={(e) => setCategoryFilter(e.value)}
+      />
+      <Text>{' '}</Text>
+
+      <Select
+        options={[
+          { label: 'Sort: Name (A-Z)', value: 'name-asc' },
+          { label: 'Sort: Name (Z-A)', value: 'name-desc' },
+          { label: 'Sort: Most Used', value: 'usage-high' },
+          { label: 'Sort: Least Used', value: 'usage-low' },
+          { label: 'Sort: Category', value: 'category' }
+        ]}
+        value={{
+          label: sortBy === 'name-asc' ? 'Sort: Name (A-Z)' :
+                 sortBy === 'name-desc' ? 'Sort: Name (Z-A)' :
+                 sortBy === 'usage-high' ? 'Sort: Most Used' :
+                 sortBy === 'usage-low' ? 'Sort: Least Used' :
+                 'Sort: Category',
+          value: sortBy
+        }}
+        onChange={(e) => setSortBy(e.value)}
+      />
+      <Text>{' '}</Text>
+
+      {sortedExcerpts.length === 0 && (searchTerm || categoryFilter !== 'All') ? (
+        <Text>No excerpts match your filters</Text>
       ) : !excerpts || excerpts.length === 0 ? (
         <Fragment>
           <Text>No SmartExcerpt Sources found.</Text>
@@ -136,7 +197,7 @@ const App = () => {
         </Fragment>
       ) : (
         <Fragment>
-          {filteredExcerpts.map((excerpt) => {
+          {sortedExcerpts.map((excerpt) => {
             const varCount = Array.isArray(excerpt.variables) ? excerpt.variables.length : 0;
             const toggleCount = Array.isArray(excerpt.toggles) ? excerpt.toggles.length : 0;
             const category = String(excerpt.category || 'General');
