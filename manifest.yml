@@ -11,6 +11,7 @@ modules:
       config:
         resource: source-config-resource
         render: native
+        viewportSize: max
 
     - key: smart-excerpt-include
       title: SmartExcerpt Include
@@ -22,6 +23,15 @@ modules:
       config:
         resource: include-config
         render: native
+        viewportSize: max
+
+  confluence:globalSettings:
+    - key: smartexcerpt-admin
+      title: SmartExcerpt Manager
+      resource: admin-page
+      render: native
+      resolver:
+        function: resolver
 
   function:
     - key: resolver
@@ -39,6 +49,9 @@ resources:
 
   - key: include-config
     path: src/include-config-simple.jsx
+
+  - key: admin-page
+    path: src/admin-page.jsx
 
 app:
   id: ari:cloud:ecosystem::app/be1ff96b-d44d-4975-98d3-25b80a813bdd

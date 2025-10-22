@@ -7,7 +7,15 @@ import ForgeReconciler, {
   Textfield,
   Select,
   Text,
+  Strong,
+  Em,
+  Code,
   Button,
+  SectionMessage,
+  Tabs,
+  Tab,
+  TabList,
+  TabPanel,
   useForm,
   useConfig,
   useProductContext
@@ -26,18 +34,115 @@ const App = () => {
   // Use state for controlled components
   const [excerptName, setExcerptName] = useState('');
   const [category, setCategory] = useState('General');
+  const [detectedVariables, setDetectedVariables] = useState([]);
+  const [variableMetadata, setVariableMetadata] = useState({});
+  const [detectedToggles, setDetectedToggles] = useState([]);
+  const [toggleMetadata, setToggleMetadata] = useState({});
+  const [isLoadingExcerpt, setIsLoadingExcerpt] = useState(false);
 
   console.log('Source config - config:', config);
   console.log('Source config - excerptName:', config.excerptName);
   console.log('Source config - category:', config.category);
   console.log('Source config - macroBody:', macroBody);
 
-  // Update state when config changes
+  // Load excerpt data from storage if we have an excerptId
+  // Storage is the source of truth for all excerpt data including name/category
   useEffect(() => {
-    console.log('useEffect - updating state from config', config);
-    setExcerptName(config.excerptName || '');
-    setCategory(config.category || 'General');
-  }, [config.excerptName, config.category]);
+    if (!excerptId) {
+      // No excerpt ID, load from config if available
+      setExcerptName(config.excerptName || '');
+      setCategory(config.category || 'General');
+      setIsLoadingExcerpt(false);
+      return;
+    }
+
+    const loadExcerpt = async () => {
+      setIsLoadingExcerpt(true);
+      try {
+        const result = await invoke('getExcerpt', { excerptId });
+        console.log('Loaded excerpt from storage:', result);
+
+        if (result.success && result.excerpt) {
+          // Load name and category from storage (source of truth)
+          setExcerptName(result.excerpt.name || '');
+          setCategory(result.excerpt.category || 'General');
+
+          // Load variable metadata
+          if (result.excerpt.variables && Array.isArray(result.excerpt.variables)) {
+            const metadata = {};
+            result.excerpt.variables.forEach(v => {
+              metadata[v.name] = {
+                description: v.description || '',
+                example: v.example || ''
+              };
+            });
+            setVariableMetadata(metadata);
+          }
+
+          // Load toggle metadata
+          if (result.excerpt.toggles && Array.isArray(result.excerpt.toggles)) {
+            const metadata = {};
+            result.excerpt.toggles.forEach(t => {
+              metadata[t.name] = {
+                description: t.description || ''
+              };
+            });
+            setToggleMetadata(metadata);
+          }
+        }
+      } catch (err) {
+        console.error('Error loading excerpt:', err);
+      } finally {
+        setIsLoadingExcerpt(false);
+      }
+    };
+
+    loadExcerpt();
+  }, [excerptId]);
+
+  // Detect variables whenever macro body changes
+  useEffect(() => {
+    if (!macroBody) {
+      setDetectedVariables([]);
+      return;
+    }
+
+    // Call backend to detect variables
+    const detectVars = async () => {
+      try {
+        const result = await invoke('detectVariablesFromContent', { content: macroBody });
+        if (result.success) {
+          setDetectedVariables(result.variables);
+        }
+      } catch (err) {
+        console.error('Error detecting variables:', err);
+      }
+    };
+
+    detectVars();
+  }, [macroBody]);
+
+  // Detect toggles whenever macro body changes
+  useEffect(() => {
+    if (!macroBody) {
+      setDetectedToggles([]);
+      return;
+    }
+
+    // Call backend to detect toggles
+    const detectToggs = async () => {
+      try {
+        const result = await invoke('detectTogglesFromContent', { content: macroBody });
+        if (result.success) {
+          setDetectedToggles(result.toggles);
+        }
+      } catch (err) {
+        console.error('Error detecting toggles:', err);
+      }
+    };
+
+    detectToggs();
+  }, [macroBody]);
 
   const categoryOptions = [
     { label: 'General', value: 'General' },
@@ -52,73 +157,197 @@ const App = () => {
     console.log('Form data:', formData);
     console.log('State values:', { excerptName, category });
     console.log('Macro body (ADF):', macroBody);
+    console.log('Variable metadata:', variableMetadata);
+    console.log('Toggle metadata:', toggleMetadata);
 
-    try {
-      const result = await invoke('saveExcerpt', {
-        excerptName,
-        category,
-        content: macroBody,  // Send the ADF body as content
-        excerptId
-      });
+    // Merge detected variables with their metadata
+    const variablesWithMetadata = detectedVariables.map(v => ({
+      name: v.name,
+      description: variableMetadata[v.name]?.description || '',
+      example: variableMetadata[v.name]?.example || ''
+    }));
 
-      console.log('Save result:', result);
+    // Merge detected toggles with their metadata
+    const togglesWithMetadata = detectedToggles.map(t => ({
+      name: t.name,
+      description: toggleMetadata[t.name]?.description || ''
+    }));
 
-      // Only submit the config fields (not the content, which is in the body)
-      const configToSubmit = {
-        excerptId: result.excerptId,
-        excerptName: result.excerptName,
-        category: result.category,
-        variables: result.variables
-        // NOTE: Do NOT include content in config - it's stored in the macro body
-      };
+    console.log('Saving excerpt with name:', excerptName, 'category:', category);
 
-      console.log('Submitting config to view:', { config: configToSubmit });
+    const result = await invoke('saveExcerpt', {
+      excerptName,
+      category,
+      content: macroBody,  // Send the ADF body as content
+      excerptId,
+      variableMetadata: variablesWithMetadata,
+      toggleMetadata: togglesWithMetadata
+    });
 
-      // Save the configuration to the macro using view.submit()
-      await view.submit({ config: configToSubmit });
+    console.log('Save result:', result);
 
-      console.log('Configuration saved successfully - view.submit complete');
-      console.log('⚠️ REMINDER: Publish the page to persist these changes!');
-    } catch (error) {
-      console.error('Save error:', error);
-      throw error;
-    }
+    // Only submit the config fields (not the content, which is in the body)
+    // Use the current state values to ensure we save what the user typed
+    const configToSubmit = {
+      excerptId: result.excerptId,
+      excerptName: excerptName,  // Use state value, not result
+      category: category,          // Use state value, not result
+      variables: result.variables,
+      toggles: result.toggles
+      // NOTE: Do NOT include content in config - it's stored in the macro body
+    };
+
+    console.log('Submitting config to view:', { config: configToSubmit });
+
+    // Save the configuration to the macro using view.submit()
+    // This will close the modal after the promise resolves
+    return view.submit({ config: configToSubmit });
   };
 
   return (
     <Form onSubmit={handleSubmit(onSubmit)}>
-      <FormSection>
-        <Label labelFor={getFieldId('excerptName')}>
-          Excerpt Name
-        </Label>
-        <Textfield
-          id={getFieldId('excerptName')}
-          value={excerptName}
-          onChange={(e) => setExcerptName(e.target.value)}
-        />
+      <Tabs>
+        <TabList>
+          <Tab>Name/Category</Tab>
+          <Tab>Variables</Tab>
+          <Tab>Toggles</Tab>
+        </TabList>
 
-        <Label labelFor={getFieldId('category')}>
-          Category
-        </Label>
-        <Select
-          id={getFieldId('category')}
-          options={categoryOptions}
-          value={categoryOptions.find(opt => opt.value === category)}
-          onChange={(e) => setCategory(e.value)}
-        />
+        <TabPanel>
+          <FormSection>
+            <Label labelFor={getFieldId('excerptName')}>
+              SmartExcerpt Source Name
+            </Label>
+            <Textfield
+              id={getFieldId('excerptName')}
+              value={excerptName}
+              placeholder={isLoadingExcerpt ? 'Loading...' : ''}
+              isDisabled={isLoadingExcerpt}
+              onChange={(e) => setExcerptName(e.target.value)}
+            />
 
-        {excerptId && (
-          <Text>Excerpt ID: {excerptId}</Text>
-        )}
+            <Label labelFor={getFieldId('category')}>
+              SmartExcerpt Category
+            </Label>
+            <Select
+              id={getFieldId('category')}
+              options={categoryOptions}
+              value={isLoadingExcerpt ? undefined : categoryOptions.find(opt => opt.value === category)}
+              placeholder={isLoadingExcerpt ? 'Loading...' : undefined}
+              onChange={(e) => setCategory(e.value)}
+            />
 
-        <Text>{'💡 Tip: Edit the macro body in the page editor to add rich text content. Use double curly braces like {{variable}} to create variables.'}</Text>
-        <Text>📝 Content is edited directly in the Confluence editor (not in this panel).</Text>
-        <Text>{'⚠️ IMPORTANT: After clicking "Save SmartExcerpt", you MUST publish the page to persist Name/Category changes!'}</Text>
-      </FormSection>
+            <Text>{' '}</Text>
+            <SectionMessage appearance="discovery">
+              <Text>Edit macro body in the page editor. Use {'{{variable}}'} syntax for variables. IMPORTANT: After clicking "Save", you MUST publish the page to persist changes!</Text>
+            </SectionMessage>
+          </FormSection>
+        </TabPanel>
+
+        <TabPanel>
+          <FormSection>
+            {macroBody && detectedVariables.length === 0 && (
+              <Text><Em>Checking for variables...</Em></Text>
+            )}
+
+            {detectedVariables.length === 0 && !macroBody && (
+              <Text>No variables detected. Add {'{{variable}}'} syntax to your macro body to create variables.</Text>
+            )}
+
+            {detectedVariables.length > 0 && (
+              <Fragment>
+                {detectedVariables.map((variable) => (
+                  <Fragment key={variable.name}>
+                    <Text>{' '}</Text>
+                    <Text><Strong><Code>{`{{${variable.name}}}`}</Code></Strong></Text>
+                    <Textfield
+                      label="Description"
+                      placeholder={isLoadingExcerpt ? 'Loading...' : 'Description'}
+                      value={variableMetadata[variable.name]?.description || ''}
+                      isDisabled={isLoadingExcerpt}
+                      onChange={(e) => {
+                        setVariableMetadata({
+                          ...variableMetadata,
+                          [variable.name]: {
+                            ...variableMetadata[variable.name],
+                            description: e.target.value
+                          }
+                        });
+                      }}
+                    />
+                    <Textfield
+                      label="Example"
+                      placeholder={isLoadingExcerpt ? 'Loading...' : 'Example'}
+                      value={variableMetadata[variable.name]?.example || ''}
+                      isDisabled={isLoadingExcerpt}
+                      onChange={(e) => {
+                        setVariableMetadata({
+                          ...variableMetadata,
+                          [variable.name]: {
+                            ...variableMetadata[variable.name],
+                            example: e.target.value
+                          }
+                        });
+                      }}
+                    />
+                  </Fragment>
+                ))}
+              </Fragment>
+            )}
+
+            <Text>{' '}</Text>
+            <SectionMessage appearance="discovery">
+              <Text>Edit macro body in the page editor. Use {'{{variable}}'} syntax for variables. IMPORTANT: After clicking "Save", you MUST publish the page to persist changes!</Text>
+            </SectionMessage>
+          </FormSection>
+        </TabPanel>
+
+        <TabPanel>
+          <FormSection>
+            {macroBody && detectedToggles.length === 0 && (
+              <Text><Em>Checking for toggles...</Em></Text>
+            )}
+
+            {detectedToggles.length === 0 && !macroBody && (
+              <Text>No toggles detected. Add {'{{toggle:name}}'} ... {'{{/toggle:name}}'} syntax to your macro body to create toggles.</Text>
+            )}
+
+            {detectedToggles.length > 0 && (
+              <Fragment>
+                {detectedToggles.map((toggle) => (
+                  <Fragment key={toggle.name}>
+                    <Text>{' '}</Text>
+                    <Text><Strong><Code>{`{{toggle:${toggle.name}}}`}</Code></Strong></Text>
+                    <Textfield
+                      label="Description"
+                      placeholder={isLoadingExcerpt ? 'Loading...' : 'Description'}
+                      value={toggleMetadata[toggle.name]?.description || ''}
+                      isDisabled={isLoadingExcerpt}
+                      onChange={(e) => {
+                        setToggleMetadata({
+                          ...toggleMetadata,
+                          [toggle.name]: {
+                            description: e.target.value
+                          }
+                        });
+                      }}
+                    />
+                  </Fragment>
+                ))}
+              </Fragment>
+            )}
+
+            <Text>{' '}</Text>
+            <SectionMessage appearance="discovery">
+              <Text>Edit macro body in the page editor. Use {'{{toggle:name}}'} and {'{{/toggle:name}}'} to wrap content that can be toggled on/off. IMPORTANT: After clicking "Save", you MUST publish the page to persist changes!</Text>
+            </SectionMessage>
+          </FormSection>
+        </TabPanel>
+      </Tabs>
 
       <FormFooter>
         <Button appearance="primary" type="submit">
-          Save SmartExcerpt
+          Save
         </Button>
       </FormFooter>
     </Form>

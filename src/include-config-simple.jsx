@@ -8,18 +8,21 @@ import ForgeReconciler, {
   Text,
   Button,
   useForm,
-  useConfig
+  useConfig,
+  useProductContext
 } from '@forge/react';
 import { invoke, view } from '@forge/bridge';
 
 const App = () => {
   const config = useConfig() || {};
+  const context = useProductContext();
   const { handleSubmit, getFieldId } = useForm();
   const [excerpts, setExcerpts] = useState([]);
   const [selectedExcerptId, setSelectedExcerptId] = useState(config.excerptId || '');
   const [isLoading, setIsLoading] = useState(true);
 
   console.log('Include config - current config:', config);
+  console.log('Include config - context:', context);
 
   // Load excerpts on mount
   useEffect(() => {
@@ -59,6 +62,26 @@ const App = () => {
     console.log('Saving config:', configToSave);
 
     try {
+      // If the excerptId changed, remove the old usage tracking
+      if (config.excerptId && config.excerptId !== selectedExcerptId && context?.localId) {
+        await invoke('removeExcerptUsage', {
+          excerptId: config.excerptId,
+          localId: context.localId
+        });
+      }
+
+      // Track usage of the new excerptId
+      if (context?.localId && context?.contentId && selectedExcerptId) {
+        await invoke('trackExcerptUsage', {
+          excerptId: selectedExcerptId,
+          localId: context.localId,
+          pageId: context.contentId,
+          pageTitle: context.contentTitle || 'Unknown Page',
+          spaceKey: context.spaceKey || 'Unknown Space'
+        });
+        console.log('Usage tracked for excerpt:', selectedExcerptId);
+      }
+
       await view.submit({ config: configToSave });
       console.log('Include configuration saved successfully');
     } catch (error) {
@@ -93,7 +116,10 @@ const App = () => {
 
   const selectedOption = selectedExcerptId
     ? excerptOptions.find(opt => opt.value === selectedExcerptId)
-    : undefined;
+    : excerptOptions[0];  // Default to first option if nothing selected
+
+  console.log('Selected excerpt ID:', selectedExcerptId);
+  console.log('Selected option:', selectedOption);
 
   return (
     <Form onSubmit={handleSubmit(onSubmit)}>
@@ -105,10 +131,13 @@ const App = () => {
           id={getFieldId('excerptSelect')}
           options={excerptOptions}
           value={selectedOption}
-          onChange={(e) => setSelectedExcerptId(e?.value || e)}
+          onChange={(e) => {
+            console.log('Select onChange:', e);
+            setSelectedExcerptId(e?.value || '');
+          }}
         />
 
-        <Text>💡 After saving, you'll fill in variable values directly on the page while editing.</Text>
+        <Text>💡 After saving, edit the page to fill in variable values and toggle settings.</Text>
       </FormSection>
 
       <FormFooter>

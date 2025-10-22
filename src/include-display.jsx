@@ -1,6 +1,44 @@
 import React, { Fragment, useState, useEffect } from 'react';
-import ForgeReconciler, { Text, Strong, Em, Code, Textfield, Button, useConfig, useProductContext, AdfRenderer } from '@forge/react';
+import ForgeReconciler, { Text, Strong, Em, Code, Textfield, Toggle, Button, Tabs, Tab, TabList, TabPanel, useConfig, useProductContext, AdfRenderer } from '@forge/react';
 import { invoke } from '@forge/bridge';
+
+// Helper function to filter content based on toggle states
+// Removes content between {{toggle:name}}...{{/toggle:name}} markers when toggle is disabled
+// Works with both plain text and ADF format, supporting inline toggles
+const filterContentByToggles = (adfNode, toggleStates) => {
+  if (!adfNode) return adfNode;
+
+  // If it's a text node, filter toggle blocks
+  if (adfNode.type === 'text' && adfNode.text) {
+    let text = adfNode.text;
+
+    // Process toggles - remove content for disabled toggles
+    // Match opening tag, content, and closing tag
+    const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
+
+    text = text.replace(toggleRegex, (match, toggleName, content) => {
+      const trimmedName = toggleName.trim();
+      // If toggle is enabled (true), keep content without markers
+      // If toggle is disabled (false/undefined), remove everything
+      return toggleStates?.[trimmedName] === true ? content : '';
+    });
+
+    return { ...adfNode, text };
+  }
+
+  // Recursively process content array
+  if (adfNode.content && Array.isArray(adfNode.content)) {
+    const newContent = adfNode.content.map(child =>
+      filterContentByToggles(child, toggleStates)
+    );
+    return {
+      ...adfNode,
+      content: newContent
+    };
+  }
+
+  return adfNode;
+};
 
 // Helper function to perform variable substitution in ADF content
 // Unset variables (empty values) are wrapped in code marks for visual distinction
@@ -93,6 +131,7 @@ const App = () => {
   const [content, setContent] = useState(null);
   const [excerpt, setExcerpt] = useState(null);
   const [variableValues, setVariableValues] = useState(config?.variableValues || {});
+  const [toggleStates, setToggleStates] = useState(config?.toggleStates || {});
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   console.log('=== INCLUDE VIEW RENDERING ===');
@@ -121,20 +160,33 @@ const App = () => {
 
         setExcerpt(excerptResult.excerpt);
 
-        // Load saved variable values from storage
+        // Load saved variable values and toggle states from storage
         const varsResult = await invoke('getVariableValues', { localId: context.localId });
         console.log('Loaded variable values:', varsResult.variableValues);
+        console.log('Loaded toggle states:', varsResult.toggleStates);
 
         const loadedVariableValues = varsResult.success ? varsResult.variableValues : {};
+        const loadedToggleStates = varsResult.success ? varsResult.toggleStates : {};
         setVariableValues(loadedVariableValues);
+        setToggleStates(loadedToggleStates);
 
-        // Generate content with loaded variable values
+        // Generate content: first filter toggles, then substitute variables
         let freshContent = excerptResult.excerpt.content;
         const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
 
         if (isAdf) {
+          // First filter toggles, then substitute variables
+          freshContent = filterContentByToggles(freshContent, loadedToggleStates);
           freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
         } else {
+          // For plain text, filter toggles first
+          const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
+          freshContent = freshContent.replace(toggleRegex, (match, toggleName, content) => {
+            const trimmedName = toggleName.trim();
+            return loadedToggleStates?.[trimmedName] === true ? content : '';
+          });
+
+          // Then substitute variables
           const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
           if (excerptResult.excerpt.variables) {
             excerptResult.excerpt.variables.forEach(variable => {
@@ -165,7 +217,7 @@ const App = () => {
     return <Text>Loading excerpt...</Text>;
   }
 
-  // Helper function to get preview content with current variable values
+  // Helper function to get preview content with current variable and toggle values
   const getPreviewContent = () => {
     if (!excerpt) return content;
 
@@ -173,8 +225,18 @@ const App = () => {
     const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
     if (isAdf) {
+      // First filter toggles, then substitute variables
+      previewContent = filterContentByToggles(previewContent, toggleStates);
       return substituteVariablesInAdf(previewContent, variableValues);
     } else {
+      // For plain text, filter toggles first
+      const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
+      previewContent = previewContent.replace(toggleRegex, (match, toggleName, content) => {
+        const trimmedName = toggleName.trim();
+        return toggleStates?.[trimmedName] === true ? content : '';
+      });
+
+      // Then substitute variables
       excerpt.variables?.forEach(variable => {
         const value = variableValues[variable.name] || `{{${variable.name}}}`;
         const regex = new RegExp(`\\{\\{${variable.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}\\}`, 'g');
@@ -186,17 +248,19 @@ const App = () => {
 
   const handleSave = async () => {
     console.log('Saving variable values:', variableValues);
+    console.log('Saving toggle states:', toggleStates);
 
     try {
       // Save to backend storage using localId as key
       const result = await invoke('saveVariableValues', {
         localId: context.localId,
         excerptId: config.excerptId,
-        variableValues
+        variableValues,
+        toggleStates
       });
 
       if (result.success) {
-        console.log('Variable values saved successfully');
+        console.log('Variable values and toggle states saved successfully');
         // Update the content preview
         const newContent = getPreviewContent();
         setContent(newContent);
@@ -214,36 +278,90 @@ const App = () => {
     const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
     return (
-      <Fragment>
-        {excerpt.variables && excerpt.variables.length > 0 && (
-          <Fragment>
-            <Text><Em>Variables:</Em></Text>
-            {excerpt.variables.map(variable => (
-              <Fragment key={variable.name}>
-                <Text><Code>{`{{${variable.name}}}`}</Code></Text>
-                <Textfield
-                  placeholder={`Value for ${variable.name}`}
-                  value={variableValues[variable.name] || ''}
-                  onChange={(e) => {
-                    setVariableValues({
-                      ...variableValues,
-                      [variable.name]: e.target.value
-                    });
-                  }}
-                />
-              </Fragment>
-            ))}
-            <Button appearance="primary" onClick={handleSave}>Save</Button>
-            <Text>━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━</Text>
-          </Fragment>
-        )}
+      <Tabs>
+        <TabList>
+          <Tab>Preview</Tab>
+          <Tab>Toggles</Tab>
+          <Tab>Variables</Tab>
+        </TabList>
 
-        {isAdf ? (
-          <AdfRenderer document={previewContent} />
-        ) : (
-          <Text>{previewContent || 'No content'}</Text>
-        )}
-      </Fragment>
+        <TabPanel>
+          {isAdf ? (
+            <AdfRenderer document={previewContent} />
+          ) : (
+            <Text>{previewContent || 'No content'}</Text>
+          )}
+        </TabPanel>
+
+        <TabPanel>
+          {excerpt.toggles && excerpt.toggles.length > 0 ? (
+            <Fragment>
+              {excerpt.toggles.map(toggle => (
+                <Fragment key={toggle.name}>
+                  <Text><Strong>{toggle.name}</Strong></Text>
+                  <Toggle
+                    isChecked={toggleStates[toggle.name] || false}
+                    onChange={(e) => {
+                      setToggleStates({
+                        ...toggleStates,
+                        [toggle.name]: e.target.checked
+                      });
+                    }}
+                  />
+                  {toggle.description && (
+                    <Text><Em>{toggle.description}</Em></Text>
+                  )}
+                  <Text>{' '}</Text>
+                </Fragment>
+              ))}
+              <Button appearance="primary" onClick={handleSave}>Save Toggles</Button>
+            </Fragment>
+          ) : (
+            <Text>No toggles defined in this excerpt.</Text>
+          )}
+        </TabPanel>
+
+        <TabPanel>
+          {excerpt.variables && excerpt.variables.length > 0 ? (
+            <Fragment>
+              {excerpt.variables.map(variable => (
+                <Fragment key={variable.name}>
+                  <Text><Code>{`{{${variable.name}}}`}</Code></Text>
+                  <Textfield
+                    label={`{{${variable.name}}}`}
+                    placeholder={`Value for ${variable.name}`}
+                    value={variableValues[variable.name] || ''}
+                    onChange={(e) => {
+                      setVariableValues({
+                        ...variableValues,
+                        [variable.name]: e.target.value
+                      });
+                    }}
+                  />
+                  {variable.description && (
+                    <Textfield
+                      label="Description"
+                      value={variable.description}
+                      isReadOnly
+                    />
+                  )}
+                  {variable.example && (
+                    <Textfield
+                      label="Example"
+                      value={variable.example}
+                      isReadOnly
+                    />
+                  )}
+                  <Text>{' '}</Text>
+                </Fragment>
+              ))}
+              <Button appearance="primary" onClick={handleSave}>Save Variables</Button>
+            </Fragment>
+          ) : (
+            <Text>No variables defined in this excerpt.</Text>
+          )}
+        </TabPanel>
+      </Tabs>
     );
   }
 
