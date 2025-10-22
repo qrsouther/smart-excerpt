@@ -20,7 +20,7 @@ import ForgeReconciler, {
   useConfig,
   useProductContext
 } from '@forge/react';
-import { invoke, view } from '@forge/bridge';
+import { invoke, view, router } from '@forge/bridge';
 
 const App = () => {
   const config = useConfig() || {};
@@ -160,6 +160,15 @@ const App = () => {
     console.log('Variable metadata:', variableMetadata);
     console.log('Toggle metadata:', toggleMetadata);
 
+    // Try to get context from router
+    let pageContext;
+    try {
+      pageContext = await router.getContext();
+      console.log('Router context:', pageContext);
+    } catch (err) {
+      console.error('Error getting router context:', err);
+    }
+
     // Merge detected variables with their metadata
     const variablesWithMetadata = detectedVariables.map(v => ({
       name: v.name,
@@ -174,6 +183,15 @@ const App = () => {
     }));
 
     console.log('Saving excerpt with name:', excerptName, 'category:', category);
+    console.log('useProductContext:', context);
+    console.log('router.getContext:', pageContext);
+
+    // Extract page info from pageContext (router) if available
+    const sourcePageId = pageContext?.extension?.content?.id || context?.contentId;
+    const sourcePageTitle = pageContext?.extension?.content?.title || context?.contentTitle;
+    const sourceSpaceKey = pageContext?.extension?.space?.key || context?.spaceKey;
+
+    console.log('Extracted page info:', { sourcePageId, sourcePageTitle, sourceSpaceKey });
 
     const result = await invoke('saveExcerpt', {
       excerptName,
@@ -181,7 +199,10 @@ const App = () => {
       content: macroBody,  // Send the ADF body as content
       excerptId,
       variableMetadata: variablesWithMetadata,
-      toggleMetadata: togglesWithMetadata
+      toggleMetadata: togglesWithMetadata,
+      sourcePageId,
+      sourcePageTitle,
+      sourceSpaceKey
     });
 
     console.log('Save result:', result);

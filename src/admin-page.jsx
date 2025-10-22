@@ -2,15 +2,17 @@ import React, { Fragment, useState, useEffect } from 'react';
 import ForgeReconciler, {
   Text,
   Strong,
-  Button
+  Button,
+  Textfield
 } from '@forge/react';
-import { invoke } from '@forge/bridge';
+import { invoke, router } from '@forge/bridge';
 
 const App = () => {
   const [excerpts, setExcerpts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [usageData, setUsageData] = useState({});
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Load excerpts and their usage data
   useEffect(() => {
@@ -107,20 +109,34 @@ const App = () => {
     );
   }
 
+  // Filter excerpts based on search term
+  const filteredExcerpts = excerpts.filter(excerpt =>
+    excerpt.name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <Fragment>
       <Text><Strong>SmartExcerpt Manager</Strong></Text>
       <Text>Found {excerpts.length} source(s)</Text>
       <Text>{' '}</Text>
 
-      {!excerpts || excerpts.length === 0 ? (
+      <Textfield
+        placeholder="Search by name..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+      />
+      <Text>{' '}</Text>
+
+      {filteredExcerpts.length === 0 && searchTerm ? (
+        <Text>No excerpts match "{searchTerm}"</Text>
+      ) : !excerpts || excerpts.length === 0 ? (
         <Fragment>
           <Text>No SmartExcerpt Sources found.</Text>
           <Text>Create a SmartExcerpt Source macro on a page to get started.</Text>
         </Fragment>
       ) : (
         <Fragment>
-          {excerpts.map((excerpt) => {
+          {filteredExcerpts.map((excerpt) => {
             const varCount = Array.isArray(excerpt.variables) ? excerpt.variables.length : 0;
             const toggleCount = Array.isArray(excerpt.toggles) ? excerpt.toggles.length : 0;
             const category = String(excerpt.category || 'General');
@@ -139,6 +155,20 @@ const App = () => {
                       <Text key={idx}>  - {String(ref.pageTitle || 'Unknown Page')}</Text>
                     ))}
                   </Fragment>
+                )}
+                {excerpt.sourcePageId && (
+                  <Button
+                    appearance="link"
+                    onClick={async () => {
+                      try {
+                        await router.navigate(`/wiki/pages/viewpage.action?pageId=${excerpt.sourcePageId}`);
+                      } catch (err) {
+                        console.error('Navigation error:', err);
+                      }
+                    }}
+                  >
+                    View Source Page
+                  </Button>
                 )}
                 <Button
                   appearance="danger"

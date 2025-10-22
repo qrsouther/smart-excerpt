@@ -1,5 +1,6 @@
 import Resolver from '@forge/resolver';
 import { storage } from '@forge/api';
+import api, { route } from '@forge/api';
 import { generateUUID } from './utils';
 
 const resolver = new Resolver();
@@ -147,7 +148,13 @@ resolver.define('detectTogglesFromContent', async (req) => {
 
 // Save excerpt
 resolver.define('saveExcerpt', async (req) => {
-  const { excerptName, category, content, excerptId, variableMetadata, toggleMetadata } = req.payload;
+  const { excerptName, category, content, excerptId, variableMetadata, toggleMetadata, sourcePageId, sourcePageTitle, sourceSpaceKey } = req.payload;
+
+  // Extract page information from backend context (more reliable than frontend)
+  const pageId = sourcePageId || req.context?.extension?.content?.id;
+  const spaceKey = sourceSpaceKey || req.context?.extension?.space?.key;
+
+  console.log('Saving with page info - pageId:', pageId, 'spaceKey:', spaceKey);
 
   // Generate or reuse excerpt ID
   const id = excerptId || generateUUID();
@@ -177,6 +184,9 @@ resolver.define('saveExcerpt', async (req) => {
     };
   });
 
+  // Get existing excerpt to preserve createdAt and existing source page if not provided
+  const existingExcerpt = excerptId ? await storage.get(`excerpt:${id}`) : null;
+
   // Store excerpt
   const excerpt = {
     id: id,
@@ -185,7 +195,9 @@ resolver.define('saveExcerpt', async (req) => {
     content: content,
     variables: variables,
     toggles: toggles,
-    createdAt: excerptId ? (await storage.get(`excerpt:${id}`))?.createdAt : new Date().toISOString(),
+    sourcePageId: pageId || existingExcerpt?.sourcePageId,
+    sourceSpaceKey: spaceKey || existingExcerpt?.sourceSpaceKey,
+    createdAt: existingExcerpt?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
 
