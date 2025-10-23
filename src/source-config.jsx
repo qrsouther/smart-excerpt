@@ -202,7 +202,8 @@ const App = () => {
       toggleMetadata: togglesWithMetadata,
       sourcePageId,
       sourcePageTitle,
-      sourceSpaceKey
+      sourceSpaceKey,
+      sourceLocalId: context?.localId  // Track the Source macro's localId
     });
 
     console.log('Save result:', result);

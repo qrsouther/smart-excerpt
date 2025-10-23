@@ -1,5 +1,5 @@
 import React, { Fragment } from 'react';
-import ForgeReconciler, { Text, Strong, Em, Lozenge, useConfig, useProductContext, AdfRenderer } from '@forge/react';
+import ForgeReconciler, { Text, useConfig, useProductContext, AdfRenderer } from '@forge/react';
 
 const App = () => {
   const config = useConfig();

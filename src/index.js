@@ -1,5 +1,5 @@
 import Resolver from '@forge/resolver';
-import { storage } from '@forge/api';
+import { storage, startsWith } from '@forge/api';
 import api, { route } from '@forge/api';
 import { generateUUID } from './utils';
 
@@ -148,7 +148,7 @@ resolver.define('detectTogglesFromContent', async (req) => {
 
 // Save excerpt
 resolver.define('saveExcerpt', async (req) => {
-  const { excerptName, category, content, excerptId, variableMetadata, toggleMetadata, sourcePageId, sourcePageTitle, sourceSpaceKey } = req.payload;
+  const { excerptName, category, content, excerptId, variableMetadata, toggleMetadata, sourcePageId, sourcePageTitle, sourceSpaceKey, sourceLocalId } = req.payload;
 
   // Extract page information from backend context (more reliable than frontend)
   const pageId = sourcePageId || req.context?.extension?.content?.id;
@@ -197,6 +197,7 @@ resolver.define('saveExcerpt', async (req) => {
     toggles: toggles,
     sourcePageId: pageId || existingExcerpt?.sourcePageId,
     sourceSpaceKey: spaceKey || existingExcerpt?.sourceSpaceKey,
+    sourceLocalId: sourceLocalId || existingExcerpt?.sourceLocalId,
     createdAt: existingExcerpt?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -432,7 +433,26 @@ resolver.define('massUpdateExcerpts', async (req) => {
 // Track usage of an excerpt (called when Include macro is saved)
 resolver.define('trackExcerptUsage', async (req) => {
   try {
-    const { excerptId, localId, pageId, pageTitle, spaceKey } = req.payload;
+    const { excerptId, localId } = req.payload;
+
+    console.log('=== TRACK USAGE BACKEND ===');
+    console.log('Payload:', req.payload);
+    console.log('req.context:', req.context);
+
+    // Extract page information from backend context (frontend doesn't have access to this)
+    const pageId = req.context?.extension?.content?.id;
+    const pageTitle = req.context?.extension?.content?.title || 'Unknown Page';
+    const spaceKey = req.context?.extension?.space?.key || 'Unknown Space';
+
+    console.log('Extracted from req.context:', { pageId, pageTitle, spaceKey });
+
+    if (!pageId) {
+      console.error('CRITICAL: pageId not available in req.context');
+      return {
+        success: false,
+        error: 'Page context not available'
+      };
+    }
 
     // Store usage data in a reverse index
     const usageKey = `usage:${excerptId}`;
@@ -451,17 +471,22 @@ resolver.define('trackExcerptUsage', async (req) => {
 
     if (existingIndex >= 0) {
       // Update existing reference
+      console.log('Updating existing usage reference for localId:', localId);
       usageData.references[existingIndex] = reference;
     } else {
       // Add new reference
+      console.log('Adding new usage reference for localId:', localId);
       usageData.references.push(reference);
     }
 
     await storage.set(usageKey, usageData);
 
-    console.log('Usage tracked for excerpt:', excerptId, 'localId:', localId);
+    console.log('✅ Usage tracked successfully for excerpt:', excerptId, 'on page:', pageTitle);
     return {
-      success: true
+      success: true,
+      pageId,
+      pageTitle,
+      spaceKey
     };
   } catch (error) {
     console.error('Error tracking excerpt usage:', error);
@@ -522,6 +547,165 @@ resolver.define('getExcerptUsage', async (req) => {
       success: false,
       error: error.message,
       usage: []
+    };
+  }
+});
+
+// Source heartbeat: Update lastSeenAt timestamp when Source macro is rendered
+resolver.define('sourceHeartbeat', async (req) => {
+  try {
+    const { excerptId } = req.payload;
+
+    // Load the excerpt
+    const excerpt = await storage.get(`excerpt:${excerptId}`);
+    if (!excerpt) {
+      return { success: false, error: 'Excerpt not found' };
+    }
+
+    // Update lastSeenAt timestamp
+    excerpt.lastSeenAt = new Date().toISOString();
+    await storage.set(`excerpt:${excerptId}`, excerpt);
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error in sourceHeartbeat:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get orphaned Sources (Sources that haven't checked in recently or were deleted)
+// Active check: Verify each Source still exists on its page
+resolver.define('checkAllSources', async (req) => {
+  try {
+    console.log('🔍 ACTIVE CHECK: Checking all Sources against their pages...');
+
+    // Get all excerpts from the index
+    const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
+    console.log('Total excerpts to check:', excerptIndex.excerpts.length);
+
+    const orphanedSources = [];
+    const checkedSources = [];
+
+    for (const excerptSummary of excerptIndex.excerpts) {
+      // Load full excerpt data
+      const excerpt = await storage.get(`excerpt:${excerptSummary.id}`);
+      if (!excerpt) continue;
+
+      // Skip if this excerpt doesn't have page info (shouldn't happen, but safety check)
+      if (!excerpt.sourcePageId || !excerpt.sourceLocalId) {
+        console.log(`⚠️ Excerpt "${excerpt.name}" missing sourcePageId or sourceLocalId, skipping`);
+        continue;
+      }
+
+      console.log(`Checking "${excerpt.name}" on page ${excerpt.sourcePageId}...`);
+
+      try {
+        // Fetch the page content from Confluence API
+        const response = await api.asApp().requestConfluence(
+          route`/wiki/api/v2/pages/${excerpt.sourcePageId}?body-format=storage`,
+          {
+            headers: {
+              'Accept': 'application/json'
+            }
+          }
+        );
+
+        if (!response.ok) {
+          console.log(`❌ Page ${excerpt.sourcePageId} not found or not accessible`);
+          orphanedSources.push({
+            ...excerpt,
+            orphanedReason: 'Source page not found or deleted'
+          });
+          continue;
+        }
+
+        const pageData = await response.json();
+        const pageBody = pageData?.body?.storage?.value || '';
+
+        // Check if the sourceLocalId exists in the page body
+        // Confluence stores macro IDs in the storage format like: data-macro-id="sourceLocalId"
+        const macroExists = pageBody.includes(excerpt.sourceLocalId);
+
+        if (macroExists) {
+          console.log(`✅ Source "${excerpt.name}" found on page`);
+          checkedSources.push(excerpt.name);
+        } else {
+          console.log(`❌ Source "${excerpt.name}" NOT found on page - ORPHANED`);
+          orphanedSources.push({
+            ...excerpt,
+            orphanedReason: 'Macro deleted from source page'
+          });
+        }
+      } catch (apiError) {
+        console.error(`Error checking page ${excerpt.sourcePageId}:`, apiError);
+        orphanedSources.push({
+          ...excerpt,
+          orphanedReason: `API error: ${apiError.message}`
+        });
+      }
+    }
+
+    console.log(`✅ Check complete: ${checkedSources.length} active, ${orphanedSources.length} orphaned`);
+
+    return {
+      success: true,
+      orphanedSources,
+      checkedCount: checkedSources.length + orphanedSources.length,
+      activeCount: checkedSources.length
+    };
+  } catch (error) {
+    console.error('Error in checkAllSources:', error);
+    return {
+      success: false,
+      error: error.message,
+      orphanedSources: []
+    };
+  }
+});
+
+// Get all orphaned usage entries (usage data for excerpts that no longer exist)
+resolver.define('getOrphanedUsage', async (req) => {
+  try {
+    console.log('Checking for orphaned usage entries...');
+
+    // Get all storage keys
+    const allKeys = await storage.query().where('key', startsWith('usage:')).getMany();
+    console.log('Found usage keys:', allKeys.results.length);
+
+    // Get all existing excerpt IDs
+    const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
+    const existingExcerptIds = new Set(excerptIndex.excerpts.map(e => e.id));
+    console.log('Existing excerpts:', existingExcerptIds.size);
+
+    // Find orphaned usage entries
+    const orphanedUsage = [];
+    for (const entry of allKeys.results) {
+      const excerptId = entry.key.replace('usage:', '');
+
+      // If usage exists but excerpt doesn't, it's orphaned
+      if (!existingExcerptIds.has(excerptId)) {
+        const usageData = entry.value;
+        orphanedUsage.push({
+          excerptId,
+          excerptName: usageData.excerptName || 'Unknown',
+          references: usageData.references || [],
+          referenceCount: (usageData.references || []).length
+        });
+      }
+    }
+
+    console.log('Found orphaned usage entries:', orphanedUsage.length);
+
+    return {
+      success: true,
+      orphanedUsage
+    };
+  } catch (error) {
+    console.error('Error getting orphaned usage:', error);
+    return {
+      success: false,
+      error: error.message,
+      orphanedUsage: []
     };
   }
 });

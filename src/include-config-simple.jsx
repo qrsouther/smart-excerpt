@@ -24,6 +24,14 @@ const App = () => {
   console.log('Include config - current config:', config);
   console.log('Include config - context:', context);
 
+  // Update selectedExcerptId when config loads
+  useEffect(() => {
+    if (config.excerptId) {
+      console.log('Config loaded, setting excerptId to:', config.excerptId);
+      setSelectedExcerptId(config.excerptId);
+    }
+  }, [config.excerptId]);
+
   // Load excerpts on mount
   useEffect(() => {
     const loadExcerpts = async () => {
@@ -64,6 +72,7 @@ const App = () => {
     try {
       // If the excerptId changed, remove the old usage tracking
       if (config.excerptId && config.excerptId !== selectedExcerptId && context?.localId) {
+        console.log('Removing old usage tracking for:', config.excerptId);
         await invoke('removeExcerptUsage', {
           excerptId: config.excerptId,
           localId: context.localId
@@ -71,15 +80,23 @@ const App = () => {
       }
 
       // Track usage of the new excerptId
-      if (context?.localId && context?.contentId && selectedExcerptId) {
-        await invoke('trackExcerptUsage', {
+      // Backend will extract page context from req.context since frontend doesn't have access
+      if (context?.localId && selectedExcerptId) {
+        console.log('=== TRACK USAGE FRONTEND ===');
+        console.log('Calling trackExcerptUsage with:', {
           excerptId: selectedExcerptId,
-          localId: context.localId,
-          pageId: context.contentId,
-          pageTitle: context.contentTitle || 'Unknown Page',
-          spaceKey: context.spaceKey || 'Unknown Space'
+          localId: context.localId
         });
-        console.log('Usage tracked for excerpt:', selectedExcerptId);
+        const trackResult = await invoke('trackExcerptUsage', {
+          excerptId: selectedExcerptId,
+          localId: context.localId
+        });
+        console.log('✅ Usage tracking result:', trackResult);
+      } else {
+        console.warn('❌ Usage tracking SKIPPED - missing context:', {
+          hasLocalId: !!context?.localId,
+          hasExcerptId: !!selectedExcerptId
+        });
       }
 
       await view.submit({ config: configToSave });

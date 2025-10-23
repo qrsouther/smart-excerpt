@@ -27,7 +27,7 @@ modules:
 
   confluence:globalSettings:
     - key: smartexcerpt-admin
-      title: SmartExcerpt Manager
+      title: SmartExcerpt Admin
       resource: admin-page
       render: native
       resolver:
@@ -62,4 +62,5 @@ permissions:
   scopes:
     - read:confluence-content.all
     - read:confluence-space.summary
+    - read:page:confluence
     - storage:app
