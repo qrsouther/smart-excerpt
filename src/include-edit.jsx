@@ -1,5 +1,17 @@
 import React, { Fragment, useState, useEffect } from 'react';
-import ForgeReconciler, { Text, Strong, Textfield, Button, useConfig, AdfRenderer } from '@forge/react';
+import ForgeReconciler, {
+  Text,
+  Strong,
+  Em,
+  Textfield,
+  Button,
+  Tabs,
+  Tab,
+  TabList,
+  TabPanel,
+  useConfig,
+  AdfRenderer
+} from '@forge/react';
 import { invoke, view } from '@forge/bridge';
 
 // Helper function to perform variable substitution in ADF content
@@ -138,53 +150,88 @@ const App = () => {
       <Text>
         <Strong>Source: {config.excerptName || excerpt.name}</Strong>
       </Text>
+      <Text>{' '}</Text>
 
-      {excerpt.variables && excerpt.variables.length > 0 ? (
-        <Fragment>
-          <Text>---</Text>
-          <Text>
-            <Strong>Fill in Variables:</Strong>
-          </Text>
+      <Tabs>
+        <TabList>
+          <Tab>Write</Tab>
+          <Tab>Variants</Tab>
+        </TabList>
 
-          {excerpt.variables.map(variable => (
-            <Fragment key={variable.name}>
-              <Text>{variable.name}:</Text>
-              <Textfield
-                placeholder={`Enter value for ${variable.name}`}
-                value={variableValues[variable.name] || ''}
-                onChange={(e) => {
-                  setVariableValues({
-                    ...variableValues,
-                    [variable.name]: e.target.value
-                  });
-                }}
-              />
+        {/* Write Tab - Variables + Live Preview */}
+        <TabPanel>
+          {excerpt.variables && excerpt.variables.length > 0 ? (
+            <Fragment>
+              <Text><Strong>Variables:</Strong></Text>
+              <Text>{' '}</Text>
+
+              {excerpt.variables.map(variable => (
+                <Fragment key={variable.name}>
+                  <Text><Strong>{variable.name}</Strong></Text>
+                  {variable.description && (
+                    <Text><Em>{variable.description}</Em></Text>
+                  )}
+                  <Textfield
+                    placeholder={variable.example ? `e.g., ${variable.example}` : `Enter value for ${variable.name}`}
+                    value={variableValues[variable.name] || ''}
+                    onChange={(e) => {
+                      setVariableValues({
+                        ...variableValues,
+                        [variable.name]: e.target.value
+                      });
+                    }}
+                  />
+                  <Text>{' '}</Text>
+                </Fragment>
+              ))}
+
+              <Button appearance="primary" onClick={handleSave}>
+                Save Variable Values
+              </Button>
+              <Text>{' '}</Text>
+              <Text>{' '}</Text>
             </Fragment>
-          ))}
+          ) : (
+            <Fragment>
+              <Text>No variables defined for this excerpt.</Text>
+              <Text>{' '}</Text>
+            </Fragment>
+          )}
 
-          <Button appearance="primary" onClick={handleSave}>
-            Save Variable Values
-          </Button>
+          <Text><Strong>Preview:</Strong></Text>
+          <Text>{' '}</Text>
+          {isAdf ? (
+            <AdfRenderer document={previewContent} />
+          ) : (
+            <Text>{previewContent || 'No content'}</Text>
+          )}
+        </TabPanel>
 
-          <Text>---</Text>
-          <Text>
-            <Strong>Preview:</Strong>
-          </Text>
-        </Fragment>
-      ) : (
-        <Fragment>
-          <Text>---</Text>
-          <Text>
-            <Strong>Content Preview:</Strong>
-          </Text>
-        </Fragment>
-      )}
+        {/* Variants Tab - Toggles */}
+        <TabPanel>
+          {excerpt.toggles && excerpt.toggles.length > 0 ? (
+            <Fragment>
+              <Text><Strong>Content Toggles:</Strong></Text>
+              <Text>{' '}</Text>
 
-      {isAdf ? (
-        <AdfRenderer document={previewContent} />
-      ) : (
-        <Text>{previewContent || 'No content'}</Text>
-      )}
+              {excerpt.toggles.map(toggle => (
+                <Fragment key={toggle.name}>
+                  <Text><Strong>{toggle.name}</Strong></Text>
+                  {toggle.description && (
+                    <Text><Em>{toggle.description}</Em></Text>
+                  )}
+                  <Text>{' '}</Text>
+                </Fragment>
+              ))}
+
+              <Text>{' '}</Text>
+              <Text><Em>Toggle functionality coming soon!</Em></Text>
+            </Fragment>
+          ) : (
+            <Text>No toggles defined for this excerpt.</Text>
+          )}
+        </TabPanel>
+      </Tabs>
     </Fragment>
   );
 };

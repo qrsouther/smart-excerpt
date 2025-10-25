@@ -241,14 +241,85 @@ resolver.define('getExcerpts', async () => {
 // Get specific excerpt
 resolver.define('getExcerpt', async (req) => {
   try {
-    const excerpt = await storage.get(`excerpt:${req.payload.excerptId}`);
-    console.log('getExcerpt called for:', req.payload.excerptId);
+    const excerptId = req.payload.excerptId;
+    console.log('getExcerpt called for:', excerptId);
+
+    const excerpt = await storage.get(`excerpt:${excerptId}`);
+    console.log('getExcerpt - excerpt from storage:', excerpt ? 'FOUND' : 'NULL/UNDEFINED');
+
+    if (excerpt) {
+      console.log('getExcerpt - excerpt name:', excerpt.name);
+      console.log('getExcerpt - excerpt category:', excerpt.category);
+      console.log('getExcerpt - excerpt has content:', !!excerpt.content);
+    }
+
     return {
       success: true,
       excerpt: excerpt
     };
   } catch (error) {
     console.error('Error getting excerpt:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// Update excerpt content only (called automatically when Source macro body changes)
+resolver.define('updateExcerptContent', async (req) => {
+  try {
+    const { excerptId, content } = req.payload;
+
+    // Load existing excerpt
+    const excerpt = await storage.get(`excerpt:${excerptId}`);
+    if (!excerpt) {
+      console.error('Excerpt not found:', excerptId);
+      return { success: false, error: 'Excerpt not found' };
+    }
+
+    // Update content and re-detect variables/toggles
+    const detectedVariables = detectVariables(content);
+    const detectedToggles = detectToggles(content);
+
+    // Preserve existing variable metadata, but update the list
+    const variables = detectedVariables.map(v => {
+      const existing = excerpt.variables?.find(ev => ev.name === v.name);
+      return existing || {
+        name: v.name,
+        description: '',
+        example: '',
+        multiline: false
+      };
+    });
+
+    // Preserve existing toggle metadata, but update the list
+    const toggles = detectedToggles.map(t => {
+      const existing = excerpt.toggles?.find(et => et.name === t.name);
+      return existing || {
+        name: t.name,
+        description: ''
+      };
+    });
+
+    // Update excerpt with new content
+    const updatedExcerpt = {
+      ...excerpt,
+      content: content,
+      variables: variables,
+      toggles: toggles,
+      updatedAt: new Date().toISOString()
+    };
+
+    await storage.set(`excerpt:${excerptId}`, updatedExcerpt);
+
+    // Update index
+    await updateExcerptIndex(updatedExcerpt);
+
+    console.log('Excerpt content auto-updated:', excerptId);
+    return { success: true };
+  } catch (error) {
+    console.error('Error updating excerpt content:', error);
     return {
       success: false,
       error: error.message

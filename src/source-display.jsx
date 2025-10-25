@@ -1,7 +1,10 @@
-import React, { Fragment } from 'react';
+import React, { Fragment, useEffect } from 'react';
 import ForgeReconciler, { Text, useConfig, useProductContext, AdfRenderer } from '@forge/react';
+import { invoke } from '@forge/bridge';
 
 const App = () => {
+  console.log('=== SOURCE DISPLAY V4.42 LOADED ===');
+
   const config = useConfig();
   const context = useProductContext();
 
@@ -10,6 +13,37 @@ const App = () => {
 
   console.log('Source display config:', config);
   console.log('Source display macroBody:', macroBody);
+
+  // Auto-update excerpt content whenever macro body changes
+  useEffect(() => {
+    console.log('useEffect triggered - excerptId:', config?.excerptId, 'macroBody exists:', !!macroBody);
+
+    if (!config?.excerptId) {
+      console.log('Skipping update: no excerptId');
+      return;
+    }
+
+    if (!macroBody) {
+      console.log('Skipping update: no macroBody');
+      return;
+    }
+
+    const updateExcerptContent = async () => {
+      try {
+        console.log('Auto-updating excerpt content for:', config.excerptId);
+        console.log('Current macro body:', JSON.stringify(macroBody));
+        await invoke('updateExcerptContent', {
+          excerptId: config.excerptId,
+          content: macroBody
+        });
+        console.log('Content update complete');
+      } catch (error) {
+        console.error('Error auto-updating excerpt content:', error);
+      }
+    };
+
+    updateExcerptContent();
+  }, [config?.excerptId, macroBody]);
 
   // If no configuration yet, show placeholder
   if (!config || !config.excerptName) {

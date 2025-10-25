@@ -12,6 +12,7 @@ import ForgeReconciler, {
   Code,
   Button,
   SectionMessage,
+  Toggle,
   Tabs,
   Tab,
   TabList,
@@ -73,7 +74,8 @@ const App = () => {
             result.excerpt.variables.forEach(v => {
               metadata[v.name] = {
                 description: v.description || '',
-                example: v.example || ''
+                example: v.example || '',
+                multiline: v.multiline || false
               };
             });
             setVariableMetadata(metadata);
@@ -173,7 +175,8 @@ const App = () => {
     const variablesWithMetadata = detectedVariables.map(v => ({
       name: v.name,
       description: variableMetadata[v.name]?.description || '',
-      example: variableMetadata[v.name]?.example || ''
+      example: variableMetadata[v.name]?.example || '',
+      multiline: variableMetadata[v.name]?.multiline || false
     }));
 
     // Merge detected toggles with their metadata
@@ -308,6 +311,23 @@ const App = () => {
                           [variable.name]: {
                             ...variableMetadata[variable.name],
                             example: e.target.value
+                          }
+                        });
+                      }}
+                    />
+                    <Label labelFor={`multiline-${variable.name}`}>
+                      Allow multi-line input
+                    </Label>
+                    <Toggle
+                      id={`multiline-${variable.name}`}
+                      isChecked={variableMetadata[variable.name]?.multiline || false}
+                      isDisabled={isLoadingExcerpt}
+                      onChange={(e) => {
+                        setVariableMetadata({
+                          ...variableMetadata,
+                          [variable.name]: {
+                            ...variableMetadata[variable.name],
+                            multiline: e.target.checked
                           }
                         });
                       }}

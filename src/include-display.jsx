@@ -1,12 +1,127 @@
 import React, { Fragment, useState, useEffect } from 'react';
-import ForgeReconciler, { Text, Strong, Em, Code, Textfield, Toggle, Button, Tabs, Tab, TabList, TabPanel, useConfig, useProductContext, AdfRenderer } from '@forge/react';
+import ForgeReconciler, {
+  Text,
+  Strong,
+  Em,
+  Code,
+  Textfield,
+  TextArea,
+  Toggle,
+  Button,
+  Tabs,
+  Tab,
+  TabList,
+  TabPanel,
+  Stack,
+  Inline,
+  Tooltip,
+  Icon,
+  DynamicTable,
+  Box,
+  Spinner,
+  SectionMessage,
+  xcss,
+  useConfig,
+  useProductContext,
+  AdfRenderer
+} from '@forge/react';
 import { invoke } from '@forge/bridge';
+
+// Style for preview border
+const previewBoxStyle = xcss({
+  borderColor: 'color.border',
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderRadius: 'border.radius',
+  padding: 'space.200'
+});
+
+// Helper function to clean ADF for Forge's AdfRenderer
+// Removes unsupported attributes that cause "Unsupported text" messages
+const cleanAdfForRenderer = (adfNode) => {
+  if (!adfNode || typeof adfNode !== 'object') return adfNode;
+
+  // Clone to avoid mutating original
+  const cleaned = { ...adfNode };
+
+  // Remove unsupported attributes
+  if (cleaned.attrs) {
+    const cleanedAttrs = { ...cleaned.attrs };
+
+    // Remove localId (not supported by Forge AdfRenderer)
+    delete cleanedAttrs.localId;
+
+    // Remove null-valued panel attributes
+    if (cleaned.type === 'panel') {
+      if (cleanedAttrs.panelIconId === null) delete cleanedAttrs.panelIconId;
+      if (cleanedAttrs.panelColor === null) delete cleanedAttrs.panelColor;
+      if (cleanedAttrs.panelIcon === null) delete cleanedAttrs.panelIcon;
+      if (cleanedAttrs.panelIconText === null) delete cleanedAttrs.panelIconText;
+    }
+
+    // Remove null-valued table cell attributes
+    if (cleaned.type === 'tableCell' || cleaned.type === 'tableHeader') {
+      if (cleanedAttrs.background === null) delete cleanedAttrs.background;
+      if (cleanedAttrs.colwidth === null) delete cleanedAttrs.colwidth;
+    }
+
+    // Remove null-valued and unsupported table attributes
+    if (cleaned.type === 'table') {
+      if (cleanedAttrs.displayMode === null) delete cleanedAttrs.displayMode;
+      // Remove other potentially unsupported table attributes
+      delete cleanedAttrs.width;
+      delete cleanedAttrs.__autoSize;
+      delete cleanedAttrs.isNumberColumnEnabled;
+      delete cleanedAttrs.layout;
+    }
+
+    cleaned.attrs = cleanedAttrs;
+  }
+
+  // Recursively clean content array
+  if (cleaned.content && Array.isArray(cleaned.content)) {
+    cleaned.content = cleaned.content.map(child => cleanAdfForRenderer(child));
+  }
+
+  return cleaned;
+};
+
+// Helper function to clean up empty or invalid nodes after toggle filtering
+const cleanupEmptyNodes = (adfNode) => {
+  if (!adfNode) return null;
+
+  // If it's a text node with empty text, remove it
+  if (adfNode.type === 'text' && (!adfNode.text || adfNode.text.trim() === '')) {
+    return null;
+  }
+
+  // Recursively process content array
+  if (adfNode.content && Array.isArray(adfNode.content)) {
+    const cleanedContent = adfNode.content
+      .map(child => cleanupEmptyNodes(child))
+      .filter(child => child !== null);  // Remove null nodes
+
+    // If this node has no content left after cleanup, remove it
+    // Exception: Keep certain nodes even if empty (like hardBreak, etc)
+    const keepEvenIfEmpty = ['hardBreak', 'rule', 'emoji', 'mention', 'date'];
+    if (cleanedContent.length === 0 && !keepEvenIfEmpty.includes(adfNode.type)) {
+      return null;
+    }
+
+    return {
+      ...adfNode,
+      content: cleanedContent
+    };
+  }
+
+  return adfNode;
+};
 
 // Helper function to filter content based on toggle states
 // Removes content between {{toggle:name}}...{{/toggle:name}} markers when toggle is disabled
 // Works with both plain text and ADF format, supporting inline toggles
 const filterContentByToggles = (adfNode, toggleStates) => {
-  if (!adfNode) return adfNode;
+  if (!adfNode) return null;
 
   // If it's a text node, filter toggle blocks
   if (adfNode.type === 'text' && adfNode.text) {
@@ -23,14 +138,25 @@ const filterContentByToggles = (adfNode, toggleStates) => {
       return toggleStates?.[trimmedName] === true ? content : '';
     });
 
+    // If text is now empty or only whitespace after filtering, return null to remove this node
+    if (text.trim() === '') {
+      return null;
+    }
+
     return { ...adfNode, text };
   }
 
   // Recursively process content array
   if (adfNode.content && Array.isArray(adfNode.content)) {
-    const newContent = adfNode.content.map(child =>
-      filterContentByToggles(child, toggleStates)
-    );
+    const newContent = adfNode.content
+      .map(child => filterContentByToggles(child, toggleStates))
+      .filter(child => child !== null);  // Remove null nodes
+
+    // If this node has no content left after filtering, remove it
+    if (newContent.length === 0 && adfNode.type !== 'doc') {
+      return null;
+    }
+
     return {
       ...adfNode,
       content: newContent
@@ -133,6 +259,7 @@ const App = () => {
   const [variableValues, setVariableValues] = useState(config?.variableValues || {});
   const [toggleStates, setToggleStates] = useState(config?.toggleStates || {});
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', or 'error'
 
   console.log('=== INCLUDE VIEW RENDERING ===');
   console.log('Is editing:', isEditing);
@@ -198,6 +325,7 @@ const App = () => {
         }
 
         console.log('Setting content:', freshContent);
+        console.log('Content as JSON:', JSON.stringify(freshContent, null, 2));
         setContent(freshContent);
       } catch (err) {
         console.error('Error loading content:', err);
@@ -208,6 +336,42 @@ const App = () => {
 
     loadContent();
   }, [config?.excerptId, context?.localId]);
+
+  // Auto-save effect with debouncing
+  useEffect(() => {
+    if (!isEditing || !context?.localId || !config?.excerptId) {
+      return;
+    }
+
+    setSaveStatus('saving');
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        console.log('Auto-saving variable values:', variableValues);
+        console.log('Auto-saving toggle states:', toggleStates);
+
+        const result = await invoke('saveVariableValues', {
+          localId: context.localId,
+          excerptId: config.excerptId,
+          variableValues,
+          toggleStates
+        });
+
+        if (result.success) {
+          console.log('Auto-save successful');
+          setSaveStatus('saved');
+        } else {
+          console.error('Auto-save failed:', result.error);
+          setSaveStatus('error');
+        }
+      } catch (error) {
+        console.error('Error during auto-save:', error);
+        setSaveStatus('error');
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [variableValues, toggleStates, isEditing, context?.localId, config?.excerptId]);
 
   if (!config || !config.excerptId) {
     return <Text>SmartExcerpt Include not configured. Click Edit to select an excerpt.</Text>;
@@ -227,7 +391,14 @@ const App = () => {
     if (isAdf) {
       // First filter toggles, then substitute variables
       previewContent = filterContentByToggles(previewContent, toggleStates);
-      return substituteVariablesInAdf(previewContent, variableValues);
+      previewContent = substituteVariablesInAdf(previewContent, variableValues);
+
+      // Log before and after cleaning
+      console.log('Preview content before cleaning:', JSON.stringify(previewContent, null, 2));
+      const cleaned = cleanAdfForRenderer(previewContent);
+      console.log('Preview content after cleaning:', JSON.stringify(cleaned, null, 2));
+
+      return cleaned;
     } else {
       // For plain text, filter toggles first
       const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
@@ -246,132 +417,172 @@ const App = () => {
     }
   };
 
-  const handleSave = async () => {
-    console.log('Saving variable values:', variableValues);
-    console.log('Saving toggle states:', toggleStates);
-
-    try {
-      // Save to backend storage using localId as key
-      const result = await invoke('saveVariableValues', {
-        localId: context.localId,
-        excerptId: config.excerptId,
-        variableValues,
-        toggleStates
-      });
-
-      if (result.success) {
-        console.log('Variable values and toggle states saved successfully');
-        // Update the content preview
-        const newContent = getPreviewContent();
-        setContent(newContent);
-      } else {
-        console.error('Failed to save variable values:', result.error);
-      }
-    } catch (error) {
-      console.error('Error saving variable values:', error);
-    }
-  };
-
   // EDIT MODE: Show variable inputs and preview
   if (isEditing && excerpt) {
     const previewContent = getPreviewContent();
     const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
+    console.log('Edit mode - rendering preview, isAdf:', isAdf);
+
     return (
-      <Tabs>
+      <Stack space="space.100">
+        <Inline space="space.300" alignBlock="center" spread="space-between">
+          <Text><Strong>{excerpt.name}</Strong></Text>
+          <Inline space="space.100" alignBlock="center">
+            {saveStatus === 'saving' && (
+              <Fragment>
+                <Spinner size="small" label="Saving" />
+                <Text><Em>Saving...</Em></Text>
+              </Fragment>
+            )}
+            {saveStatus === 'saved' && (
+              <Fragment>
+                <Icon glyph="check-circle" size="small" label="Saved" />
+                <Text><Em>Saved</Em></Text>
+              </Fragment>
+            )}
+          </Inline>
+        </Inline>
+
+        <Tabs>
         <TabList>
-          <Tab>Preview</Tab>
-          <Tab>Toggles</Tab>
-          <Tab>Variables</Tab>
+          <Tab>Write</Tab>
+          <Tab>Variants</Tab>
         </TabList>
-
+        {/* Write Tab - Variables + Live Preview */}
         <TabPanel>
-          {isAdf ? (
-            <AdfRenderer document={previewContent} />
-          ) : (
-            <Text>{previewContent || 'No content'}</Text>
-          )}
-        </TabPanel>
-
-        <TabPanel>
-          {excerpt.toggles && excerpt.toggles.length > 0 ? (
-            <Fragment>
-              {excerpt.toggles.map(toggle => (
-                <Fragment key={toggle.name}>
-                  <Text><Strong>{toggle.name}</Strong></Text>
-                  <Toggle
-                    isChecked={toggleStates[toggle.name] || false}
-                    onChange={(e) => {
-                      setToggleStates({
-                        ...toggleStates,
-                        [toggle.name]: e.target.checked
-                      });
+          <Stack space="space.200">
+            {excerpt.variables && excerpt.variables.length > 0 && (
+              <Box backgroundColor="color.background.neutral" paddingBlockStart="space.200" paddingBlockEnd="space.100" paddingInline="space.200">
+                <Stack space="space.150">
+                  <DynamicTable
+                    head={{
+                      cells: [
+                        {
+                          key: 'variable',
+                          content: 'Variable',
+                          width: 30
+                        },
+                        {
+                          key: 'value',
+                          content: 'Value',
+                          width: 70
+                        }
+                      ]
                     }}
+                    rows={excerpt.variables.map(variable => ({
+                      key: variable.name,
+                      cells: [
+                        {
+                          key: 'variable',
+                          content: (
+                            <Inline space="space.050" alignBlock="center">
+                              <Text><Code>{variable.name}</Code></Text>
+                              {variable.description && (
+                                <Tooltip content={variable.description} position="right">
+                                  <Icon glyph="question-circle" size="small" label="" />
+                                </Tooltip>
+                              )}
+                            </Inline>
+                          )
+                        },
+                        {
+                          key: 'value',
+                          content: variable.multiline ? (
+                            <TextArea
+                              placeholder={variable.example ? `e.g., ${variable.example}` : `Enter value for ${variable.name}`}
+                              value={variableValues[variable.name] || ''}
+                              resize="smart"
+                              onChange={(e) => {
+                                setVariableValues({
+                                  ...variableValues,
+                                  [variable.name]: e.target.value
+                                });
+                              }}
+                            />
+                          ) : (
+                            <Textfield
+                              placeholder={variable.example ? `e.g., ${variable.example}` : `Enter value for ${variable.name}`}
+                              value={variableValues[variable.name] || ''}
+                              onChange={(e) => {
+                                setVariableValues({
+                                  ...variableValues,
+                                  [variable.name]: e.target.value
+                                });
+                              }}
+                            />
+                          )
+                        }
+                      ]
+                    }))}
                   />
-                  {toggle.description && (
-                    <Text><Em>{toggle.description}</Em></Text>
-                  )}
-                  <Text>{' '}</Text>
-                </Fragment>
-              ))}
-              <Button appearance="primary" onClick={handleSave}>Save Toggles</Button>
-            </Fragment>
-          ) : (
-            <Text>No toggles defined in this excerpt.</Text>
-          )}
+                </Stack>
+              </Box>
+            )}
+
+            {(!excerpt.variables || excerpt.variables.length === 0) && (
+              <Text>No variables defined for this excerpt.</Text>
+            )}
+
+            <Box xcss={previewBoxStyle}>
+                {isAdf ? (
+                  <AdfRenderer document={previewContent} />
+                ) : (
+                  <Text>{previewContent || 'No content'}</Text>
+                )}
+              </Box>
+          </Stack>
         </TabPanel>
 
+        {/* Variants Tab - Toggles */}
         <TabPanel>
-          {excerpt.variables && excerpt.variables.length > 0 ? (
-            <Fragment>
-              {excerpt.variables.map(variable => (
-                <Fragment key={variable.name}>
-                  <Text><Code>{`{{${variable.name}}}`}</Code></Text>
-                  <Textfield
-                    label={`{{${variable.name}}}`}
-                    placeholder={`Value for ${variable.name}`}
-                    value={variableValues[variable.name] || ''}
-                    onChange={(e) => {
-                      setVariableValues({
-                        ...variableValues,
-                        [variable.name]: e.target.value
-                      });
-                    }}
-                  />
-                  {variable.description && (
-                    <Textfield
-                      label="Description"
-                      value={variable.description}
-                      isReadOnly
+          <Stack space="space.200">
+            {excerpt.toggles && excerpt.toggles.length > 0 ? (
+              <Stack space="space.150">
+                <Text><Strong>Content Toggles:</Strong></Text>
+
+                {excerpt.toggles.map(toggle => (
+                  <Stack key={toggle.name} space="space.050">
+                    <Text><Strong>{toggle.name}</Strong></Text>
+                    {toggle.description && (
+                      <Text><Em>{toggle.description}</Em></Text>
+                    )}
+                    <Toggle
+                      isChecked={toggleStates[toggle.name] || false}
+                      onChange={(e) => {
+                        setToggleStates({
+                          ...toggleStates,
+                          [toggle.name]: e.target.checked
+                        });
+                      }}
                     />
-                  )}
-                  {variable.example && (
-                    <Textfield
-                      label="Example"
-                      value={variable.example}
-                      isReadOnly
-                    />
-                  )}
-                  <Text>{' '}</Text>
-                </Fragment>
-              ))}
-              <Button appearance="primary" onClick={handleSave}>Save Variables</Button>
-            </Fragment>
-          ) : (
-            <Text>No variables defined in this excerpt.</Text>
-          )}
+                  </Stack>
+                ))}
+              </Stack>
+            ) : (
+              <Text>No toggles defined for this excerpt.</Text>
+            )}
+          </Stack>
         </TabPanel>
-      </Tabs>
+        </Tabs>
+      </Stack>
     );
   }
 
   // VIEW MODE: Just show the content
   const isAdf = content && typeof content === 'object' && content.type === 'doc';
 
+  console.log('View mode - rendering content, isAdf:', isAdf);
+  if (isAdf) {
+    console.log('View mode - content before cleaning:', JSON.stringify(content, null, 2));
+    const cleaned = cleanAdfForRenderer(content);
+    console.log('View mode - content after cleaning:', JSON.stringify(cleaned, null, 2));
+  }
+
   return (
     <Fragment>
       {isAdf ? (
-        <AdfRenderer document={content} />
+        <AdfRenderer document={cleanAdfForRenderer(content)} />
       ) : (
         <Text>{content}</Text>
       )}
