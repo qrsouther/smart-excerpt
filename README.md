@@ -108,15 +108,25 @@ When installing to a new Confluence environment (e.g., moving from development t
 ### Current Features (v4.83.0)
 
 ✅ **ID-Based References** - UUID-based excerpt identification for rename-safe references
+
 ✅ **Variable Substitution** - Mad-libs style variables using `{{variable-name}}` syntax
+
 ✅ **Required Field Validation** - Mark variables as required with visual indicators (asterisk, warning icon, colored status)
+
 ✅ **Category Organization** - Group excerpts by category (General, Pricing, Technical, Legal, Marketing)
+
 ✅ **Live Preview** - See rendered content as you configure Includes
+
 ✅ **Optimistic Rendering** - Instant page loads with background content refresh
+
 ✅ **Automatic Updates** - Includes update when Source excerpts are edited
+
 ✅ **Hyphenated Variable Names** - Full support for variable names with hyphens (e.g., `{{stack-model}}`)
+
 ✅ **Rich Text Content** - Full WYSIWYG editing for Source macros with bold, italic, tables, and more
+
 ✅ **Free Write Feature** - Insert custom paragraph content at chosen positions within Include macros
+
 ✅ **Toggle Content Blocks** - Show/hide sections using `{{toggle:name}}` syntax
 
 ### In Development
