@@ -9,6 +9,10 @@ import ForgeReconciler, {
   Box,
   Modal,
   ModalTransition,
+  ModalHeader,
+  ModalTitle,
+  ModalBody,
+  ModalFooter,
   Stack,
   Inline,
   Lozenge,
@@ -19,6 +23,8 @@ import ForgeReconciler, {
   TabList,
   TabPanel,
   AdfRenderer,
+  DynamicTable,
+  Icon,
   xcss
 } from '@forge/react';
 import { invoke, router } from '@forge/bridge';
@@ -34,6 +40,20 @@ const cardStyles = xcss({
   backgroundColor: 'color.background.neutral.subtle',
   minWidth: '250px',
   flex: '1 1 250px'
+});
+
+// Full-width table container
+const fullWidthTableStyle = xcss({
+  width: '100%'
+});
+
+// Preview content border styling (matches Include macro preview)
+const previewBoxStyle = xcss({
+  borderColor: 'color.border',
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderRadius: 'border.radius',
+  padding: 'space.200'
 });
 
 // Sidebar styling
@@ -242,6 +262,16 @@ const App = () => {
               isDisabled={isCheckingSources}
             >
               {isCheckingSources ? 'Checking...' : '🔍 Check All Sources'}
+            </Button>
+
+            <Button
+              appearance="primary"
+              onClick={() => {
+                // Placeholder - functionality to be implemented
+                console.log('Check All Includes clicked');
+              }}
+            >
+              🔍 Check All Includes
             </Button>
 
             {(orphanedUsage.length > 0 || orphanedSources.length > 0) && (
@@ -519,40 +549,128 @@ const App = () => {
             ) : (
               // Regular excerpt
               <Fragment>
-                <Text><Strong>{selectedExcerpt.name}</Strong></Text>
-                <Text>{' '}</Text>
+                <ModalHeader>
+                  <Inline space="space.100" alignBlock="center">
+                    <ModalTitle>{selectedExcerpt.name}</ModalTitle>
+                    <Lozenge appearance="default">{String(selectedExcerpt.category || 'General')}</Lozenge>
+                  </Inline>
+                </ModalHeader>
 
-                <Tabs>
+                <ModalBody>
+                  <Tabs>
                   <TabList>
-                    <Tab>Details</Tab>
+                    <Tab>Inclusions</Tab>
                     <Tab>Preview</Tab>
                   </TabList>
 
                   <TabPanel>
-                    <Text>Category: {String(selectedExcerpt.category || 'General')}</Text>
-                    <Text>Variables: {Array.isArray(selectedExcerpt.variables) ? selectedExcerpt.variables.length : 0}</Text>
-                    <Text>Toggles: {Array.isArray(selectedExcerpt.toggles) ? selectedExcerpt.toggles.length : 0}</Text>
-                    <Text>{' '}</Text>
+                    <Box xcss={fullWidthTableStyle}>
+                      <Stack space="space.200">
+                      {(() => {
+                        const usage = usageData[selectedExcerpt.id] || [];
+                        const usageCount = Array.isArray(usage) ? usage.length : 0;
+                        const hasToggles = Array.isArray(selectedExcerpt.toggles) && selectedExcerpt.toggles.length > 0;
 
-                    <Text><Strong>Usage</Strong></Text>
-                    {(() => {
-                      const usage = usageData[selectedExcerpt.id] || [];
-                      const usageCount = Array.isArray(usage) ? usage.length : 0;
-                      return (
-                        <Fragment>
-                          <Text>Used on {usageCount} page(s)</Text>
-                          {usageCount > 0 && (
-                            <Fragment>
-                              {usage.map((ref, idx) => (
-                                <Text key={idx}>  - {String(ref.pageTitle || 'Unknown Page')}</Text>
-                              ))}
-                            </Fragment>
-                          )}
-                        </Fragment>
-                      );
-                    })()}
-                    <Text>{' '}</Text>
+                        // Build header cells - start with Page column (no width constraints)
+                        const headerCells = [
+                          {
+                            key: 'page',
+                            content: 'Page',
+                            isSortable: true
+                          }
+                        ];
 
+                        // Add toggle columns if excerpt has toggles
+                        if (hasToggles) {
+                          selectedExcerpt.toggles.forEach(toggle => {
+                            headerCells.push({
+                              key: `toggle-${toggle.name}`,
+                              content: toggle.name,
+                              isSortable: true
+                            });
+                          });
+                        }
+
+                        return (
+                          <Stack space="space.200">
+                            <Text>Included in the following {usageCount} page(s)</Text>
+                            {usageCount > 0 && (
+                              <Box xcss={fullWidthTableStyle}>
+                                <DynamicTable
+                                  head={{
+                                    cells: headerCells
+                                  }}
+                                  rows={usage.map((ref, idx) => {
+                                    // Build row cells - start with Page cell
+                                    const rowCells = [
+                                      {
+                                        key: 'page',
+                                        content: (
+                                          <Button
+                                            appearance="link"
+                                            onClick={async () => {
+                                              try {
+                                                // Build URL with optional heading anchor
+                                                let url = `/wiki/pages/viewpage.action?pageId=${ref.pageId}`;
+                                                if (ref.headingAnchor) {
+                                                  url += `#${ref.headingAnchor}`;
+                                                }
+                                                await router.open(url);
+                                              } catch (err) {
+                                                console.error('Navigation error:', err);
+                                              }
+                                            }}
+                                          >
+                                            {String(ref.pageTitle || 'Unknown Page')}
+                                          </Button>
+                                        )
+                                      }
+                                    ];
+
+                                    // Add toggle state cells if excerpt has toggles
+                                    if (hasToggles) {
+                                      selectedExcerpt.toggles.forEach(toggle => {
+                                        const toggleState = ref.toggleStates?.[toggle.name] || false;
+                                        rowCells.push({
+                                          key: `toggle-${toggle.name}`,
+                                          content: toggleState ? (
+                                            <Icon glyph="check-circle" label="Enabled" color="color.icon.success" />
+                                          ) : (
+                                            <Icon glyph="cross-circle" label="Disabled" color="color.icon.danger" />
+                                          )
+                                        });
+                                      });
+                                    }
+
+                                    return {
+                                      key: `page-${idx}`,
+                                      cells: rowCells
+                                    };
+                                  })}
+                                />
+                              </Box>
+                            )}
+                          </Stack>
+                        );
+                      })()}
+                      </Stack>
+                    </Box>
+                  </TabPanel>
+
+                  <TabPanel>
+                    <Box xcss={previewBoxStyle}>
+                      {selectedExcerpt.content && typeof selectedExcerpt.content === 'object' ? (
+                        <AdfRenderer document={selectedExcerpt.content} />
+                      ) : (
+                        <Text>{selectedExcerpt.content || 'No content stored'}</Text>
+                      )}
+                    </Box>
+                  </TabPanel>
+                </Tabs>
+                </ModalBody>
+
+                <ModalFooter>
+                  <Inline space="space.100">
                     {selectedExcerpt.sourcePageId && (
                       <Button
                         appearance="link"
@@ -576,18 +694,8 @@ const App = () => {
                     >
                       Delete
                     </Button>
-                  </TabPanel>
-
-                  <TabPanel>
-                    <Text><Strong>Stored Macro Content:</Strong></Text>
-                    <Text>{' '}</Text>
-                    {selectedExcerpt.content && typeof selectedExcerpt.content === 'object' ? (
-                      <AdfRenderer document={selectedExcerpt.content} />
-                    ) : (
-                      <Text>{selectedExcerpt.content || 'No content stored'}</Text>
-                    )}
-                  </TabPanel>
-                </Tabs>
+                  </Inline>
+                </ModalFooter>
               </Fragment>
             )}
           </Modal>

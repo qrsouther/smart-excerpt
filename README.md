@@ -4,7 +4,7 @@ A high-performance Forge app for Confluence that enables reusable content blocks
 
 ## 🎯 Current Implementation
 
-**Version:** 3.55.0
+**Version:** 4.83.0
 **Architecture:** Option 4 - Optimistic Rendering with Background Refresh
 
 ### How It Works
@@ -85,20 +85,39 @@ forge install --site qrsouther.atlassian.net
 forge install --upgrade
 ```
 
+### Production Installation Configuration
+
+When installing to a new Confluence environment (e.g., moving from development to production), you must update the Admin View link URL:
+
+1. **Install the app** to your production Confluence site
+2. **Access the Admin page** via: Settings → Manage apps → SmartExcerpt Admin
+3. **Copy the full URL** from your browser's address bar
+4. **Update the code** in `src/include-display.jsx` (around line 459):
+   ```javascript
+   // Find this line and replace with your production URL
+   await router.navigate('/wiki/admin/forge?id=ari%3Acloud%3A...');
+   ```
+5. **Redeploy** with `forge deploy` and upgrade with `forge install --upgrade`
+
+**Why this is needed:** The Admin page URL contains an extension ID that is unique per installation and cannot be determined programmatically. The "Admin View" button in Include macros uses this URL to provide quick access to the admin panel.
+
 ---
 
 ## ✨ Features
 
-### Current Features (v3.55.0)
+### Current Features (v4.83.0)
 
 ✅ **ID-Based References** - UUID-based excerpt identification for rename-safe references
 ✅ **Variable Substitution** - Mad-libs style variables using `{{variable-name}}` syntax
+✅ **Required Field Validation** - Mark variables as required with visual indicators (asterisk, warning icon, colored status)
 ✅ **Category Organization** - Group excerpts by category (General, Pricing, Technical, Legal, Marketing)
 ✅ **Live Preview** - See rendered content as you configure Includes
 ✅ **Optimistic Rendering** - Instant page loads with background content refresh
 ✅ **Automatic Updates** - Includes update when Source excerpts are edited
 ✅ **Hyphenated Variable Names** - Full support for variable names with hyphens (e.g., `{{stack-model}}`)
 ✅ **Rich Text Content** - Full WYSIWYG editing for Source macros with bold, italic, tables, and more
+✅ **Free Write Feature** - Insert custom paragraph content at chosen positions within Include macros
+✅ **Toggle Content Blocks** - Show/hide sections using `{{toggle:name}}` syntax
 
 ### In Development
 
@@ -271,6 +290,27 @@ The {{client}} is a {{stack-model}} organization.
 
 Variables are automatically detected and can be filled in when configuring Includes.
 
+### Free Write Feature
+The Free Write feature allows you to insert custom paragraph content at specific positions within an Include macro:
+
+1. Open an Include macro in edit mode
+2. Navigate to the "Free Write" tab
+3. Select a paragraph position from the dropdown (shows last sentence of each paragraph)
+4. Enter your custom paragraph text
+5. Click "Add Custom Paragraph"
+6. Your custom content will appear in the preview and be inserted at that position when rendered
+
+**Use Cases:**
+- Add client-specific context between standard paragraphs
+- Insert custom disclaimers or notes
+- Personalize template content without modifying the Source excerpt
+
+**Features:**
+- Add multiple custom paragraphs at different positions
+- Remove custom paragraphs individually
+- Auto-saves with other Include configurations
+- Appears immediately in live preview
+
 ---
 
 ## 🐛 Troubleshooting
@@ -341,6 +381,9 @@ forge install --upgrade
 
 ## 📝 Development Log
 
+**v4.83.0** - Added Free Write feature: insert custom paragraphs at chosen positions in Include macros
+**v4.75.0** - Added required field validation for variables with visual indicators
+**v4.72.0** - Investigated TextArea multi-line support, discovered incompatibility with Forge UI Kit macros
 **v3.55.0** - Added rich text editing support for Source macros using bodied macro layout
 **v3.54.0** - Merged Option 4 (Optimistic Rendering) into main app
 **v3.53.0** - Fixed loading state display (no more error flash)

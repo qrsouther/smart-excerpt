@@ -17,6 +17,7 @@ import ForgeReconciler, {
   Tab,
   TabList,
   TabPanel,
+  Inline,
   useForm,
   useConfig,
   useProductContext
@@ -41,10 +42,7 @@ const App = () => {
   const [toggleMetadata, setToggleMetadata] = useState({});
   const [isLoadingExcerpt, setIsLoadingExcerpt] = useState(false);
 
-  console.log('Source config - config:', config);
-  console.log('Source config - excerptName:', config.excerptName);
-  console.log('Source config - category:', config.category);
-  console.log('Source config - macroBody:', macroBody);
+  // Config loaded
 
   // Load excerpt data from storage if we have an excerptId
   // Storage is the source of truth for all excerpt data including name/category
@@ -61,7 +59,6 @@ const App = () => {
       setIsLoadingExcerpt(true);
       try {
         const result = await invoke('getExcerpt', { excerptId });
-        console.log('Loaded excerpt from storage:', result);
 
         if (result.success && result.excerpt) {
           // Load name and category from storage (source of truth)
@@ -75,7 +72,7 @@ const App = () => {
               metadata[v.name] = {
                 description: v.description || '',
                 example: v.example || '',
-                multiline: v.multiline || false
+                required: v.required || false
               };
             });
             setVariableMetadata(metadata);
@@ -155,18 +152,10 @@ const App = () => {
   ];
 
   const onSubmit = async (formData) => {
-    console.log('=== FORM SUBMIT CALLED ===');
-    console.log('Form data:', formData);
-    console.log('State values:', { excerptName, category });
-    console.log('Macro body (ADF):', macroBody);
-    console.log('Variable metadata:', variableMetadata);
-    console.log('Toggle metadata:', toggleMetadata);
-
     // Try to get context from router
     let pageContext;
     try {
       pageContext = await router.getContext();
-      console.log('Router context:', pageContext);
     } catch (err) {
       console.error('Error getting router context:', err);
     }
@@ -176,7 +165,7 @@ const App = () => {
       name: v.name,
       description: variableMetadata[v.name]?.description || '',
       example: variableMetadata[v.name]?.example || '',
-      multiline: variableMetadata[v.name]?.multiline || false
+      required: variableMetadata[v.name]?.required || false
     }));
 
     // Merge detected toggles with their metadata
@@ -185,16 +174,10 @@ const App = () => {
       description: toggleMetadata[t.name]?.description || ''
     }));
 
-    console.log('Saving excerpt with name:', excerptName, 'category:', category);
-    console.log('useProductContext:', context);
-    console.log('router.getContext:', pageContext);
-
     // Extract page info from pageContext (router) if available
     const sourcePageId = pageContext?.extension?.content?.id || context?.contentId;
     const sourcePageTitle = pageContext?.extension?.content?.title || context?.contentTitle;
     const sourceSpaceKey = pageContext?.extension?.space?.key || context?.spaceKey;
-
-    console.log('Extracted page info:', { sourcePageId, sourcePageTitle, sourceSpaceKey });
 
     const result = await invoke('saveExcerpt', {
       excerptName,
@@ -209,8 +192,6 @@ const App = () => {
       sourceLocalId: context?.localId  // Track the Source macro's localId
     });
 
-    console.log('Save result:', result);
-
     // Only submit the config fields (not the content, which is in the body)
     // Use the current state values to ensure we save what the user typed
     const configToSubmit = {
@@ -221,8 +202,6 @@ const App = () => {
       toggles: result.toggles
       // NOTE: Do NOT include content in config - it's stored in the macro body
     };
-
-    console.log('Submitting config to view:', { config: configToSubmit });
 
     // Save the configuration to the macro using view.submit()
     // This will close the modal after the promise resolves
@@ -284,7 +263,26 @@ const App = () => {
                 {detectedVariables.map((variable) => (
                   <Fragment key={variable.name}>
                     <Text>{' '}</Text>
-                    <Text><Strong><Code>{`{{${variable.name}}}`}</Code></Strong></Text>
+                    <Inline space="space.300" alignBlock="center" spread="space-between">
+                      <Text><Strong><Code>{`{{${variable.name}}}`}</Code></Strong></Text>
+                      <Inline space="space.100" alignBlock="center">
+                        <Text>Required</Text>
+                        <Toggle
+                          id={`required-${variable.name}`}
+                          isChecked={variableMetadata[variable.name]?.required || false}
+                          isDisabled={isLoadingExcerpt}
+                          onChange={(e) => {
+                            setVariableMetadata({
+                              ...variableMetadata,
+                              [variable.name]: {
+                                ...variableMetadata[variable.name],
+                                required: e.target.checked
+                              }
+                            });
+                          }}
+                        />
+                      </Inline>
+                    </Inline>
                     <Textfield
                       label="Description"
                       placeholder={isLoadingExcerpt ? 'Loading...' : 'Description'}
@@ -311,23 +309,6 @@ const App = () => {
                           [variable.name]: {
                             ...variableMetadata[variable.name],
                             example: e.target.value
-                          }
-                        });
-                      }}
-                    />
-                    <Label labelFor={`multiline-${variable.name}`}>
-                      Allow multi-line input
-                    </Label>
-                    <Toggle
-                      id={`multiline-${variable.name}`}
-                      isChecked={variableMetadata[variable.name]?.multiline || false}
-                      isDisabled={isLoadingExcerpt}
-                      onChange={(e) => {
-                        setVariableMetadata({
-                          ...variableMetadata,
-                          [variable.name]: {
-                            ...variableMetadata[variable.name],
-                            multiline: e.target.checked
                           }
                         });
                       }}

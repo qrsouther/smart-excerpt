@@ -26,6 +26,40 @@ function extractTextFromAdf(adfNode) {
   return text;
 }
 
+// Find the heading that appears directly before a macro with a specific localId
+function findHeadingBeforeMacro(adfDoc, targetLocalId) {
+  if (!adfDoc || !adfDoc.content) return null;
+
+  let lastHeading = null;
+
+  // Recursively traverse the ADF structure
+  function traverse(nodes) {
+    for (const node of nodes) {
+      // Track the most recent heading
+      if (node.type === 'heading' && node.content) {
+        lastHeading = extractTextFromAdf(node);
+      }
+
+      // Check if this is the target macro (extension or bodiedExtension)
+      if ((node.type === 'extension' || node.type === 'bodiedExtension') &&
+          node.attrs?.localId === targetLocalId) {
+        return lastHeading;
+      }
+
+      // Recursively check children
+      if (node.content && Array.isArray(node.content)) {
+        const result = traverse(node.content);
+        if (result !== null && result !== undefined) {
+          return result;
+        }
+      }
+    }
+    return null;
+  }
+
+  return traverse(adfDoc.content);
+}
+
 // Detect variables in content ({{variable}} syntax)
 // Supports both plain text and ADF format
 // Note: Excludes toggle markers from variable detection
@@ -168,7 +202,8 @@ resolver.define('saveExcerpt', async (req) => {
     return {
       name: v.name,
       description: metadata?.description || '',
-      example: metadata?.example || ''
+      example: metadata?.example || '',
+      required: metadata?.required || false
     };
   });
 
@@ -331,19 +366,73 @@ resolver.define('updateExcerptContent', async (req) => {
 // We'll store this keyed by localId (unique ID for each macro instance)
 resolver.define('saveVariableValues', async (req) => {
   try {
-    const { localId, excerptId, variableValues, toggleStates } = req.payload;
-    console.log('Saving variable values for localId:', localId, 'excerptId:', excerptId);
-    console.log('Toggle states:', toggleStates);
+    const { localId, excerptId, variableValues, toggleStates, customInsertions } = req.payload;
 
     const key = `macro-vars:${localId}`;
     await storage.set(key, {
       excerptId,
       variableValues,
       toggleStates: toggleStates || {},
+      customInsertions: customInsertions || [],
       updatedAt: new Date().toISOString()
     });
 
-    console.log('Variable values and toggle states saved successfully');
+    // Also update usage tracking with the latest toggle states
+    // This ensures toggle states are always current in the usage data
+    try {
+      // Get page context
+      const pageId = req.context?.extension?.content?.id;
+      const spaceKey = req.context?.extension?.space?.key || 'Unknown Space';
+
+      if (pageId && excerptId && localId) {
+        // Fetch page title
+        let pageTitle = 'Unknown Page';
+        let headingAnchor = null;
+
+        try {
+          const response = await api.asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`);
+          const pageData = await response.json();
+          pageTitle = pageData.title || 'Unknown Page';
+
+          // Parse the ADF to find the heading above this Include macro
+          if (pageData.body?.atlas_doc_format?.value) {
+            const adfContent = JSON.parse(pageData.body.atlas_doc_format.value);
+            headingAnchor = findHeadingBeforeMacro(adfContent, localId);
+          }
+        } catch (apiError) {
+          console.error('Error fetching page data:', apiError);
+          pageTitle = req.context?.extension?.content?.title || 'Unknown Page';
+        }
+
+        // Update usage data
+        const usageKey = `usage:${excerptId}`;
+        const usageData = await storage.get(usageKey) || { excerptId, references: [] };
+
+        const existingIndex = usageData.references.findIndex(r => r.localId === localId);
+
+        const reference = {
+          localId,
+          pageId,
+          pageTitle,
+          spaceKey,
+          headingAnchor,
+          toggleStates: toggleStates || {},
+          updatedAt: new Date().toISOString()
+        };
+
+        if (existingIndex >= 0) {
+          usageData.references[existingIndex] = reference;
+        } else {
+          usageData.references.push(reference);
+        }
+
+        await storage.set(usageKey, usageData);
+      }
+    } catch (trackingError) {
+      // Don't fail the save if tracking fails
+      console.error('Error updating usage tracking:', trackingError);
+    }
+
     return {
       success: true
     };
@@ -357,6 +446,32 @@ resolver.define('saveVariableValues', async (req) => {
 });
 
 // Get variable values and toggle states for a specific macro instance
+// Get page title via Confluence API
+resolver.define('getPageTitle', async (req) => {
+  try {
+    const { contentId } = req.payload;
+    console.log('Fetching page title for contentId:', contentId);
+
+    const response = await api.asApp().requestConfluence(route`/wiki/api/v2/pages/${contentId}`);
+    const pageData = await response.json();
+
+    console.log('Page data fetched:', pageData);
+    console.log('Page title:', pageData.title);
+
+    return {
+      success: true,
+      title: pageData.title || ''
+    };
+  } catch (error) {
+    console.error('Error fetching page title:', error);
+    return {
+      success: false,
+      error: error.message,
+      title: ''
+    };
+  }
+});
+
 resolver.define('getVariableValues', async (req) => {
   try {
     const { localId } = req.payload;
@@ -367,7 +482,8 @@ resolver.define('getVariableValues', async (req) => {
     return {
       success: true,
       variableValues: data?.variableValues || {},
-      toggleStates: data?.toggleStates || {}
+      toggleStates: data?.toggleStates || {},
+      customInsertions: data?.customInsertions || []
     };
   } catch (error) {
     console.error('Error getting variable values:', error);
@@ -375,7 +491,8 @@ resolver.define('getVariableValues', async (req) => {
       success: false,
       error: error.message,
       variableValues: {},
-      toggleStates: {}
+      toggleStates: {},
+      customInsertions: []
     };
   }
 });
@@ -506,16 +623,9 @@ resolver.define('trackExcerptUsage', async (req) => {
   try {
     const { excerptId, localId } = req.payload;
 
-    console.log('=== TRACK USAGE BACKEND ===');
-    console.log('Payload:', req.payload);
-    console.log('req.context:', req.context);
-
-    // Extract page information from backend context (frontend doesn't have access to this)
+    // Extract page information from backend context
     const pageId = req.context?.extension?.content?.id;
-    const pageTitle = req.context?.extension?.content?.title || 'Unknown Page';
     const spaceKey = req.context?.extension?.space?.key || 'Unknown Space';
-
-    console.log('Extracted from req.context:', { pageId, pageTitle, spaceKey });
 
     if (!pageId) {
       console.error('CRITICAL: pageId not available in req.context');
@@ -523,6 +633,37 @@ resolver.define('trackExcerptUsage', async (req) => {
         success: false,
         error: 'Page context not available'
       };
+    }
+
+    // Fetch page data including title and body (ADF content)
+    let pageTitle = 'Unknown Page';
+    let headingAnchor = null;
+
+    try {
+      const response = await api.asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`);
+      const pageData = await response.json();
+      pageTitle = pageData.title || 'Unknown Page';
+
+      // Parse the ADF to find the heading above this Include macro
+      if (pageData.body?.atlas_doc_format?.value) {
+        const adfContent = JSON.parse(pageData.body.atlas_doc_format.value);
+        headingAnchor = findHeadingBeforeMacro(adfContent, localId);
+      }
+    } catch (apiError) {
+      console.error('Error fetching page data via API:', apiError);
+      // Fall back to context title if API fails
+      pageTitle = req.context?.extension?.content?.title || 'Unknown Page';
+    }
+
+    // Fetch toggle states from storage (saved during auto-save)
+    let toggleStates = {};
+    try {
+      const macroVars = await storage.get(`macro-vars:${localId}`);
+      if (macroVars?.toggleStates) {
+        toggleStates = macroVars.toggleStates;
+      }
+    } catch (storageError) {
+      console.error('Error fetching toggle states:', storageError);
     }
 
     // Store usage data in a reverse index
@@ -537,27 +678,28 @@ resolver.define('trackExcerptUsage', async (req) => {
       pageId,
       pageTitle,
       spaceKey,
+      headingAnchor,
+      toggleStates,
       updatedAt: new Date().toISOString()
     };
 
     if (existingIndex >= 0) {
       // Update existing reference
-      console.log('Updating existing usage reference for localId:', localId);
       usageData.references[existingIndex] = reference;
     } else {
       // Add new reference
-      console.log('Adding new usage reference for localId:', localId);
       usageData.references.push(reference);
     }
 
     await storage.set(usageKey, usageData);
 
-    console.log('✅ Usage tracked successfully for excerpt:', excerptId, 'on page:', pageTitle);
     return {
       success: true,
       pageId,
       pageTitle,
-      spaceKey
+      spaceKey,
+      headingAnchor,
+      toggleStates
     };
   } catch (error) {
     console.error('Error tracking excerpt usage:', error);

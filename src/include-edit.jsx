@@ -155,7 +155,7 @@ const App = () => {
       <Tabs>
         <TabList>
           <Tab>Write</Tab>
-          <Tab>Variants</Tab>
+          <Tab>Alternatives</Tab>
         </TabList>
 
         {/* Write Tab - Variables + Live Preview */}
@@ -207,7 +207,7 @@ const App = () => {
           )}
         </TabPanel>
 
-        {/* Variants Tab - Toggles */}
+        {/* Alternatives Tab - Toggles */}
         <TabPanel>
           {excerpt.toggles && excerpt.toggles.length > 0 ? (
             <Fragment>

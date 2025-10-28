@@ -4,8 +4,8 @@ import ForgeReconciler, {
   Strong,
   Em,
   Code,
+  Heading,
   Textfield,
-  TextArea,
   Toggle,
   Button,
   Tabs,
@@ -20,12 +20,13 @@ import ForgeReconciler, {
   Box,
   Spinner,
   SectionMessage,
+  Select,
   xcss,
   useConfig,
   useProductContext,
   AdfRenderer
 } from '@forge/react';
-import { invoke } from '@forge/bridge';
+import { invoke, router } from '@forge/bridge';
 
 // Style for preview border
 const previewBoxStyle = xcss({
@@ -34,6 +35,24 @@ const previewBoxStyle = xcss({
   borderStyle: 'solid',
   borderRadius: 'border.radius',
   padding: 'space.200'
+});
+
+// Style for full-width variable table container
+const variableBoxStyle = xcss({
+  width: '100%',
+  backgroundColor: 'color.background.neutral',
+  paddingBlockStart: 'space.200',
+  paddingBlockEnd: 'space.100',
+  paddingInline: 'space.100'
+});
+
+// Style for required field warning border
+const requiredFieldStyle = xcss({
+  borderColor: 'color.border.warning',
+  borderWidth: 'border.width.outline',
+  borderStyle: 'solid',
+  borderRadius: 'border.radius',
+  padding: 'space.050'
 });
 
 // Helper function to clean ADF for Forge's AdfRenderer
@@ -250,6 +269,106 @@ const substituteVariablesInAdf = (adfNode, variableValues) => {
   return adfNode;
 };
 
+// Helper function to insert custom paragraphs into ADF content
+// customInsertions is an array of { position: number, text: string }
+const insertCustomParagraphsInAdf = (adfNode, customInsertions) => {
+  if (!adfNode || !adfNode.content || !customInsertions || customInsertions.length === 0) {
+    return adfNode;
+  }
+
+  const newContent = [];
+  let paragraphIndex = 0;
+
+  // Traverse content and insert custom paragraphs after specified positions
+  adfNode.content.forEach(node => {
+    // Add the original node
+    newContent.push(node);
+
+    // If this is a paragraph, check if we need to insert custom content after it
+    if (node.type === 'paragraph') {
+      // Find all insertions for this position
+      const insertionsHere = customInsertions.filter(ins => ins.position === paragraphIndex);
+
+      insertionsHere.forEach(insertion => {
+        // Create a new paragraph node with the custom text
+        newContent.push({
+          type: 'paragraph',
+          content: [
+            {
+              type: 'text',
+              text: insertion.text
+            }
+          ]
+        });
+      });
+
+      paragraphIndex++;
+    }
+  });
+
+  return {
+    ...adfNode,
+    content: newContent
+  };
+};
+
+// Helper function to extract paragraphs from ADF content
+// Returns array of { index, lastSentence, fullText }
+const extractParagraphsFromAdf = (adfNode) => {
+  const paragraphs = [];
+
+  if (!adfNode || !adfNode.content) return paragraphs;
+
+  const traverseContent = (node, paragraphIndex = { value: 0 }) => {
+    if (!node) return;
+
+    // If this is a paragraph node, extract text
+    if (node.type === 'paragraph') {
+      let fullText = '';
+
+      // Recursively extract text from paragraph content
+      const extractText = (contentNode) => {
+        if (!contentNode) return '';
+
+        if (contentNode.type === 'text') {
+          return contentNode.text || '';
+        }
+
+        if (contentNode.content && Array.isArray(contentNode.content)) {
+          return contentNode.content.map(child => extractText(child)).join('');
+        }
+
+        return '';
+      };
+
+      if (node.content && Array.isArray(node.content)) {
+        fullText = node.content.map(child => extractText(child)).join('');
+      }
+
+      // Extract last sentence (rough heuristic: split by period/question/exclamation)
+      const sentences = fullText.split(/[.!?]+/).filter(s => s.trim());
+      const lastSentence = sentences.length > 0 ? sentences[sentences.length - 1].trim() : fullText.trim();
+
+      if (fullText.trim()) {
+        paragraphs.push({
+          index: paragraphIndex.value,
+          lastSentence: lastSentence.substring(0, 60) + (lastSentence.length > 60 ? '...' : ''),
+          fullText: fullText
+        });
+        paragraphIndex.value++;
+      }
+    }
+
+    // Recursively traverse content
+    if (node.content && Array.isArray(node.content)) {
+      node.content.forEach(child => traverseContent(child, paragraphIndex));
+    }
+  };
+
+  traverseContent(adfNode);
+  return paragraphs;
+};
+
 const App = () => {
   const config = useConfig();
   const context = useProductContext();
@@ -258,12 +377,14 @@ const App = () => {
   const [excerpt, setExcerpt] = useState(null);
   const [variableValues, setVariableValues] = useState(config?.variableValues || {});
   const [toggleStates, setToggleStates] = useState(config?.toggleStates || {});
+  const [customInsertions, setCustomInsertions] = useState(config?.customInsertions || []);
+  const [selectedPosition, setSelectedPosition] = useState(null);
+  const [customText, setCustomText] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', or 'error'
 
-  console.log('=== INCLUDE VIEW RENDERING ===');
-  console.log('Is editing:', isEditing);
-  console.log('Include display - config:', config);
+  // Minimal logging for debugging if needed
+  // console.log('Include display - isEditing:', isEditing);
 
   // Load excerpt and content
   useEffect(() => {
@@ -273,12 +394,10 @@ const App = () => {
 
     const loadContent = async () => {
       setIsRefreshing(true);
-      console.log('Loading content for localId:', context.localId);
 
       try {
         // Load the excerpt
         const excerptResult = await invoke('getExcerpt', { excerptId: config.excerptId });
-        console.log('Excerpt loaded:', excerptResult);
 
         if (!excerptResult.success || !excerptResult.excerpt) {
           console.error('Failed to load excerpt');
@@ -287,24 +406,52 @@ const App = () => {
 
         setExcerpt(excerptResult.excerpt);
 
-        // Load saved variable values and toggle states from storage
+        // Load saved variable values, toggle states, and custom insertions from storage
         const varsResult = await invoke('getVariableValues', { localId: context.localId });
-        console.log('Loaded variable values:', varsResult.variableValues);
-        console.log('Loaded toggle states:', varsResult.toggleStates);
-
         const loadedVariableValues = varsResult.success ? varsResult.variableValues : {};
         const loadedToggleStates = varsResult.success ? varsResult.toggleStates : {};
+        const loadedCustomInsertions = varsResult.success ? varsResult.customInsertions : [];
+
+        // Auto-infer "client" variable from page title if it follows "Blueprint: [Client Name]" pattern
+        let pageTitle = '';
+        const contentId = context?.contentId || context?.extension?.content?.id;
+
+        if (contentId) {
+          try {
+            const titleResult = await invoke('getPageTitle', { contentId });
+            if (titleResult.success) {
+              pageTitle = titleResult.title;
+            }
+          } catch (err) {
+            console.error('Error fetching page title:', err);
+          }
+        }
+
+        // Only auto-infer if client is undefined, null, or empty string
+        const clientIsEmpty = !loadedVariableValues['client'] || loadedVariableValues['client'].trim() === '';
+
+        // Check if title contains "Blueprint:" and extract client name
+        if (pageTitle.includes('Blueprint:') && clientIsEmpty) {
+          const blueprintIndex = pageTitle.indexOf('Blueprint:');
+          const afterBlueprint = pageTitle.substring(blueprintIndex + 'Blueprint:'.length).trim();
+          if (afterBlueprint) {
+            loadedVariableValues['client'] = afterBlueprint;
+          }
+        }
+
         setVariableValues(loadedVariableValues);
         setToggleStates(loadedToggleStates);
+        setCustomInsertions(loadedCustomInsertions || []);
 
-        // Generate content: first filter toggles, then substitute variables
+        // Generate content: first filter toggles, then substitute variables, then insert custom paragraphs
         let freshContent = excerptResult.excerpt.content;
         const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
 
         if (isAdf) {
-          // First filter toggles, then substitute variables
+          // First filter toggles, then substitute variables, then insert custom paragraphs
           freshContent = filterContentByToggles(freshContent, loadedToggleStates);
           freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
+          freshContent = insertCustomParagraphsInAdf(freshContent, loadedCustomInsertions);
         } else {
           // For plain text, filter toggles first
           const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
@@ -324,8 +471,6 @@ const App = () => {
           }
         }
 
-        console.log('Setting content:', freshContent);
-        console.log('Content as JSON:', JSON.stringify(freshContent, null, 2));
         setContent(freshContent);
       } catch (err) {
         console.error('Error loading content:', err);
@@ -347,18 +492,15 @@ const App = () => {
 
     const timeoutId = setTimeout(async () => {
       try {
-        console.log('Auto-saving variable values:', variableValues);
-        console.log('Auto-saving toggle states:', toggleStates);
-
         const result = await invoke('saveVariableValues', {
           localId: context.localId,
           excerptId: config.excerptId,
           variableValues,
-          toggleStates
+          toggleStates,
+          customInsertions
         });
 
         if (result.success) {
-          console.log('Auto-save successful');
           setSaveStatus('saved');
         } else {
           console.error('Auto-save failed:', result.error);
@@ -371,7 +513,7 @@ const App = () => {
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [variableValues, toggleStates, isEditing, context?.localId, config?.excerptId]);
+  }, [variableValues, toggleStates, customInsertions, isEditing, context?.localId, config?.excerptId]);
 
   if (!config || !config.excerptId) {
     return <Text>SmartExcerpt Include not configured. Click Edit to select an excerpt.</Text>;
@@ -389,16 +531,11 @@ const App = () => {
     const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
     if (isAdf) {
-      // First filter toggles, then substitute variables
+      // First filter toggles, then substitute variables, then insert custom paragraphs
       previewContent = filterContentByToggles(previewContent, toggleStates);
       previewContent = substituteVariablesInAdf(previewContent, variableValues);
-
-      // Log before and after cleaning
-      console.log('Preview content before cleaning:', JSON.stringify(previewContent, null, 2));
-      const cleaned = cleanAdfForRenderer(previewContent);
-      console.log('Preview content after cleaning:', JSON.stringify(cleaned, null, 2));
-
-      return cleaned;
+      previewContent = insertCustomParagraphsInAdf(previewContent, customInsertions);
+      return cleanAdfForRenderer(previewContent);
     } else {
       // For plain text, filter toggles first
       const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
@@ -427,7 +564,24 @@ const App = () => {
     return (
       <Stack space="space.100">
         <Inline space="space.300" alignBlock="center" spread="space-between">
-          <Text><Strong>{excerpt.name}</Strong></Text>
+          <Inline space="space.100" alignBlock="center">
+            <Heading size="large">{excerpt.name}</Heading>
+            <Button
+              appearance="subtle-link"
+              onClick={async () => {
+                try {
+                  // TODO: Update this URL after installing to production environment
+                  // Current URL is for dev environment: qrsouther.atlassian.net
+                  // Format: /wiki/admin/forge?id=ari:cloud:ecosystem::extension/{appId}/{extensionId}/static/smartexcerpt-admin
+                  await router.open('/wiki/admin/forge?id=ari%3Acloud%3Aecosystem%3A%3Aextension%2Fbe1ff96b-d44d-4975-98d3-25b80a813bdd%2Fae38f536-b4c8-4dfa-a1c9-62026d61b4f9%2Fstatic%2Fsmartexcerpt-admin');
+                } catch (err) {
+                  console.error('Navigation error:', err);
+                }
+              }}
+            >
+              Admin View
+            </Button>
+          </Inline>
           <Inline space="space.100" alignBlock="center">
             {saveStatus === 'saving' && (
               <Fragment>
@@ -447,40 +601,55 @@ const App = () => {
         <Tabs>
         <TabList>
           <Tab>Write</Tab>
-          <Tab>Variants</Tab>
+          <Tab>Alternatives</Tab>
+          <Tab>Free Write</Tab>
         </TabList>
-        {/* Write Tab - Variables + Live Preview */}
+        {/* Write Tab - Variables */}
         <TabPanel>
-          <Stack space="space.200">
-            {excerpt.variables && excerpt.variables.length > 0 && (
-              <Box backgroundColor="color.background.neutral" paddingBlockStart="space.200" paddingBlockEnd="space.100" paddingInline="space.200">
-                <Stack space="space.150">
-                  <DynamicTable
-                    head={{
-                      cells: [
-                        {
-                          key: 'variable',
-                          content: 'Variable',
-                          width: 30
-                        },
-                        {
-                          key: 'value',
-                          content: 'Value',
-                          width: 70
-                        }
-                      ]
-                    }}
-                    rows={excerpt.variables.map(variable => ({
+          {excerpt.variables && excerpt.variables.length > 0 && (
+            <Box xcss={variableBoxStyle}>
+              <DynamicTable
+                  head={{
+                    cells: [
+                      {
+                        key: 'variable',
+                        content: 'Variable',
+                        width: 25
+                      },
+                      {
+                        key: 'value',
+                        content: 'Value',
+                        width: 65
+                      },
+                      {
+                        key: 'status',
+                        content: 'Status',
+                        width: 10
+                      }
+                    ]
+                  }}
+                  rows={excerpt.variables.map(variable => {
+                    const isRequired = variable.required || false;
+                    const isEmpty = !variableValues[variable.name] || variableValues[variable.name].trim() === '';
+                    const showWarning = isRequired && isEmpty;
+
+                    return {
                       key: variable.name,
                       cells: [
                         {
                           key: 'variable',
                           content: (
                             <Inline space="space.050" alignBlock="center">
+                              {isRequired && <Text><Strong>*</Strong></Text>}
                               <Text><Code>{variable.name}</Code></Text>
                               {variable.description && (
                                 <Tooltip content={variable.description} position="right">
                                   <Icon glyph="question-circle" size="small" label="" />
+                                </Tooltip>
+                              )}
+                              {showWarning && (
+                                <Tooltip content="This field is required. Please provide a value." position="right">
+                                  <Icon glyph="warning" size="small" label="Required field" color="color.icon.warning" />
                                 </Tooltip>
                               )}
                             </Inline>
@@ -488,83 +657,198 @@ const App = () => {
                         },
                         {
                           key: 'value',
-                          content: variable.multiline ? (
-                            <TextArea
-                              placeholder={variable.example ? `e.g., ${variable.example}` : `Enter value for ${variable.name}`}
-                              value={variableValues[variable.name] || ''}
-                              resize="smart"
-                              onChange={(e) => {
-                                setVariableValues({
-                                  ...variableValues,
-                                  [variable.name]: e.target.value
-                                });
-                              }}
-                            />
-                          ) : (
-                            <Textfield
-                              placeholder={variable.example ? `e.g., ${variable.example}` : `Enter value for ${variable.name}`}
-                              value={variableValues[variable.name] || ''}
-                              onChange={(e) => {
-                                setVariableValues({
-                                  ...variableValues,
-                                  [variable.name]: e.target.value
-                                });
-                              }}
-                            />
+                          content: (
+                            <Box xcss={showWarning ? requiredFieldStyle : undefined}>
+                              <Textfield
+                                placeholder={variable.example ? `e.g., ${variable.example}` : `Enter value for ${variable.name}`}
+                                value={variableValues[variable.name] || ''}
+                                onChange={(e) => {
+                                  setVariableValues({
+                                    ...variableValues,
+                                    [variable.name]: e.target.value
+                                  });
+                                }}
+                              />
+                            </Box>
+                          )
+                        },
+                        {
+                          key: 'status',
+                          content: (
+                            isEmpty ? (
+                              isRequired ? (
+                                <Icon glyph="checkbox-unchecked" label="Required - Empty" color="color.icon.danger" />
+                              ) : (
+                                <Icon glyph="checkbox-unchecked" label="Optional - Empty" color="color.icon.subtle" />
+                              )
+                            ) : (
+                              <Icon glyph="checkbox" label="Filled" color="color.icon.success" />
+                            )
                           )
                         }
                       ]
-                    }))}
-                  />
-                </Stack>
-              </Box>
-            )}
+                    };
+                  })}
+                />
+            </Box>
+          )}
 
-            {(!excerpt.variables || excerpt.variables.length === 0) && (
-              <Text>No variables defined for this excerpt.</Text>
-            )}
-
-            <Box xcss={previewBoxStyle}>
-                {isAdf ? (
-                  <AdfRenderer document={previewContent} />
-                ) : (
-                  <Text>{previewContent || 'No content'}</Text>
-                )}
-              </Box>
-          </Stack>
+          {(!excerpt.variables || excerpt.variables.length === 0) && (
+            <Text>No variables defined for this excerpt.</Text>
+          )}
         </TabPanel>
 
-        {/* Variants Tab - Toggles */}
+        {/* Alternatives Tab - Toggles */}
+        <TabPanel>
+          {excerpt.toggles && excerpt.toggles.length > 0 ? (
+            <Box xcss={variableBoxStyle}>
+              <DynamicTable
+                head={{
+                  cells: [
+                    {
+                      key: 'toggle',
+                      content: '',
+                      width: 5
+                    },
+                    {
+                      key: 'name',
+                      content: 'Toggle',
+                      width: 30
+                    },
+                    {
+                      key: 'description',
+                      content: 'Description',
+                      width: 65
+                    }
+                  ]
+                }}
+                rows={excerpt.toggles.map(toggle => ({
+                  key: toggle.name,
+                  cells: [
+                    {
+                      key: 'toggle',
+                      content: (
+                        <Toggle
+                          isChecked={toggleStates[toggle.name] || false}
+                          onChange={(e) => {
+                            setToggleStates({
+                              ...toggleStates,
+                              [toggle.name]: e.target.checked
+                            });
+                          }}
+                        />
+                      )
+                    },
+                    {
+                      key: 'name',
+                      content: <Text><Strong>{toggle.name}</Strong></Text>
+                    },
+                    {
+                      key: 'description',
+                      content: toggle.description ? <Text><Em>{toggle.description}</Em></Text> : <Text>—</Text>
+                    }
+                  ]
+                }))}
+              />
+            </Box>
+          ) : (
+            <Text>No toggles defined for this excerpt.</Text>
+          )}
+        </TabPanel>
+
+        {/* Free Write Tab - Custom paragraph insertions */}
         <TabPanel>
           <Stack space="space.200">
-            {excerpt.toggles && excerpt.toggles.length > 0 ? (
-              <Stack space="space.150">
-                <Text><Strong>Content Toggles:</Strong></Text>
+            <Text>Insert custom paragraph content at a position of your choosing:</Text>
 
-                {excerpt.toggles.map(toggle => (
-                  <Stack key={toggle.name} space="space.050">
-                    <Text><Strong>{toggle.name}</Strong></Text>
-                    {toggle.description && (
-                      <Text><Em>{toggle.description}</Em></Text>
-                    )}
-                    <Toggle
-                      isChecked={toggleStates[toggle.name] || false}
-                      onChange={(e) => {
-                        setToggleStates({
-                          ...toggleStates,
-                          [toggle.name]: e.target.checked
-                        });
-                      }}
-                    />
-                  </Stack>
-                ))}
-              </Stack>
-            ) : (
-              <Text>No toggles defined for this excerpt.</Text>
-            )}
+            {(() => {
+              // Extract paragraphs from the preview content
+              const paragraphs = extractParagraphsFromAdf(previewContent);
+
+              if (paragraphs.length === 0) {
+                return <Text><Em>No paragraphs available for insertion. Please add content first.</Em></Text>;
+              }
+
+              // Create dropdown options from paragraphs
+              const paragraphOptions = paragraphs.map(p => ({
+                label: `After paragraph ${p.index + 1}: "${p.lastSentence}"`,
+                value: p.index
+              }));
+
+              return (
+                <Fragment>
+                  <Select
+                    label="Insert custom paragraph one line below:"
+                    options={paragraphOptions}
+                    value={paragraphOptions.find(opt => opt.value === selectedPosition)}
+                    placeholder="Choose a paragraph..."
+                    onChange={(e) => setSelectedPosition(e.value)}
+                  />
+
+                  <Textfield
+                    label="Custom paragraph content"
+                    placeholder="Enter your custom paragraph text..."
+                    value={customText}
+                    onChange={(e) => setCustomText(e.target.value)}
+                    isDisabled={selectedPosition === null}
+                  />
+
+                  <Button
+                    appearance="primary"
+                    isDisabled={selectedPosition === null || !customText.trim()}
+                    onClick={() => {
+                      // Add the custom insertion
+                      const newInsertion = {
+                        position: selectedPosition,
+                        text: customText.trim()
+                      };
+                      setCustomInsertions([...customInsertions, newInsertion]);
+
+                      // Reset form
+                      setSelectedPosition(null);
+                      setCustomText('');
+                    }}
+                  >
+                    Add Custom Paragraph
+                  </Button>
+
+                  {customInsertions.length > 0 && (
+                    <Fragment>
+                      <Text><Strong>Added custom paragraphs:</Strong></Text>
+                      <Stack space="space.100">
+                        {customInsertions.map((insertion, idx) => (
+                          <Inline key={idx} space="space.100" alignBlock="center" spread="space-between">
+                            <Text>
+                              <Em>After paragraph {insertion.position + 1}:</Em> {insertion.text.substring(0, 50)}{insertion.text.length > 50 ? '...' : ''}
+                            </Text>
+                            <Button
+                              appearance="subtle"
+                              onClick={() => {
+                                setCustomInsertions(customInsertions.filter((_, i) => i !== idx));
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </Inline>
+                        ))}
+                      </Stack>
+                    </Fragment>
+                  )}
+                </Fragment>
+              );
+            })()}
           </Stack>
         </TabPanel>
         </Tabs>
+
+        {/* Preview - Always visible below tabs */}
+        <Box xcss={previewBoxStyle}>
+          {isAdf ? (
+            <AdfRenderer document={previewContent} />
+          ) : (
+            <Text>{previewContent || 'No content'}</Text>
+          )}
+        </Box>
       </Stack>
     );
   }
