@@ -113,7 +113,9 @@ When installing to a new Confluence environment (e.g., moving from development t
 
 ✅ **Required Field Validation** - Mark variables as required with visual indicators (asterisk, warning icon, colored status)
 
-✅ **Category Organization** - Group excerpts by category (General, Pricing, Technical, Legal, Marketing)
+✅ **Category Organization** - Group excerpts by category with customizable categories
+
+✅ **Category Management** - Add, edit, delete, and reorder categories via Admin UI
 
 ✅ **Live Preview** - See rendered content as you configure Includes
 
@@ -133,11 +135,29 @@ When installing to a new Confluence environment (e.g., moving from development t
 
 ✅ **Toggle Content Blocks** - Show/hide sections using `{{toggle:name}}` syntax
 
+✅ **Advanced Search & Filtering** - Search excerpts by name, filter by category, sort by name/usage/category
+
+✅ **Excerpt Usage Reporting** - Detailed view of which pages use each excerpt, with variable values and toggle states
+
+✅ **Bulk Operations** - Mass update categories, push updates to all instances or specific pages
+
+✅ **Push-Based Updates** - Manually push Source updates to all Include instances or specific pages from Admin UI
+
+✅ **Orphaned Source Detection** - Active checking to identify Sources deleted from their pages with remediation options
+
+✅ **Orphaned Include Detection** - Identify Includes referencing deleted Sources with cleanup capabilities
+
+✅ **Heading Anchor Navigation** - Direct navigation to excerpt locations within pages via heading anchors
+
+✅ **Usage Deduplication** - Smart display of unique page usage, eliminating duplicate entries
+
+✅ **Timestamp Tracking** - Track and display when Sources were last modified and when Includes last synced
+
 ### In Development
 
-⏳ Advanced search and filtering for excerpts
-⏳ Bulk excerpt management tools
+⏳ Check All Includes - Verify all Include instances and clean up stale references
 ⏳ Content versioning and history
+⏳ Export/import excerpts
 
 ---
 
@@ -354,6 +374,83 @@ When viewing a published page with Include macros, the app automatically detects
 
 ---
 
+## 🎛️ Admin UI Features
+
+Access the Admin UI via: **Settings → Manage apps → SmartExcerpt Admin**
+
+### Search, Filter & Sort
+- **Search by Name:** Real-time search across all excerpt names
+- **Filter by Category:** Dropdown to filter excerpts by category
+- **Sort Options:**
+  - Name (A-Z or Z-A)
+  - Most/Least Used (by number of pages referencing the excerpt)
+  - Category (alphabetical)
+
+### Excerpt Usage Reporting
+Click any excerpt to view detailed usage information:
+- **Usage Table:** Shows all pages using the excerpt
+- **Variable Values:** Display current values for each variable on each page
+- **Toggle States:** Visual indicators (✓/✗) showing enabled/disabled toggles
+- **Status Column:** "Up to date" or "Update Available" with timestamps
+- **Heading Anchors:** Navigate directly to specific sections within pages
+- **Deduplication:** Smart display shows unique pages (not duplicate macro instances)
+
+### Bulk Operations
+- **Mass Category Updates:** Change category for multiple excerpts at once
+- **Push to All Pages:** Update all Include instances of an excerpt simultaneously
+- **Push to Specific Page:** Update only the instances on a particular page
+- **Individual Push Updates:** Per-page update buttons in usage table
+
+### Push-Based Updates
+When a Source is modified, you can manually push updates to Includes:
+1. **Automatic Detection:** Admin UI shows which Includes are stale (Source newer than Include)
+2. **Selective Updates:** Choose to update all instances or specific pages
+3. **Timestamp Tracking:** View exact times when Source was modified and Include last synced
+4. **One-Click Updates:** "Push to All Pages" updates every Include instance instantly
+
+### Category Management
+Customize excerpt categories via "Manage Categories" button:
+- **Add New Categories:** Create custom categories for your organization
+- **Edit Categories:** Rename existing categories
+- **Delete Categories:** Remove unused categories (prevents deletion if excerpts use it)
+- **Reorder Categories:** Move categories up/down to control display order
+- **Persistent Storage:** Categories saved automatically across sessions
+
+### Orphaned Item Detection
+
+**Check All Sources:**
+- Actively verifies each Source still exists on its source page
+- Identifies Sources deleted from pages but still in storage
+- Reports orphaned reasons (page deleted, macro removed, etc.)
+- Provides remediation options:
+  - View page history to restore deleted Source
+  - Navigate to source page
+  - Permanently delete orphaned Source from storage
+
+**Orphaned Includes:**
+- Automatically detects Includes referencing deleted Sources
+- Shows affected pages and reference counts
+- Suggests remediation:
+  - Recreate the Source with same name
+  - Update Includes to reference different Source
+  - Remove Includes from affected pages
+
+**Automatic Cleanup:**
+- Removes stale Include usage entries during Source checking
+- Verifies Include instances still exist on their pages
+- Maintains data integrity across the system
+
+### Excerpt Management
+For each excerpt, you can:
+- **Preview Content:** View raw Source content with all variables and toggle tags
+- **View Source Page:** Navigate directly to the page containing the Source macro
+- **Push Updates:** Update all or specific Include instances
+- **Permadelete:** Permanently remove excerpt from library (content remains on source page)
+
+**Important Note:** The Admin View button URL in Include macros needs to be updated when installing to new environments (see Production Installation Configuration section).
+
+---
+
 ## 🐛 Troubleshooting
 
 ### Includes Showing Old Content
@@ -404,24 +501,31 @@ forge install --upgrade
 ### Completed
 - ✅ Core excerpt storage and retrieval
 - ✅ Variable detection and substitution
-- ✅ Category organization
+- ✅ Category organization and management
 - ✅ Live preview in config
 - ✅ Optimistic rendering for performance
 - ✅ Hyphenated variable name support
 - ✅ Background content refresh
 - ✅ Rich text editing with ADF support
+- ✅ Advanced search and filter UI for excerpts
+- ✅ Excerpt usage reporting (which pages use which excerpts)
+- ✅ Bulk operations (mass updates, push to all)
+- ✅ Push-based updates from Admin UI
+- ✅ Orphaned Source and Include detection
+- ✅ Staleness detection and diff view
+- ✅ Free Write custom paragraph insertion
+- ✅ Toggle content blocks
 
 ### Next Features
-- Search and filter UI for excerpts
-- Excerpt usage reporting (which pages use which excerpts)
-- Bulk operations (update multiple excerpts)
-- Content versioning
+- Check All Includes verification and cleanup
+- Content versioning and history
 - Export/import excerpts
 
 ---
 
 ## 📝 Development Log
 
+**v4.300.0** - Comprehensive Admin UI: Added advanced search & filtering, excerpt usage reporting with variable/toggle display, bulk operations (mass category updates, push to all/specific pages), orphaned Source/Include detection with active checking and cleanup, category management UI (add/edit/delete/reorder), heading anchor navigation, usage deduplication, and timestamp tracking
 **v4.203.0** - Added staleness detection and diff view: visual notifications when Source is updated, side-by-side comparison of cached vs latest content with all toggle tags visible
 **v4.83.0** - Added Free Write feature: insert custom paragraphs at chosen positions in Include macros
 **v4.75.0** - Added required field validation for variables with visual indicators
