@@ -4,7 +4,7 @@ A high-performance Forge app for Confluence that enables reusable content blocks
 
 ## 🎯 Current Implementation
 
-**Version:** 4.83.0
+**Version:** 4.203.0
 **Architecture:** Option 4 - Optimistic Rendering with Background Refresh
 
 ### How It Works
@@ -105,7 +105,7 @@ When installing to a new Confluence environment (e.g., moving from development t
 
 ## ✨ Features
 
-### Current Features (v4.83.0)
+### Current Features (v4.203.0)
 
 ✅ **ID-Based References** - UUID-based excerpt identification for rename-safe references
 
@@ -120,6 +120,10 @@ When installing to a new Confluence environment (e.g., moving from development t
 ✅ **Optimistic Rendering** - Instant page loads with background content refresh
 
 ✅ **Automatic Updates** - Includes update when Source excerpts are edited
+
+✅ **Staleness Detection** - Visual notifications when Source content has been updated since Include last synced
+
+✅ **Diff View** - Side-by-side comparison of current cached content vs latest Source content with all tags visible
 
 ✅ **Hyphenated Variable Names** - Full support for variable names with hyphens (e.g., `{{stack-model}}`)
 
@@ -321,6 +325,33 @@ The Free Write feature allows you to insert custom paragraph content at specific
 - Auto-saves with other Include configurations
 - Appears immediately in live preview
 
+### Staleness Detection & Diff View
+When viewing a published page with Include macros, the app automatically detects if the Source excerpt has been updated since the Include was last synced:
+
+**Update Available Banner:**
+- Green success banner appears when Source has been updated
+- Displays prominent "Update Available" heading
+- Shows descriptive text about the update
+- Two action buttons: "Update" (primary) and "View Diff" (secondary)
+
+**How It Works:**
+1. Compares Source `updatedAt` timestamp with Include `lastSynced` timestamp
+2. If Source is newer, displays the update notification banner
+3. Click "View Diff" to see side-by-side comparison
+4. Click "Update" to refresh cached content immediately
+
+**Diff View Features:**
+- **Left side (gray border):** Your current rendered version with current toggle/variable settings
+- **Right side (green border):** Latest raw Source content with all `{{variable}}` and `{{toggle:name}}` tags visible
+- See exactly what changed in the Source, including content in disabled toggles
+- Make informed decisions about whether to accept the update
+
+**Use Cases:**
+- Identify when Source excerpts have been updated
+- Review changes before accepting updates
+- See raw Source syntax including all toggle tags and variable placeholders
+- Understand which content sections are controlled by which toggles
+
 ---
 
 ## 🐛 Troubleshooting
@@ -391,6 +422,7 @@ forge install --upgrade
 
 ## 📝 Development Log
 
+**v4.203.0** - Added staleness detection and diff view: visual notifications when Source is updated, side-by-side comparison of cached vs latest content with all toggle tags visible
 **v4.83.0** - Added Free Write feature: insert custom paragraphs at chosen positions in Include macros
 **v4.75.0** - Added required field validation for variables with visual indicators
 **v4.72.0** - Investigated TextArea multi-line support, discovered incompatibility with Forge UI Kit macros
