@@ -1,6 +1,11 @@
-import React, { Fragment, useEffect } from 'react';
+import React, { Fragment, useEffect, useMemo } from 'react';
 import ForgeReconciler, { Text, useConfig, useProductContext, AdfRenderer } from '@forge/react';
 import { invoke } from '@forge/bridge';
+
+// Memoized AdfRenderer to prevent re-renders
+const MemoizedAdfRenderer = React.memo(({ document }) => {
+  return <AdfRenderer document={document} />;
+});
 
 const App = () => {
   const config = useConfig();
@@ -9,25 +14,51 @@ const App = () => {
   // Access the macro body (rich text content)
   const macroBody = context?.extension?.macro?.body;
 
-  // Auto-update excerpt content whenever macro body changes
+  // Capture macroBody on first render and NEVER update it (to prevent re-render loops)
+  const [frozenMacroBody, setFrozenMacroBody] = React.useState(null);
+  const hasInitialized = React.useRef(false);
+
+  React.useEffect(() => {
+    if (macroBody && !hasInitialized.current) {
+      setFrozenMacroBody(macroBody);
+      hasInitialized.current = true;
+    }
+  }, [macroBody]);
+
+  // Check if body content has changed and update timestamp (runs in view mode after page save)
   useEffect(() => {
-    if (!config?.excerptId || !macroBody) {
-      return;
+    if (!config?.excerptId || !macroBody || context?.extension?.isEditing) {
+      return; // Skip in edit mode or if no content
     }
 
-    const updateExcerptContent = async () => {
+    const checkAndUpdateContent = async () => {
       try {
-        await invoke('updateExcerptContent', {
-          excerptId: config.excerptId,
-          content: macroBody
-        });
+        // Get the stored excerpt to compare content
+        const result = await invoke('getExcerpt', { excerptId: config.excerptId });
+        if (!result.success || !result.excerpt) {
+          return;
+        }
+
+        // Compare stored content with current macroBody
+        const storedContentStr = JSON.stringify(result.excerpt.content);
+        const currentContentStr = JSON.stringify(macroBody);
+
+        if (storedContentStr !== currentContentStr) {
+          console.log('📝 Detected body content change in view mode, updating excerpt...');
+          // Content has changed - update it
+          await invoke('updateExcerptContent', {
+            excerptId: config.excerptId,
+            content: macroBody
+          });
+          console.log('✅ Source content updated with new body, updatedAt refreshed');
+        }
       } catch (error) {
-        console.error('Error auto-updating excerpt content:', error);
+        console.error('Error checking/updating content:', error);
       }
     };
 
-    updateExcerptContent();
-  }, [config?.excerptId, macroBody]);
+    checkAndUpdateContent();
+  }, [config?.excerptId, macroBody, context?.extension?.isEditing]);
 
   // If no configuration yet, show placeholder
   if (!config || !config.excerptName) {
@@ -38,19 +69,23 @@ const App = () => {
     );
   }
 
+  // Use frozen body to prevent re-renders with normalized ADF
+  const bodyToRender = frozenMacroBody || macroBody;
+
+  // Show loading until we have content
+  if (!bodyToRender) {
+    return <Text>Loading...</Text>;
+  }
+
   return (
     <Fragment>
-      {macroBody && typeof macroBody === 'object' ? (
-        <AdfRenderer document={macroBody} />
+      {typeof bodyToRender === 'object' ? (
+        <MemoizedAdfRenderer document={bodyToRender} />
       ) : (
-        <Text>{macroBody || 'No content yet. Edit the macro body to add content.'}</Text>
+        <Text>{bodyToRender || 'No content yet. Edit the macro body to add content.'}</Text>
       )}
     </Fragment>
   );
 };
 
-ForgeReconciler.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+ForgeReconciler.render(<App />);

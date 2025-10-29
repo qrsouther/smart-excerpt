@@ -55,27 +55,62 @@ const requiredFieldStyle = xcss({
   padding: 'space.050'
 });
 
+// Diff view styles for current version (gray border)
+const diffCurrentVersionStyle = xcss({
+  borderColor: 'color.border',
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderRadius: 'border.radius',
+  padding: 'space.150',
+  backgroundColor: 'color.background.neutral.subtle'
+});
+
+// Diff view styles for new version (green border)
+const diffNewVersionStyle = xcss({
+  borderColor: 'color.border.success',
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderRadius: 'border.radius',
+  padding: 'space.150',
+  backgroundColor: 'color.background.success.subtle'
+});
+
+// Style for Update Available banner
+const updateBannerStyle = xcss({
+  padding: 'space.100',
+  marginBottom: 'space.200'
+});
+
+// Style for View Diff button with border
+const viewDiffButtonStyle = xcss({
+  borderColor: 'color.border',
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  display: 'flex',
+  justifyContent: 'center',
+  alignItems: 'center',
+  paddingInline: 'space.050'
+});
+
+
 // Helper function to clean ADF for Forge's AdfRenderer
-// Removes unsupported attributes that cause "Unsupported text" messages
 const cleanAdfForRenderer = (adfNode) => {
   if (!adfNode || typeof adfNode !== 'object') return adfNode;
 
-  // Clone to avoid mutating original
   const cleaned = { ...adfNode };
 
-  // Remove unsupported attributes
   if (cleaned.attrs) {
     const cleanedAttrs = { ...cleaned.attrs };
 
     // Remove localId (not supported by Forge AdfRenderer)
     delete cleanedAttrs.localId;
 
-    // Remove null-valued panel attributes
+    // Handle panels - remove null attributes
     if (cleaned.type === 'panel') {
       if (cleanedAttrs.panelIconId === null) delete cleanedAttrs.panelIconId;
-      if (cleanedAttrs.panelColor === null) delete cleanedAttrs.panelColor;
       if (cleanedAttrs.panelIcon === null) delete cleanedAttrs.panelIcon;
       if (cleanedAttrs.panelIconText === null) delete cleanedAttrs.panelIconText;
+      if (cleanedAttrs.panelColor === null) delete cleanedAttrs.panelColor;
     }
 
     // Remove null-valued table cell attributes
@@ -84,10 +119,9 @@ const cleanAdfForRenderer = (adfNode) => {
       if (cleanedAttrs.colwidth === null) delete cleanedAttrs.colwidth;
     }
 
-    // Remove null-valued and unsupported table attributes
+    // Remove unsupported table attributes
     if (cleaned.type === 'table') {
       if (cleanedAttrs.displayMode === null) delete cleanedAttrs.displayMode;
-      // Remove other potentially unsupported table attributes
       delete cleanedAttrs.width;
       delete cleanedAttrs.__autoSize;
       delete cleanedAttrs.isNumberColumnEnabled;
@@ -382,16 +416,75 @@ const App = () => {
   const [customText, setCustomText] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', or 'error'
+  // View mode staleness detection state
+  const [isStale, setIsStale] = useState(false);
+  const [sourceLastModified, setSourceLastModified] = useState(null);
+  const [includeLastSynced, setIncludeLastSynced] = useState(null);
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [showDiffView, setShowDiffView] = useState(false);
+  const [latestRenderedContent, setLatestRenderedContent] = useState(null);
 
-  // Minimal logging for debugging if needed
-  // console.log('Include display - isEditing:', isEditing);
 
-  // Load excerpt and content
+  // Load cached content in view mode
   useEffect(() => {
     if (!config || !config.excerptId || !context?.localId) {
       return;
     }
 
+    // In view mode, load cached content only
+    if (!isEditing) {
+      const loadCachedContent = async () => {
+        try {
+          const result = await invoke('getCachedContent', { localId: context.localId });
+          if (result.success && result.content) {
+            setContent(result.content);
+          } else {
+            // No cached content exists - fall back to fetching fresh content once
+            // This happens for existing Include macros that haven't been edited since caching was added
+            console.log('No cached content found, fetching fresh content to populate cache');
+
+            const excerptResult = await invoke('getExcerpt', { excerptId: config.excerptId });
+            if (excerptResult.success && excerptResult.excerpt) {
+              setExcerpt(excerptResult.excerpt);
+
+              // Load variable values and generate content
+              const varsResult = await invoke('getVariableValues', { localId: context.localId });
+              const loadedVariableValues = varsResult.success ? varsResult.variableValues : {};
+              const loadedToggleStates = varsResult.success ? varsResult.toggleStates : {};
+              const loadedCustomInsertions = varsResult.success ? varsResult.customInsertions : [];
+
+              setVariableValues(loadedVariableValues);
+              setToggleStates(loadedToggleStates);
+              setCustomInsertions(loadedCustomInsertions);
+
+              // Generate and cache the content
+              let freshContent = excerptResult.excerpt.content;
+              const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
+
+              if (isAdf) {
+                freshContent = filterContentByToggles(freshContent, loadedToggleStates);
+                freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
+                freshContent = insertCustomParagraphsInAdf(freshContent, loadedCustomInsertions);
+              }
+
+              setContent(freshContent);
+
+              // Cache it for next time
+              await invoke('saveCachedContent', {
+                localId: context.localId,
+                renderedContent: freshContent
+              });
+            }
+          }
+        } catch (err) {
+          console.error('Error loading cached content:', err);
+        }
+      };
+      loadCachedContent();
+      return;
+    }
+
+    // In edit mode, load fresh excerpt data
     const loadContent = async () => {
       setIsRefreshing(true);
 
@@ -407,10 +500,10 @@ const App = () => {
         setExcerpt(excerptResult.excerpt);
 
         // Load saved variable values, toggle states, and custom insertions from storage
-        const varsResult = await invoke('getVariableValues', { localId: context.localId });
-        const loadedVariableValues = varsResult.success ? varsResult.variableValues : {};
-        const loadedToggleStates = varsResult.success ? varsResult.toggleStates : {};
-        const loadedCustomInsertions = varsResult.success ? varsResult.customInsertions : [];
+        const varsResultForLoading = await invoke('getVariableValues', { localId: context.localId });
+        const loadedVariableValues = varsResultForLoading.success ? varsResultForLoading.variableValues : {};
+        const loadedToggleStates = varsResultForLoading.success ? varsResultForLoading.toggleStates : {};
+        const loadedCustomInsertions = varsResultForLoading.success ? varsResultForLoading.customInsertions : [];
 
         // Auto-infer "client" variable from page title if it follows "Blueprint: [Client Name]" pattern
         let pageTitle = '';
@@ -443,7 +536,7 @@ const App = () => {
         setToggleStates(loadedToggleStates);
         setCustomInsertions(loadedCustomInsertions || []);
 
-        // Generate content: first filter toggles, then substitute variables, then insert custom paragraphs
+        // NOW: Generate the fresh rendered content with loaded settings
         let freshContent = excerptResult.excerpt.content;
         const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
 
@@ -480,11 +573,11 @@ const App = () => {
     };
 
     loadContent();
-  }, [config?.excerptId, context?.localId]);
+  }, [config?.excerptId, context?.localId, isEditing]);
 
-  // Auto-save effect with debouncing
+  // Auto-save effect with debouncing (saves variable values AND caches rendered content)
   useEffect(() => {
-    if (!isEditing || !context?.localId || !config?.excerptId) {
+    if (!isEditing || !context?.localId || !config?.excerptId || !excerpt) {
       return;
     }
 
@@ -492,6 +585,7 @@ const App = () => {
 
     const timeoutId = setTimeout(async () => {
       try {
+        // Save variable values, toggle states, and custom insertions
         const result = await invoke('saveVariableValues', {
           localId: context.localId,
           excerptId: config.excerptId,
@@ -501,6 +595,13 @@ const App = () => {
         });
 
         if (result.success) {
+          // Also cache the rendered content for view mode
+          const previewContent = getPreviewContent();
+          await invoke('saveCachedContent', {
+            localId: context.localId,
+            renderedContent: previewContent
+          });
+
           setSaveStatus('saved');
         } else {
           console.error('Auto-save failed:', result.error);
@@ -513,14 +614,69 @@ const App = () => {
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [variableValues, toggleStates, customInsertions, isEditing, context?.localId, config?.excerptId]);
+  }, [variableValues, toggleStates, customInsertions, isEditing, context?.localId, config?.excerptId, excerpt]);
+
+  // Check for staleness in view mode
+  useEffect(() => {
+    if (isEditing || !content || !config?.excerptId || !context?.localId) {
+      return;
+    }
+
+    const checkStaleness = async () => {
+      try {
+        // Get excerpt metadata to check updatedAt
+        const excerptResult = await invoke('getExcerpt', { excerptId: config.excerptId });
+        if (!excerptResult.success || !excerptResult.excerpt) {
+          return;
+        }
+
+        // Get variable values to check lastSynced
+        const varsResult = await invoke('getVariableValues', { localId: context.localId });
+        if (!varsResult.success) {
+          return;
+        }
+
+        const sourceUpdatedAt = excerptResult.excerpt.updatedAt;
+        const lastSynced = varsResult.lastSynced;
+
+        if (sourceUpdatedAt && lastSynced) {
+          const sourceDate = new Date(sourceUpdatedAt);
+          const syncedDate = new Date(lastSynced);
+          const stale = sourceDate > syncedDate;
+
+          setIsStale(stale);
+          setSourceLastModified(sourceUpdatedAt);
+          setIncludeLastSynced(lastSynced);
+
+          // If stale, store the raw latest content for diff view
+          // Show raw content with all toggle tags and variable placeholders visible
+          if (stale) {
+            // Store raw content without any processing
+            setLatestRenderedContent(excerptResult.excerpt.content);
+          }
+
+          console.log('Staleness check:', {
+            sourceUpdatedAt,
+            lastSynced,
+            isStale: stale
+          });
+        }
+      } catch (err) {
+        console.error('Error checking staleness:', err);
+      }
+    };
+
+    checkStaleness();
+  }, [content, isEditing, config?.excerptId, context?.localId]);
 
   if (!config || !config.excerptId) {
     return <Text>SmartExcerpt Include not configured. Click Edit to select an excerpt.</Text>;
   }
 
+  // In view mode, don't show loading state - content loads so fast from cache it appears instant
+  // Just render empty until content arrives (typically <100ms)
   if (!content && !isEditing) {
-    return <Text>Loading excerpt...</Text>;
+    return <Fragment></Fragment>;
   }
 
   // Helper function to get preview content with current variable and toggle values
@@ -554,12 +710,75 @@ const App = () => {
     }
   };
 
+  // Handler for updating to latest version (defined before edit mode rendering)
+  const handleUpdateToLatest = async () => {
+    if (!config?.excerptId || !context?.localId) {
+      return;
+    }
+
+    setIsUpdating(true);
+
+    try {
+      // Fetch fresh excerpt
+      const excerptResult = await invoke('getExcerpt', { excerptId: config.excerptId });
+      if (!excerptResult.success || !excerptResult.excerpt) {
+        alert('Failed to fetch latest excerpt content');
+        return;
+      }
+
+      // Get current variable values and toggle states
+      const varsResult = await invoke('getVariableValues', { localId: context.localId });
+      const currentVariableValues = varsResult.success ? varsResult.variableValues : {};
+      const currentToggleStates = varsResult.success ? varsResult.toggleStates : {};
+      const currentCustomInsertions = varsResult.success ? varsResult.customInsertions : [];
+
+      // Generate fresh content with current settings
+      let freshContent = excerptResult.excerpt.content;
+      const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
+
+      if (isAdf) {
+        freshContent = filterContentByToggles(freshContent, currentToggleStates);
+        freshContent = substituteVariablesInAdf(freshContent, currentVariableValues);
+        freshContent = insertCustomParagraphsInAdf(freshContent, currentCustomInsertions);
+      }
+
+      // Update the displayed content
+      setContent(freshContent);
+
+      // Cache the updated content
+      await invoke('saveCachedContent', {
+        localId: context.localId,
+        renderedContent: freshContent
+      });
+
+      // Clear staleness flags
+      setIsStale(false);
+
+      alert('Successfully updated! Click the Edit button to customize variables, toggles, and other settings.');
+    } catch (err) {
+      console.error('Error updating to latest:', err);
+      alert('Error updating to latest version');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   // EDIT MODE: Show variable inputs and preview
   if (isEditing && excerpt) {
     const previewContent = getPreviewContent();
     const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
-    console.log('Edit mode - rendering preview, isAdf:', isAdf);
+    // Format timestamps for display
+    const formatTimestamp = (dateStr) => {
+      if (!dateStr) return 'Unknown';
+      const date = new Date(dateStr);
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const year = date.getFullYear();
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${month}/${day}/${year} ${hours}:${minutes}`;
+    };
 
     return (
       <Stack space="space.100">
@@ -853,29 +1072,165 @@ const App = () => {
     );
   }
 
-  // VIEW MODE: Just show the content
-  const isAdf = content && typeof content === 'object' && content.type === 'doc';
-
-  console.log('View mode - rendering content, isAdf:', isAdf);
-  if (isAdf) {
-    console.log('View mode - content before cleaning:', JSON.stringify(content, null, 2));
-    const cleaned = cleanAdfForRenderer(content);
-    console.log('View mode - content after cleaning:', JSON.stringify(cleaned, null, 2));
+  // VIEW MODE: Show content with update notification if stale
+  if (!content) {
+    return <Text>Loading content...</Text>;
   }
 
+  const isAdf = content && typeof content === 'object' && content.type === 'doc';
+
+  // Format timestamps for display
+  const formatTimestamp = (dateStr) => {
+    if (!dateStr) return 'Unknown';
+    const date = new Date(dateStr);
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const year = date.getFullYear();
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${month}/${day}/${year} ${hours}:${minutes}`;
+  };
+
+  if (isAdf) {
+    const cleaned = cleanAdfForRenderer(content);
+
+    if (!cleaned) {
+      return <Text>Error: Content cleaning failed</Text>;
+    }
+
+    return (
+      <Fragment>
+        {isStale && (
+          <Fragment>
+            <Box xcss={updateBannerStyle}>
+              <SectionMessage appearance="success">
+                <Inline spread="space-between" alignBlock="start">
+                  <Stack space="space.100">
+                    <Heading size="medium">Update Available</Heading>
+                    <Text>The source content has been updated since this Include was last edited.</Text>
+                  </Stack>
+                  <Stack space="space.100">
+                    <Button
+                      appearance="primary"
+                      onClick={handleUpdateToLatest}
+                      isDisabled={isUpdating}
+                    >
+                      {isUpdating ? 'Updating...' : 'Update'}
+                    </Button>
+                    <Button
+                      appearance="default"
+                      onClick={() => setShowDiffView(!showDiffView)}
+                    >
+                      {showDiffView ? 'Hide' : 'View'} Diff
+                    </Button>
+                  </Stack>
+                </Inline>
+              </SectionMessage>
+            </Box>
+
+            {/* Diff view - side-by-side comparison */}
+            {showDiffView && (
+              <Box xcss={previewBoxStyle}>
+                <Stack space="space.200">
+                  <Text><Strong>Content Comparison:</Strong></Text>
+                  <Inline space="space.200" alignBlock="start">
+                    <Box xcss={xcss({ width: '50%' })}>
+                      <Stack space="space.100">
+                        <Text><Strong>Your Current Rendered Version</Strong></Text>
+                        <Box xcss={diffCurrentVersionStyle}>
+                          {content && typeof content === 'object' && content.type === 'doc' ? (
+                            <AdfRenderer document={content} />
+                          ) : (
+                            <Text>{content || 'No content'}</Text>
+                          )}
+                        </Box>
+                      </Stack>
+                    </Box>
+                    <Box xcss={xcss({ width: '50%' })}>
+                      <Stack space="space.100">
+                        <Text><Strong>Latest Raw Source (with all tags)</Strong></Text>
+                        <Box xcss={diffNewVersionStyle}>
+                          {latestRenderedContent && typeof latestRenderedContent === 'object' && latestRenderedContent.type === 'doc' ? (
+                            <AdfRenderer document={latestRenderedContent} />
+                          ) : (
+                            <Text>{latestRenderedContent || 'No content'}</Text>
+                          )}
+                        </Box>
+                      </Stack>
+                    </Box>
+                  </Inline>
+                </Stack>
+              </Box>
+            )}
+          </Fragment>
+        )}
+        <AdfRenderer document={cleaned} />
+      </Fragment>
+    );
+  }
+
+  // Plain text content
   return (
     <Fragment>
-      {isAdf ? (
-        <AdfRenderer document={cleanAdfForRenderer(content)} />
-      ) : (
-        <Text>{content}</Text>
+      {isStale && (
+        <Fragment>
+          <Box xcss={updateBannerStyle}>
+            <SectionMessage appearance="success">
+              <Inline spread="space-between" alignBlock="start">
+                <Stack space="space.100">
+                  <Heading size="medium">Update Available</Heading>
+                  <Text>The source content has been updated since this Include was last edited.</Text>
+                </Stack>
+                <Stack space="space.100">
+                  <Button
+                    appearance="primary"
+                    onClick={handleUpdateToLatest}
+                    isDisabled={isUpdating}
+                  >
+                    {isUpdating ? 'Updating...' : 'Update'}
+                  </Button>
+                  <Button
+                    appearance="default"
+                    onClick={() => setShowDiffView(!showDiffView)}
+                  >
+                    {showDiffView ? 'Hide' : 'View'} Diff
+                  </Button>
+                </Stack>
+              </Inline>
+            </SectionMessage>
+          </Box>
+
+          {/* Diff view - side-by-side comparison */}
+          {showDiffView && (
+            <Box xcss={previewBoxStyle}>
+              <Stack space="space.200">
+                <Text><Strong>Content Comparison:</Strong></Text>
+                <Inline space="space.200" alignBlock="start">
+                  <Box xcss={xcss({ width: '50%' })}>
+                    <Stack space="space.100">
+                      <Text><Strong>Your Current Rendered Version</Strong></Text>
+                      <Box xcss={diffCurrentVersionStyle}>
+                        <Text>{content || 'No content'}</Text>
+                      </Box>
+                    </Stack>
+                  </Box>
+                  <Box xcss={xcss({ width: '50%' })}>
+                    <Stack space="space.100">
+                      <Text><Strong>Latest Raw Source (with all tags)</Strong></Text>
+                      <Box xcss={diffNewVersionStyle}>
+                        <Text>{latestRenderedContent || 'No content'}</Text>
+                      </Box>
+                    </Stack>
+                  </Box>
+                </Inline>
+              </Stack>
+            </Box>
+          )}
+        </Fragment>
       )}
+      <Text>{content}</Text>
     </Fragment>
   );
 };
 
-ForgeReconciler.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+ForgeReconciler.render(<App />);

@@ -286,6 +286,15 @@ resolver.define('getExcerpt', async (req) => {
       console.log('getExcerpt - excerpt name:', excerpt.name);
       console.log('getExcerpt - excerpt category:', excerpt.category);
       console.log('getExcerpt - excerpt has content:', !!excerpt.content);
+
+      // Log panel types to debug custom panel rendering
+      if (excerpt.content && excerpt.content.content) {
+        excerpt.content.content.forEach((node, i) => {
+          if (node.type === 'panel') {
+            console.log(`getExcerpt - Panel ${i}: type=${node.attrs?.panelType}, color=${node.attrs?.panelColor}, icon=${node.attrs?.panelIcon}`);
+          }
+        });
+      }
     }
 
     return {
@@ -305,6 +314,10 @@ resolver.define('getExcerpt', async (req) => {
 resolver.define('updateExcerptContent', async (req) => {
   try {
     const { excerptId, content } = req.payload;
+
+    // Log the content being saved to help debug custom attributes
+    console.log('updateExcerptContent - excerptId:', excerptId);
+    console.log('updateExcerptContent - content ADF:', JSON.stringify(content, null, 2));
 
     // Load existing excerpt
     const excerpt = await storage.get(`excerpt:${excerptId}`);
@@ -366,22 +379,24 @@ resolver.define('updateExcerptContent', async (req) => {
 // We'll store this keyed by localId (unique ID for each macro instance)
 resolver.define('saveVariableValues', async (req) => {
   try {
-    const { localId, excerptId, variableValues, toggleStates, customInsertions } = req.payload;
+    const { localId, excerptId, variableValues, toggleStates, customInsertions, pageId: explicitPageId } = req.payload;
 
     const key = `macro-vars:${localId}`;
+    const now = new Date().toISOString();
     await storage.set(key, {
       excerptId,
       variableValues,
       toggleStates: toggleStates || {},
       customInsertions: customInsertions || [],
-      updatedAt: new Date().toISOString()
+      updatedAt: now,
+      lastSynced: now  // Track when this Include instance last synced with Source
     });
 
     // Also update usage tracking with the latest toggle states
     // This ensures toggle states are always current in the usage data
     try {
-      // Get page context
-      const pageId = req.context?.extension?.content?.id;
+      // Get page context - use explicit pageId if provided (from Admin page), otherwise use context
+      const pageId = explicitPageId || req.context?.extension?.content?.id;
       const spaceKey = req.context?.extension?.space?.key || 'Unknown Space';
 
       if (pageId && excerptId && localId) {
@@ -417,6 +432,7 @@ resolver.define('saveVariableValues', async (req) => {
           spaceKey,
           headingAnchor,
           toggleStates: toggleStates || {},
+          variableValues: variableValues || {},
           updatedAt: new Date().toISOString()
         };
 
@@ -442,6 +458,234 @@ resolver.define('saveVariableValues', async (req) => {
       success: false,
       error: error.message
     };
+  }
+});
+
+// Save cached rendered content for an Include instance
+resolver.define('saveCachedContent', async (req) => {
+  try {
+    const { localId, renderedContent } = req.payload;
+
+    const key = `macro-cache:${localId}`;
+    const now = new Date().toISOString();
+
+    await storage.set(key, {
+      content: renderedContent,
+      cachedAt: now
+    });
+
+    console.log(`saveCachedContent: Cached content for localId ${localId}`);
+
+    // Also update lastSynced in macro-vars
+    const varsKey = `macro-vars:${localId}`;
+    const existingVars = await storage.get(varsKey) || {};
+    existingVars.lastSynced = now;
+    await storage.set(varsKey, existingVars);
+
+    return { success: true, cachedAt: now };
+  } catch (error) {
+    console.error('Error saving cached content:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get cached rendered content for an Include instance (view mode)
+resolver.define('getCachedContent', async (req) => {
+  try {
+    const { localId } = req.payload;
+
+    const key = `macro-cache:${localId}`;
+    const cached = await storage.get(key);
+
+    console.log(`getCachedContent for localId ${localId}: ${cached ? 'FOUND' : 'NOT FOUND'}`);
+
+    if (!cached) {
+      return { success: false, error: 'No cached content found' };
+    }
+
+    return {
+      success: true,
+      content: cached.content,
+      cachedAt: cached.cachedAt
+    };
+  } catch (error) {
+    console.error('Error loading cached content:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Check if Include instance has stale content (update available)
+resolver.define('checkVersionStaleness', async (req) => {
+  try {
+    const { localId, excerptId } = req.payload;
+
+    // Get excerpt's lastModified (updatedAt)
+    const excerpt = await storage.get(`excerpt:${excerptId}`);
+    if (!excerpt) {
+      return { success: false, error: 'Excerpt not found' };
+    }
+
+    // Get Include instance's lastSynced
+    const varsKey = `macro-vars:${localId}`;
+    const macroVars = await storage.get(varsKey);
+
+    const excerptLastModified = new Date(excerpt.updatedAt);
+    const includeLastSynced = macroVars?.lastSynced ? new Date(macroVars.lastSynced) : new Date(0);
+
+    const isStale = excerptLastModified > includeLastSynced;
+
+    return {
+      success: true,
+      isStale,
+      excerptLastModified: excerpt.updatedAt,
+      includeLastSynced: macroVars?.lastSynced || null
+    };
+  } catch (error) {
+    console.error('Error checking version staleness:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Push updates to all Include instances of a specific excerpt (Admin function)
+resolver.define('pushUpdatesToAll', async (req) => {
+  try {
+    const { excerptId } = req.payload;
+
+    // Get the excerpt
+    const excerpt = await storage.get(`excerpt:${excerptId}`);
+    if (!excerpt) {
+      return { success: false, error: 'Excerpt not found' };
+    }
+
+    // Get all usages of this excerpt
+    const usageKey = `excerpt-usage:${excerptId}`;
+    const usageData = await storage.get(usageKey) || { usages: [] };
+
+    let updated = 0;
+    let errors = [];
+
+    // For each usage, regenerate and cache content
+    for (const usage of usageData.usages) {
+      try {
+        const localId = usage.localId;
+
+        // Get variable values for this instance
+        const varsKey = `macro-vars:${localId}`;
+        const macroVars = await storage.get(varsKey) || {};
+        const variableValues = macroVars.variableValues || {};
+        const toggleStates = macroVars.toggleStates || {};
+        const customInsertions = macroVars.customInsertions || [];
+
+        // Generate fresh content
+        let freshContent = excerpt.content;
+        const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
+
+        if (isAdf) {
+          // Apply filters/substitutions (we'll need to import helper functions)
+          // For now, just cache the base content - frontend will handle processing
+          freshContent = excerpt.content;
+        }
+
+        // Cache the updated content
+        const now = new Date().toISOString();
+        const cacheKey = `macro-cache:${localId}`;
+        await storage.set(cacheKey, {
+          content: freshContent,
+          cachedAt: now
+        });
+
+        // Update lastSynced timestamp
+        macroVars.lastSynced = now;
+        await storage.set(varsKey, macroVars);
+
+        updated++;
+      } catch (err) {
+        console.error(`Error updating localId ${usage.localId}:`, err);
+        errors.push({ localId: usage.localId, error: err.message });
+      }
+    }
+
+    console.log(`pushUpdatesToAll: Updated ${updated} instances for excerpt ${excerptId}`);
+
+    return {
+      success: true,
+      updated,
+      total: usageData.usages.length,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  } catch (error) {
+    console.error('Error pushing updates to all:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Push updates to a specific page's Include instances (Admin function)
+resolver.define('pushUpdatesToPage', async (req) => {
+  try {
+    const { excerptId, pageId } = req.payload;
+
+    // Get the excerpt
+    const excerpt = await storage.get(`excerpt:${excerptId}`);
+    if (!excerpt) {
+      return { success: false, error: 'Excerpt not found' };
+    }
+
+    // Get all usages of this excerpt
+    const usageKey = `excerpt-usage:${excerptId}`;
+    const usageData = await storage.get(usageKey) || { usages: [] };
+
+    // Filter to only usages on the specified page
+    const pageUsages = usageData.usages.filter(u => u.pageId === pageId);
+
+    if (pageUsages.length === 0) {
+      return { success: false, error: 'No instances found on this page' };
+    }
+
+    let updated = 0;
+    let errors = [];
+
+    // Update each instance on this page
+    for (const usage of pageUsages) {
+      try {
+        const localId = usage.localId;
+
+        // Get variable values for this instance
+        const varsKey = `macro-vars:${localId}`;
+        const macroVars = await storage.get(varsKey) || {};
+
+        // Generate fresh content
+        let freshContent = excerpt.content;
+
+        // Cache the updated content
+        const now = new Date().toISOString();
+        const cacheKey = `macro-cache:${localId}`;
+        await storage.set(cacheKey, {
+          content: freshContent,
+          cachedAt: now
+        });
+
+        // Update lastSynced timestamp
+        macroVars.lastSynced = now;
+        await storage.set(varsKey, macroVars);
+
+        updated++;
+      } catch (err) {
+        console.error(`Error updating localId ${usage.localId}:`, err);
+        errors.push({ localId: usage.localId, error: err.message });
+      }
+    }
+
+    console.log(`pushUpdatesToPage: Updated ${updated} instances on page ${pageId}`);
+
+    return {
+      success: true,
+      updated,
+      total: pageUsages.length,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  } catch (error) {
+    console.error('Error pushing updates to page:', error);
+    return { success: false, error: error.message };
   }
 });
 
@@ -483,7 +727,8 @@ resolver.define('getVariableValues', async (req) => {
       success: true,
       variableValues: data?.variableValues || {},
       toggleStates: data?.toggleStates || {},
-      customInsertions: data?.customInsertions || []
+      customInsertions: data?.customInsertions || [],
+      lastSynced: data?.lastSynced || null
     };
   } catch (error) {
     console.error('Error getting variable values:', error);
@@ -492,7 +737,8 @@ resolver.define('getVariableValues', async (req) => {
       error: error.message,
       variableValues: {},
       toggleStates: {},
-      customInsertions: []
+      customInsertions: [],
+      lastSynced: null
     };
   }
 });
@@ -655,15 +901,19 @@ resolver.define('trackExcerptUsage', async (req) => {
       pageTitle = req.context?.extension?.content?.title || 'Unknown Page';
     }
 
-    // Fetch toggle states from storage (saved during auto-save)
+    // Fetch toggle states and variable values from storage (saved during auto-save)
     let toggleStates = {};
+    let variableValues = {};
     try {
       const macroVars = await storage.get(`macro-vars:${localId}`);
       if (macroVars?.toggleStates) {
         toggleStates = macroVars.toggleStates;
       }
+      if (macroVars?.variableValues) {
+        variableValues = macroVars.variableValues;
+      }
     } catch (storageError) {
-      console.error('Error fetching toggle states:', storageError);
+      console.error('Error fetching toggle states and variable values:', storageError);
     }
 
     // Store usage data in a reverse index
@@ -680,6 +930,7 @@ resolver.define('trackExcerptUsage', async (req) => {
       spaceKey,
       headingAnchor,
       toggleStates,
+      variableValues,
       updatedAt: new Date().toISOString()
     };
 
@@ -750,9 +1001,20 @@ resolver.define('getExcerptUsage', async (req) => {
     const usageKey = `usage:${excerptId}`;
     const usageData = await storage.get(usageKey) || { references: [] };
 
+    // Enrich usage data with lastSynced timestamp from macro-vars
+    const enrichedReferences = await Promise.all(usageData.references.map(async (ref) => {
+      const varsKey = `macro-vars:${ref.localId}`;
+      const macroVars = await storage.get(varsKey);
+
+      return {
+        ...ref,
+        lastSynced: macroVars?.lastSynced || null
+      };
+    }));
+
     return {
       success: true,
-      usage: usageData.references
+      usage: enrichedReferences
     };
   } catch (error) {
     console.error('Error getting excerpt usage:', error);
@@ -798,6 +1060,7 @@ resolver.define('checkAllSources', async (req) => {
 
     const orphanedSources = [];
     const checkedSources = [];
+    let totalStaleEntriesRemoved = 0;
 
     for (const excerptSummary of excerptIndex.excerpts) {
       // Load full excerpt data
@@ -858,20 +1121,106 @@ resolver.define('checkAllSources', async (req) => {
       }
     }
 
-    console.log(`✅ Check complete: ${checkedSources.length} active, ${orphanedSources.length} orphaned`);
+    console.log(`✅ Source check complete: ${checkedSources.length} active, ${orphanedSources.length} orphaned`);
+
+    // Now clean up stale Include usage entries
+    console.log('🧹 CLEANUP: Checking for stale Include usage entries...');
+
+    for (const excerptSummary of excerptIndex.excerpts) {
+      const excerpt = await storage.get(`excerpt:${excerptSummary.id}`);
+      if (!excerpt) continue;
+
+      // Get usage data for this excerpt
+      const usageKey = `usage:${excerpt.id}`;
+      const usageData = await storage.get(usageKey);
+
+      if (!usageData || !usageData.references || usageData.references.length === 0) {
+        continue;
+      }
+
+      console.log(`Checking usage entries for "${excerpt.name}" (${usageData.references.length} entries)...`);
+
+      // Group references by pageId to check each page only once
+      const pageMap = new Map();
+      for (const ref of usageData.references) {
+        if (!pageMap.has(ref.pageId)) {
+          pageMap.set(ref.pageId, []);
+        }
+        pageMap.get(ref.pageId).push(ref);
+      }
+
+      const validReferences = [];
+      let staleEntriesForThisExcerpt = 0;
+
+      // Check each page
+      for (const [pageId, refs] of pageMap.entries()) {
+        try {
+          // Fetch the page content
+          const response = await api.asApp().requestConfluence(
+            route`/wiki/api/v2/pages/${pageId}?body-format=storage`,
+            {
+              headers: {
+                'Accept': 'application/json'
+              }
+            }
+          );
+
+          if (!response.ok) {
+            console.log(`⚠️ Page ${pageId} not accessible, removing all ${refs.length} references`);
+            staleEntriesForThisExcerpt += refs.length;
+            continue;
+          }
+
+          const pageData = await response.json();
+          const pageBody = pageData?.body?.storage?.value || '';
+
+          // Check which localIds still exist on the page
+          for (const ref of refs) {
+            if (pageBody.includes(ref.localId)) {
+              validReferences.push(ref);
+            } else {
+              console.log(`🗑️ Removing stale entry: localId ${ref.localId} no longer on page ${pageId}`);
+              staleEntriesForThisExcerpt++;
+            }
+          }
+        } catch (apiError) {
+          console.error(`Error checking page ${pageId}:`, apiError);
+          // Keep references if we can't verify (safer than deleting)
+          validReferences.push(...refs);
+        }
+      }
+
+      // Update storage if we removed any stale entries
+      if (staleEntriesForThisExcerpt > 0) {
+        console.log(`✅ Cleaned up ${staleEntriesForThisExcerpt} stale entries for "${excerpt.name}"`);
+        totalStaleEntriesRemoved += staleEntriesForThisExcerpt;
+
+        if (validReferences.length > 0) {
+          usageData.references = validReferences;
+          await storage.set(usageKey, usageData);
+        } else {
+          // No valid references left, delete the usage key
+          await storage.delete(usageKey);
+        }
+      }
+    }
+
+    console.log(`✅ Cleanup complete: ${totalStaleEntriesRemoved} stale Include entries removed`);
 
     return {
       success: true,
       orphanedSources,
       checkedCount: checkedSources.length + orphanedSources.length,
-      activeCount: checkedSources.length
+      activeCount: checkedSources.length,
+      staleEntriesRemoved: totalStaleEntriesRemoved
     };
   } catch (error) {
     console.error('Error in checkAllSources:', error);
     return {
       success: false,
       error: error.message,
-      orphanedSources: []
+      orphanedSources: [],
+      staleEntriesRemoved: 0
     };
   }
 });
@@ -1030,6 +1379,55 @@ resolver.define('getMigrationStatus', async () => {
       success: false,
       error: error.message,
       migrations: []
+    };
+  }
+});
+
+// Save categories to storage
+resolver.define('saveCategories', async (req) => {
+  try {
+    const { categories } = req.payload;
+
+    if (!Array.isArray(categories)) {
+      return {
+        success: false,
+        error: 'Categories must be an array'
+      };
+    }
+
+    await storage.set('categories', { categories });
+
+    return {
+      success: true
+    };
+  } catch (error) {
+    console.error('Error saving categories:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// Get categories from storage
+resolver.define('getCategories', async () => {
+  try {
+    const data = await storage.get('categories');
+
+    // Return stored categories or default list if not found
+    const defaultCategories = ['General', 'Pricing', 'Technical', 'Legal', 'Marketing'];
+    const categories = data?.categories || defaultCategories;
+
+    return {
+      success: true,
+      categories
+    };
+  } catch (error) {
+    console.error('Error getting categories:', error);
+    return {
+      success: false,
+      error: error.message,
+      categories: ['General', 'Pricing', 'Technical', 'Legal', 'Marketing']
     };
   }
 });
