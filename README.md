@@ -153,9 +153,10 @@ When installing to a new Confluence environment (e.g., moving from development t
 
 ✅ **Timestamp Tracking** - Track and display when Sources were last modified and when Includes last synced
 
+✅ **Check All Includes** - Comprehensive verification and reporting system with real-time progress tracking and CSV export
+
 ### In Development
 
-⏳ Check All Includes - Verify all Include instances and clean up stale references
 ⏳ Content versioning and history
 ⏳ Export/import excerpts
 
@@ -440,6 +441,47 @@ Customize excerpt categories via "Manage Categories" button:
 - Verifies Include instances still exist on their pages
 - Maintains data integrity across the system
 
+### Check All Includes
+
+Comprehensive verification system for all Include instances across your Confluence space:
+
+**What It Does:**
+- **Verifies Existence:** Checks that each Include macro still exists on its page
+- **Validates References:** Ensures all Includes point to valid Sources
+- **Detects Staleness:** Identifies Includes that need updates (Source modified after Include last synced)
+- **Cleans Up Orphans:** Automatically removes storage entries for deleted Includes
+- **Generates Report:** Creates comprehensive CSV export with all Include data
+
+**Real-Time Progress Tracking:**
+- Visual progress bar with percentage completion
+- Current status messages (e.g., "Checking page 5/12...")
+- Items processed count (e.g., "120 / 200 Includes processed")
+- Estimated time to completion (ETA calculated dynamically)
+- Warning to stay on page during operation
+
+**CSV Export Contains:**
+- Page URL, Title, and Heading Anchor
+- Excerpt Name and Category
+- Status (active/stale)
+- Last Synced and Excerpt Last Modified timestamps
+- All variable values for each Include
+- All toggle states (Enabled/Disabled)
+- Custom insertions count
+- Full rendered content (variables substituted, ready for grammar checking)
+
+**Use Cases:**
+- Audit all Includes across your Confluence space
+- Export data for external grammar/spell checking tools
+- Identify stale Includes that need updates
+- Clean up orphaned storage entries
+- Generate reports for documentation or compliance
+
+**How to Use:**
+1. Click "🔍 Check All Includes" button in Admin UI
+2. Stay on page while check runs (progress bar shows real-time updates)
+3. Review summary when complete
+4. Download CSV report when prompted
+
 ### Excerpt Management
 For each excerpt, you can:
 - **Preview Content:** View raw Source content with all variables and toggle tags
@@ -515,16 +557,19 @@ forge install --upgrade
 - ✅ Staleness detection and diff view
 - ✅ Free Write custom paragraph insertion
 - ✅ Toggle content blocks
+- ✅ Check All Includes verification and cleanup with real-time progress tracking
+- ✅ CSV export of all Include instances with full metadata
 
 ### Next Features
-- Check All Includes verification and cleanup
 - Content versioning and history
 - Export/import excerpts
+- Basic grammar/spell checking integration
 
 ---
 
 ## 📝 Development Log
 
+**v4.208.0** - Check All Includes Feature: Comprehensive Include verification system with real-time progress tracking (visual progress bar, ETA calculation, page-by-page status updates), CSV export of all Include instances with full metadata (page URLs, variable values, toggle states, rendered content), automatic cleanup of orphaned Include entries, broken reference detection, and staleness reporting
 **v4.300.0** - Comprehensive Admin UI: Added advanced search & filtering, excerpt usage reporting with variable/toggle display, bulk operations (mass category updates, push to all/specific pages), orphaned Source/Include detection with active checking and cleanup, category management UI (add/edit/delete/reorder), heading anchor navigation, usage deduplication, and timestamp tracking
 **v4.203.0** - Added staleness detection and diff view: visual notifications when Source is updated, side-by-side comparison of cached vs latest content with all toggle tags visible
 **v4.83.0** - Added Free Write feature: insert custom paragraphs at chosen positions in Include macros

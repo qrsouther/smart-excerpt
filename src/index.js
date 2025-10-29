@@ -1272,6 +1272,387 @@ resolver.define('getOrphanedUsage', async (req) => {
   }
 });
 
+// Check all Include instances (verify they exist, clean up orphans, generate export data)
+resolver.define('checkAllIncludes', async (req) => {
+  try {
+    console.log('🔍 ACTIVE CHECK: Checking all Include instances...');
+
+    const progressId = generateUUID();
+    const startTime = Date.now();
+
+    // Get all macro-vars entries (each represents an Include instance)
+    const allMacroVars = await storage.query().where('key', startsWith('macro-vars:')).getMany();
+    const totalIncludes = allMacroVars.results.length;
+    console.log('Total Include instances to check:', totalIncludes);
+
+    // Initialize progress tracking
+    await storage.set(`progress:${progressId}`, {
+      phase: 'initializing',
+      total: totalIncludes,
+      processed: 0,
+      percent: 0,
+      startTime,
+      status: 'Loading excerpts...'
+    });
+
+    // Get excerpt index for validation
+    const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
+    const existingExcerptIds = new Set(excerptIndex.excerpts.map(e => e.id));
+
+    // Load all excerpts for metadata
+    const excerptMap = new Map();
+    for (const excerptSummary of excerptIndex.excerpts) {
+      const excerpt = await storage.get(`excerpt:${excerptSummary.id}`);
+      if (excerpt) {
+        excerptMap.set(excerpt.id, excerpt);
+      }
+    }
+
+    const activeIncludes = [];
+    const orphanedIncludes = [];
+    const brokenReferences = [];
+    const staleIncludes = [];
+    let orphanedEntriesRemoved = 0;
+
+    // Group includes by page to minimize API calls
+    const pageMap = new Map(); // pageId -> [includes on that page]
+
+    // Update progress
+    await storage.set(`progress:${progressId}`, {
+      phase: 'grouping',
+      total: totalIncludes,
+      processed: 0,
+      percent: 5,
+      startTime,
+      status: 'Organizing Includes by page...'
+    });
+
+    for (const entry of allMacroVars.results) {
+      const localId = entry.key.replace('macro-vars:', '');
+      const macroVars = entry.value;
+
+      // Get usage data to find which page this Include is on
+      const excerptId = macroVars.excerptId;
+      const usageKey = `usage:${excerptId}`;
+      const usageData = await storage.get(usageKey) || { references: [] };
+      const reference = usageData.references.find(ref => ref.localId === localId);
+
+      if (!reference) {
+        console.log(`⚠️ No usage reference found for localId ${localId}, marking as orphaned`);
+        orphanedIncludes.push({
+          localId,
+          excerptId,
+          reason: 'No usage tracking reference'
+        });
+        continue;
+      }
+
+      const pageId = reference.pageId;
+
+      if (!pageMap.has(pageId)) {
+        pageMap.set(pageId, []);
+      }
+
+      pageMap.get(pageId).push({
+        localId,
+        macroVars,
+        reference
+      });
+    }
+
+    // Update progress - grouping complete
+    await storage.set(`progress:${progressId}`, {
+      phase: 'checking',
+      total: totalIncludes,
+      processed: 0,
+      percent: 10,
+      startTime,
+      status: `Checking ${pageMap.size} pages with Includes...`
+    });
+
+    // Check each page
+    let processedIncludes = 0;
+    const totalPages = pageMap.size;
+    let processedPages = 0;
+
+    for (const [pageId, includes] of pageMap.entries()) {
+      try {
+        // Update progress before checking page
+        processedPages++;
+        const percent = Math.min(10 + Math.floor((processedIncludes / totalIncludes) * 80), 95);
+        await storage.set(`progress:${progressId}`, {
+          phase: 'checking',
+          total: totalIncludes,
+          processed: processedIncludes,
+          percent,
+          startTime,
+          currentPage: processedPages,
+          totalPages,
+          status: `Checking page ${processedPages}/${totalPages}...`
+        });
+
+        // Fetch page content
+        const response = await api.asApp().requestConfluence(
+          route`/wiki/api/v2/pages/${pageId}?body-format=storage`,
+          {
+            headers: {
+              'Accept': 'application/json'
+            }
+          }
+        );
+
+        if (!response.ok) {
+          console.log(`❌ Page ${pageId} not accessible, marking ${includes.length} Includes as orphaned`);
+          includes.forEach(inc => {
+            orphanedIncludes.push({
+              localId: inc.localId,
+              pageId,
+              pageTitle: inc.reference.pageTitle,
+              excerptId: inc.macroVars.excerptId,
+              reason: 'Page not found or deleted'
+            });
+          });
+          continue;
+        }
+
+        const pageData = await response.json();
+        const pageBody = pageData?.body?.storage?.value || '';
+        const pageTitle = pageData.title || 'Unknown Page';
+
+        // Check each Include on this page
+        for (const inc of includes) {
+          const { localId, macroVars, reference } = inc;
+          const excerptId = macroVars.excerptId;
+
+          // Check if Include still exists on page
+          if (!pageBody.includes(localId)) {
+            console.log(`❌ Include ${localId} NOT found on page "${pageTitle}"`);
+            orphanedIncludes.push({
+              localId,
+              pageId,
+              pageTitle,
+              excerptId,
+              reason: 'Macro deleted from page'
+            });
+            continue;
+          }
+
+          // Check if excerpt still exists
+          if (!existingExcerptIds.has(excerptId)) {
+            console.log(`❌ Include ${localId} references non-existent excerpt ${excerptId}`);
+            brokenReferences.push({
+              localId,
+              pageId,
+              pageTitle,
+              excerptId,
+              reason: 'Referenced excerpt deleted'
+            });
+            continue;
+          }
+
+          // Get excerpt details
+          const excerpt = excerptMap.get(excerptId);
+          if (!excerpt) {
+            console.log(`⚠️ Excerpt ${excerptId} not in map, skipping`);
+            continue;
+          }
+
+          // Check staleness
+          const excerptLastModified = new Date(excerpt.updatedAt || 0);
+          const includeLastSynced = macroVars.lastSynced ? new Date(macroVars.lastSynced) : new Date(0);
+          const isStale = excerptLastModified > includeLastSynced;
+
+          // Generate rendered content for export
+          let renderedContent = '';
+          try {
+            let content = excerpt.content;
+            const isAdf = content && typeof content === 'object' && content.type === 'doc';
+
+            if (isAdf) {
+              // For ADF, extract plain text (simplified)
+              renderedContent = extractTextFromAdf(content);
+            } else {
+              renderedContent = content || '';
+            }
+
+            // Perform variable substitution
+            if (macroVars.variableValues) {
+              Object.entries(macroVars.variableValues).forEach(([varName, value]) => {
+                const regex = new RegExp(`\\{\\{${varName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}\\}`, 'g');
+                renderedContent = renderedContent.replace(regex, value || '');
+              });
+            }
+
+            // Remove toggle markers (simplified - just remove the markers themselves)
+            renderedContent = renderedContent.replace(/\{\{toggle:[^}]+\}\}/g, '');
+            renderedContent = renderedContent.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
+
+          } catch (err) {
+            console.error(`Error rendering content for ${localId}:`, err);
+            renderedContent = '[Error rendering content]';
+          }
+
+          // Build complete Include data
+          const includeData = {
+            localId,
+            pageId,
+            pageTitle,
+            pageUrl: `/wiki/pages/viewpage.action?pageId=${pageId}`,
+            headingAnchor: reference.headingAnchor || '',
+            excerptId,
+            excerptName: excerpt.name,
+            excerptCategory: excerpt.category || 'General',
+            status: isStale ? 'stale' : 'active',
+            lastSynced: macroVars.lastSynced || null,
+            excerptLastModified: excerpt.updatedAt || null,
+            variableValues: macroVars.variableValues || {},
+            toggleStates: macroVars.toggleStates || {},
+            customInsertions: macroVars.customInsertions || [],
+            renderedContent: renderedContent.trim(),
+            variables: excerpt.variables || [],
+            toggles: excerpt.toggles || []
+          };
+
+          if (isStale) {
+            staleIncludes.push(includeData);
+          }
+
+          activeIncludes.push(includeData);
+          console.log(`✅ Include "${excerpt.name}" on "${pageTitle}" - ${isStale ? 'STALE' : 'UP TO DATE'}`);
+
+          // Increment processed count
+          processedIncludes++;
+        }
+
+        // Update progress after processing all Includes on this page
+        processedIncludes += includes.filter(inc => !pageBody || !pageBody.includes(inc.localId) || !existingExcerptIds.has(inc.macroVars.excerptId)).length;
+
+      } catch (apiError) {
+        console.error(`Error checking page ${pageId}:`, apiError);
+        includes.forEach(inc => {
+          orphanedIncludes.push({
+            localId: inc.localId,
+            pageId,
+            pageTitle: inc.reference.pageTitle,
+            excerptId: inc.macroVars.excerptId,
+            reason: `API error: ${apiError.message}`
+          });
+        });
+      }
+    }
+
+    // Clean up orphaned entries
+    console.log('🧹 CLEANUP: Removing orphaned Include entries...');
+    await storage.set(`progress:${progressId}`, {
+      phase: 'cleanup',
+      total: totalIncludes,
+      processed: totalIncludes,
+      percent: 95,
+      startTime,
+      status: `Cleaning up ${orphanedIncludes.length} orphaned entries...`
+    });
+
+    for (const orphaned of orphanedIncludes) {
+      try {
+        // Remove macro-vars entry
+        await storage.delete(`macro-vars:${orphaned.localId}`);
+
+        // Remove macro-cache entry
+        await storage.delete(`macro-cache:${orphaned.localId}`);
+
+        orphanedEntriesRemoved++;
+        console.log(`🗑️ Removed orphaned entries for localId ${orphaned.localId}`);
+      } catch (err) {
+        console.error(`Error removing orphaned entry ${orphaned.localId}:`, err);
+      }
+    }
+
+    // Final progress update
+    await storage.set(`progress:${progressId}`, {
+      phase: 'complete',
+      total: totalIncludes,
+      processed: totalIncludes,
+      percent: 100,
+      startTime,
+      endTime: Date.now(),
+      status: 'Complete!'
+    });
+
+    console.log(`✅ Check complete: ${activeIncludes.length} active, ${orphanedIncludes.length} orphaned, ${brokenReferences.length} broken references, ${staleIncludes.length} stale`);
+
+    // Clean up progress data after a delay (frontend will have time to read it)
+    setTimeout(async () => {
+      try {
+        await storage.delete(`progress:${progressId}`);
+      } catch (err) {
+        console.error('Error cleaning up progress data:', err);
+      }
+    }, 60000); // 1 minute
+
+    return {
+      success: true,
+      progressId, // Return this so frontend can poll for progress
+      summary: {
+        totalChecked: allMacroVars.results.length,
+        activeCount: activeIncludes.length,
+        orphanedCount: orphanedIncludes.length,
+        brokenReferenceCount: brokenReferences.length,
+        staleCount: staleIncludes.length,
+        orphanedEntriesRemoved
+      },
+      activeIncludes,
+      orphanedIncludes,
+      brokenReferences,
+      staleIncludes
+    };
+
+  } catch (error) {
+    console.error('Error in checkAllIncludes:', error);
+    return {
+      success: false,
+      error: error.message,
+      summary: {
+        totalChecked: 0,
+        activeCount: 0,
+        orphanedCount: 0,
+        brokenReferenceCount: 0,
+        staleCount: 0,
+        orphanedEntriesRemoved: 0
+      },
+      activeIncludes: [],
+      orphanedIncludes: [],
+      brokenReferences: [],
+      staleIncludes: []
+    };
+  }
+});
+
+// Get progress for checkAllIncludes operation
+resolver.define('getCheckProgress', async (req) => {
+  try {
+    const { progressId } = req.payload;
+    const progress = await storage.get(`progress:${progressId}`);
+
+    if (!progress) {
+      return {
+        success: false,
+        error: 'Progress not found'
+      };
+    }
+
+    return {
+      success: true,
+      progress
+    };
+  } catch (error) {
+    console.error('Error getting progress:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
 // Import from MultiExcerpt and create SmartExcerpt
 resolver.define('importFromMultiExcerpt', async (req) => {
   try {

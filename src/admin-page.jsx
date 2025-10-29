@@ -27,6 +27,7 @@ import ForgeReconciler, {
   Icon,
   Tooltip,
   Pressable,
+  ProgressBar,
   xcss
 } from '@forge/react';
 import { invoke, router } from '@forge/bridge';
@@ -113,6 +114,11 @@ const App = () => {
   const [selectedExcerptForDetails, setSelectedExcerptForDetails] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isCheckingSources, setIsCheckingSources] = useState(false);
+  // Check All Includes state
+  const [isCheckingIncludes, setIsCheckingIncludes] = useState(false);
+  const [includesCheckResult, setIncludesCheckResult] = useState(null);
+  const [includesProgress, setIncludesProgress] = useState(null);
+  const [progressId, setProgressId] = useState(null);
   // Category management
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [categories, setCategories] = useState(['General', 'Pricing', 'Technical', 'Legal', 'Marketing']);
@@ -335,6 +341,214 @@ const App = () => {
     }
   };
 
+  // Helper function to generate CSV from Include data
+  const generateIncludesCSV = (includesData) => {
+    if (!includesData || includesData.length === 0) {
+      return '';
+    }
+
+    // Collect all unique variable names and toggle names
+    const allVariableNames = new Set();
+    const allToggleNames = new Set();
+
+    includesData.forEach(inc => {
+      if (inc.variables) {
+        inc.variables.forEach(v => allVariableNames.add(v.name));
+      }
+      if (inc.toggles) {
+        inc.toggles.forEach(t => allToggleNames.add(t.name));
+      }
+    });
+
+    const variableColumns = Array.from(allVariableNames).sort();
+    const toggleColumns = Array.from(allToggleNames).sort();
+
+    // Build CSV header
+    const headers = [
+      'Page URL',
+      'Page Title',
+      'Heading Anchor',
+      'Excerpt Name',
+      'Excerpt Category',
+      'Status',
+      'Last Synced',
+      'Excerpt Last Modified',
+      ...variableColumns.map(v => `Variable: ${v}`),
+      ...toggleColumns.map(t => `Toggle: ${t}`),
+      'Custom Insertions Count',
+      'Rendered Content'
+    ];
+
+    // Escape CSV value (handle quotes and commas)
+    const escapeCSV = (value) => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      if (str.includes('"') || str.includes(',') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    // Build CSV rows
+    const rows = includesData.map(inc => {
+      const row = [
+        escapeCSV(inc.pageUrl || ''),
+        escapeCSV(inc.pageTitle || ''),
+        escapeCSV(inc.headingAnchor || ''),
+        escapeCSV(inc.excerptName || ''),
+        escapeCSV(inc.excerptCategory || ''),
+        escapeCSV(inc.status || ''),
+        escapeCSV(inc.lastSynced || ''),
+        escapeCSV(inc.excerptLastModified || '')
+      ];
+
+      // Add variable values
+      variableColumns.forEach(varName => {
+        const value = inc.variableValues?.[varName] || '';
+        row.push(escapeCSV(value));
+      });
+
+      // Add toggle states
+      toggleColumns.forEach(toggleName => {
+        const state = inc.toggleStates?.[toggleName] || false;
+        row.push(escapeCSV(state ? 'Enabled' : 'Disabled'));
+      });
+
+      // Add custom insertions count
+      row.push(escapeCSV((inc.customInsertions || []).length));
+
+      // Add rendered content
+      row.push(escapeCSV(inc.renderedContent || ''));
+
+      return row.join(',');
+    });
+
+    // Combine header and rows
+    return [headers.join(','), ...rows].join('\n');
+  };
+
+  // Poll for progress updates
+  useEffect(() => {
+    if (!progressId || !isCheckingIncludes) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const result = await invoke('getCheckProgress', { progressId });
+        if (result.success && result.progress) {
+          setIncludesProgress(result.progress);
+
+          // Stop polling when complete
+          if (result.progress.phase === 'complete') {
+            clearInterval(pollInterval);
+          }
+        }
+      } catch (err) {
+        console.error('Error polling progress:', err);
+      }
+    }, 1000); // Poll every second
+
+    return () => clearInterval(pollInterval);
+  }, [progressId, isCheckingIncludes]);
+
+  // Calculate ETA
+  const calculateETA = (progress) => {
+    if (!progress || !progress.startTime || progress.processed === 0) {
+      return 'Calculating...';
+    }
+
+    const elapsed = Date.now() - progress.startTime;
+    const rate = progress.processed / elapsed; // items per ms
+    const remaining = progress.total - progress.processed;
+    const eta = remaining / rate; // ms remaining
+
+    const seconds = Math.ceil(eta / 1000);
+    if (seconds < 60) {
+      return `${seconds}s remaining`;
+    } else {
+      const minutes = Math.ceil(seconds / 60);
+      return `${minutes}m remaining`;
+    }
+  };
+
+  // Handle Check All Includes button click
+  const handleCheckAllIncludes = async () => {
+    setIsCheckingIncludes(true);
+    setIncludesProgress({
+      phase: 'starting',
+      total: 0,
+      processed: 0,
+      percent: 0,
+      status: 'Initializing...'
+    });
+
+    try {
+      console.log('🔍 Starting active check of all Include instances...');
+
+      // Start the backend check (this will block until complete)
+      const result = await invoke('checkAllIncludes');
+      console.log('Check result:', result);
+
+      if (result.success) {
+        console.log('Got progressId:', result.progressId);
+
+        // Fetch final progress state and show 100% completion briefly
+        if (result.progressId) {
+          const progressResult = await invoke('getCheckProgress', { progressId: result.progressId });
+          if (progressResult.success && progressResult.progress) {
+            setIncludesProgress(progressResult.progress);
+            // Give user time to see 100% completion
+            await new Promise(resolve => setTimeout(resolve, 800));
+          }
+        }
+
+        setIncludesCheckResult(result);
+
+        // Build summary message
+        let message = `✅ Check complete:\n`;
+        message += `• ${result.summary.activeCount} active Include(s)\n`;
+        message += `• ${result.summary.orphanedCount} orphaned Include(s)\n`;
+        message += `• ${result.summary.brokenReferenceCount} broken reference(s)\n`;
+        message += `• ${result.summary.staleCount} stale Include(s)`;
+
+        if (result.summary.orphanedEntriesRemoved > 0) {
+          message += `\n\n🧹 Cleanup complete:\n`;
+          message += `• ${result.summary.orphanedEntriesRemoved} orphaned entry/entries removed`;
+        } else {
+          message += `\n\n✨ No orphaned entries found`;
+        }
+
+        console.log(message);
+        alert(message);
+
+        // Offer to download CSV
+        if (result.activeIncludes && result.activeIncludes.length > 0) {
+          if (confirm(`\nWould you like to download a CSV report of all ${result.summary.activeCount} Include instances?`)) {
+            const csv = generateIncludesCSV(result.activeIncludes);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `smartexcerpt-includes-report-${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
+        }
+      } else {
+        console.error('Check failed:', result.error);
+        alert('Check failed: ' + result.error);
+      }
+    } catch (err) {
+      console.error('Error checking includes:', err);
+      alert('Error checking includes: ' + err.message);
+    } finally {
+      setIsCheckingIncludes(false);
+      setProgressId(null);
+      setIncludesProgress(null);
+    }
+  };
+
   const handleDelete = async (excerptId) => {
     if (!confirm('Delete this source? This cannot be undone.')) {
       return;
@@ -458,12 +672,10 @@ const App = () => {
 
             <Button
               appearance="primary"
-              onClick={() => {
-                // Placeholder - functionality to be implemented
-                console.log('Check All Includes clicked');
-              }}
+              onClick={handleCheckAllIncludes}
+              isDisabled={isCheckingIncludes}
             >
-              🔍 Check All Includes
+              {isCheckingIncludes ? 'Checking...' : '🔍 Check All Includes'}
             </Button>
 
             <Button
@@ -475,6 +687,47 @@ const App = () => {
           </Inline>
         </Inline>
       </Box>
+
+      {/* Progress Bar for Check All Includes */}
+      {isCheckingIncludes && (
+        <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
+          <SectionMessage appearance="information">
+            <Stack space="space.200">
+              <Text><Strong>Checking All Includes...</Strong></Text>
+              <Text><Em>⚠️ Please stay on this page until the check completes. Navigating away will cancel the operation.</Em></Text>
+              {includesProgress ? (
+                <Fragment>
+                  <Text>{includesProgress.status || 'Processing...'}</Text>
+                  {includesProgress.currentPage && includesProgress.totalPages && (
+                    <Text><Em>Page {includesProgress.currentPage} of {includesProgress.totalPages}</Em></Text>
+                  )}
+                  <ProgressBar value={includesProgress.percent / 100} />
+                  <Inline space="space.200" alignBlock="center">
+                    <Text><Strong>{includesProgress.percent}%</Strong></Text>
+                    {includesProgress.total > 0 && (
+                      <Fragment>
+                        <Text>|</Text>
+                        <Text>{includesProgress.processed} / {includesProgress.total} Includes processed</Text>
+                      </Fragment>
+                    )}
+                    {includesProgress.processed > 0 && (
+                      <Fragment>
+                        <Text>|</Text>
+                        <Text><Em>{calculateETA(includesProgress)}</Em></Text>
+                      </Fragment>
+                    )}
+                  </Inline>
+                </Fragment>
+              ) : (
+                <Fragment>
+                  <Text>Starting check...</Text>
+                  <ProgressBar />
+                </Fragment>
+              )}
+            </Stack>
+          </SectionMessage>
+        </Box>
+      )}
 
       {/* Warning messages */}
       {(orphanedUsage.length > 0 || orphanedSources.length > 0) && (
