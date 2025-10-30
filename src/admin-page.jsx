@@ -1538,7 +1538,7 @@ const App = () => {
                   <SectionMessage appearance="information">
                     <Stack space="space.100">
                       <Text>
-                        The <Strong>{selectedExcerptForDetails.name}</Strong> excerpt is referenced using the SmartExcerpt Include macro on the following pages, with the following variables and/or toggles set within those pages.
+                        The <Strong>{selectedExcerptForDetails.name}</Strong> excerpt is referenced using the SmartExcerpt Include macro on <Strong>{uniqueUsage.length}</Strong> {uniqueUsage.length === 1 ? 'page' : 'pages'}, with the following variables and/or toggles set within those pages.
                       </Text>
                       <Text>
                         The Status column shows whether each Include instance is up to date with the latest Source content. Use <Strong>Push Update</Strong> to update specific pages, or <Strong>Push to All Pages</Strong> to update all instances at once.
