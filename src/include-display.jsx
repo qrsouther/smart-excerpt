@@ -1228,7 +1228,11 @@ const App = () => {
           )}
         </Fragment>
       )}
-      <Text>{content}</Text>
+      {content && typeof content === 'object' && content.type === 'doc' ? (
+        <AdfRenderer document={content} />
+      ) : (
+        <Text>{content}</Text>
+      )}
     </Fragment>
   );
 };
