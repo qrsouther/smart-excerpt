@@ -9,45 +9,32 @@ import { detectVariables, detectToggles } from './utils/detection-utils.js';
 import { updateExcerptIndex } from './utils/storage-utils.js';
 import { decodeTemplateData, storageToPlainText, cleanMultiExcerptMacros } from './utils/migration-utils.js';
 
+// Import simple resolver functions (Phase 2 modularization)
+import {
+  detectVariablesFromContent as detectVariablesResolver,
+  detectTogglesFromContent as detectTogglesResolver,
+  getExcerpts as getExcerptsResolver,
+  getExcerpt as getExcerptResolver,
+  getPageTitle as getPageTitleResolver,
+  getVariableValues as getVariableValuesResolver,
+  getCachedContent as getCachedContentResolver,
+  saveCachedContent as saveCachedContentResolver,
+  getCategories as getCategoriesResolver,
+  saveCategories as saveCategoriesResolver,
+  getCheckProgress as getCheckProgressResolver,
+  getMigrationStatus as getMigrationStatusResolver,
+  getMultiExcerptScanProgress as getMultiExcerptScanProgressResolver,
+  checkVersionStaleness as checkVersionStalenessResolver,
+  getOrphanedUsage as getOrphanedUsageResolver
+} from './resolvers/simple-resolvers.js';
+
 const resolver = new Resolver();
 
 // Detect variables from content (for UI to call)
-resolver.define('detectVariablesFromContent', async (req) => {
-  try {
-    const { content } = req.payload;
-    const variables = detectVariables(content);
-    return {
-      success: true,
-      variables
-    };
-  } catch (error) {
-    console.error('Error detecting variables:', error);
-    return {
-      success: false,
-      error: error.message,
-      variables: []
-    };
-  }
-});
+resolver.define('detectVariablesFromContent', detectVariablesResolver);
 
 // Detect toggles from content (for UI to call)
-resolver.define('detectTogglesFromContent', async (req) => {
-  try {
-    const { content } = req.payload;
-    const toggles = detectToggles(content);
-    return {
-      success: true,
-      toggles
-    };
-  } catch (error) {
-    console.error('Error detecting toggles:', error);
-    return {
-      success: false,
-      error: error.message,
-      toggles: []
-    };
-  }
-});
+resolver.define('detectTogglesFromContent', detectTogglesResolver);
 
 // Save excerpt
 resolver.define('saveExcerpt', async (req) => {
@@ -124,60 +111,10 @@ resolver.define('saveExcerpt', async (req) => {
 });
 
 // Get all excerpts
-resolver.define('getExcerpts', async () => {
-  try {
-    const index = await storage.get('excerpt-index') || { excerpts: [] };
-    console.log('getExcerpts called, returning:', index.excerpts.length, 'excerpts');
-    return {
-      success: true,
-      excerpts: index.excerpts
-    };
-  } catch (error) {
-    console.error('Error getting excerpts:', error);
-    return {
-      success: false,
-      error: error.message,
-      excerpts: []
-    };
-  }
-});
+resolver.define('getExcerpts', getExcerptsResolver);
 
 // Get specific excerpt
-resolver.define('getExcerpt', async (req) => {
-  try {
-    const excerptId = req.payload.excerptId;
-    console.log('getExcerpt called for:', excerptId);
-
-    const excerpt = await storage.get(`excerpt:${excerptId}`);
-    console.log('getExcerpt - excerpt from storage:', excerpt ? 'FOUND' : 'NULL/UNDEFINED');
-
-    if (excerpt) {
-      console.log('getExcerpt - excerpt name:', excerpt.name);
-      console.log('getExcerpt - excerpt category:', excerpt.category);
-      console.log('getExcerpt - excerpt has content:', !!excerpt.content);
-
-      // Log panel types to debug custom panel rendering
-      if (excerpt.content && excerpt.content.content) {
-        excerpt.content.content.forEach((node, i) => {
-          if (node.type === 'panel') {
-            console.log(`getExcerpt - Panel ${i}: type=${node.attrs?.panelType}, color=${node.attrs?.panelColor}, icon=${node.attrs?.panelIcon}`);
-          }
-        });
-      }
-    }
-
-    return {
-      success: true,
-      excerpt: excerpt
-    };
-  } catch (error) {
-    console.error('Error getting excerpt:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-});
+resolver.define('getExcerpt', getExcerptResolver);
 
 // Update excerpt content only (called automatically when Source macro body changes)
 resolver.define('updateExcerptContent', async (req) => {
@@ -335,89 +272,13 @@ resolver.define('saveVariableValues', async (req) => {
 });
 
 // Save cached rendered content for an Include instance
-resolver.define('saveCachedContent', async (req) => {
-  try {
-    const { localId, renderedContent } = req.payload;
-
-    const key = `macro-cache:${localId}`;
-    const now = new Date().toISOString();
-
-    await storage.set(key, {
-      content: renderedContent,
-      cachedAt: now
-    });
-
-    console.log(`saveCachedContent: Cached content for localId ${localId}`);
-
-    // Also update lastSynced in macro-vars
-    const varsKey = `macro-vars:${localId}`;
-    const existingVars = await storage.get(varsKey) || {};
-    existingVars.lastSynced = now;
-    await storage.set(varsKey, existingVars);
-
-    return { success: true, cachedAt: now };
-  } catch (error) {
-    console.error('Error saving cached content:', error);
-    return { success: false, error: error.message };
-  }
-});
+resolver.define('saveCachedContent', saveCachedContentResolver);
 
 // Get cached rendered content for an Include instance (view mode)
-resolver.define('getCachedContent', async (req) => {
-  try {
-    const { localId } = req.payload;
-
-    const key = `macro-cache:${localId}`;
-    const cached = await storage.get(key);
-
-    console.log(`getCachedContent for localId ${localId}: ${cached ? 'FOUND' : 'NOT FOUND'}`);
-
-    if (!cached) {
-      return { success: false, error: 'No cached content found' };
-    }
-
-    return {
-      success: true,
-      content: cached.content,
-      cachedAt: cached.cachedAt
-    };
-  } catch (error) {
-    console.error('Error loading cached content:', error);
-    return { success: false, error: error.message };
-  }
-});
+resolver.define('getCachedContent', getCachedContentResolver);
 
 // Check if Include instance has stale content (update available)
-resolver.define('checkVersionStaleness', async (req) => {
-  try {
-    const { localId, excerptId } = req.payload;
-
-    // Get excerpt's lastModified (updatedAt)
-    const excerpt = await storage.get(`excerpt:${excerptId}`);
-    if (!excerpt) {
-      return { success: false, error: 'Excerpt not found' };
-    }
-
-    // Get Include instance's lastSynced
-    const varsKey = `macro-vars:${localId}`;
-    const macroVars = await storage.get(varsKey);
-
-    const excerptLastModified = new Date(excerpt.updatedAt);
-    const includeLastSynced = macroVars?.lastSynced ? new Date(macroVars.lastSynced) : new Date(0);
-
-    const isStale = excerptLastModified > includeLastSynced;
-
-    return {
-      success: true,
-      isStale,
-      excerptLastModified: excerpt.updatedAt,
-      includeLastSynced: macroVars?.lastSynced || null
-    };
-  } catch (error) {
-    console.error('Error checking version staleness:', error);
-    return { success: false, error: error.message };
-  }
-});
+resolver.define('checkVersionStaleness', checkVersionStalenessResolver);
 
 // Push updates to all Include instances of a specific excerpt (Admin function)
 resolver.define('pushUpdatesToAll', async (req) => {
@@ -562,59 +423,11 @@ resolver.define('pushUpdatesToPage', async (req) => {
   }
 });
 
-// Get variable values and toggle states for a specific macro instance
 // Get page title via Confluence API
-resolver.define('getPageTitle', async (req) => {
-  try {
-    const { contentId } = req.payload;
-    console.log('Fetching page title for contentId:', contentId);
+resolver.define('getPageTitle', getPageTitleResolver);
 
-    const response = await api.asApp().requestConfluence(route`/wiki/api/v2/pages/${contentId}`);
-    const pageData = await response.json();
-
-    console.log('Page data fetched:', pageData);
-    console.log('Page title:', pageData.title);
-
-    return {
-      success: true,
-      title: pageData.title || ''
-    };
-  } catch (error) {
-    console.error('Error fetching page title:', error);
-    return {
-      success: false,
-      error: error.message,
-      title: ''
-    };
-  }
-});
-
-resolver.define('getVariableValues', async (req) => {
-  try {
-    const { localId } = req.payload;
-    const key = `macro-vars:${localId}`;
-    const data = await storage.get(key);
-
-    console.log('Getting variable values for localId:', localId, 'found:', !!data);
-    return {
-      success: true,
-      variableValues: data?.variableValues || {},
-      toggleStates: data?.toggleStates || {},
-      customInsertions: data?.customInsertions || [],
-      lastSynced: data?.lastSynced || null
-    };
-  } catch (error) {
-    console.error('Error getting variable values:', error);
-    return {
-      success: false,
-      error: error.message,
-      variableValues: {},
-      toggleStates: {},
-      customInsertions: [],
-      lastSynced: null
-    };
-  }
-});
+// Get variable values and toggle states for a specific macro instance
+resolver.define('getVariableValues', getVariableValuesResolver);
 
 // Get all excerpts with full details (for admin page)
 resolver.define('getAllExcerpts', async () => {
@@ -1103,51 +916,7 @@ resolver.define('checkAllSources', async (req) => {
 });
 
 // Get all orphaned usage entries (usage data for excerpts that no longer exist)
-resolver.define('getOrphanedUsage', async (req) => {
-  try {
-    console.log('Checking for orphaned usage entries...');
-
-    // Get all storage keys
-    const allKeys = await storage.query().where('key', startsWith('usage:')).getMany();
-    console.log('Found usage keys:', allKeys.results.length);
-
-    // Get all existing excerpt IDs
-    const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
-    const existingExcerptIds = new Set(excerptIndex.excerpts.map(e => e.id));
-    console.log('Existing excerpts:', existingExcerptIds.size);
-
-    // Find orphaned usage entries
-    const orphanedUsage = [];
-    for (const entry of allKeys.results) {
-      const excerptId = entry.key.replace('usage:', '');
-
-      // If usage exists but excerpt doesn't, it's orphaned
-      if (!existingExcerptIds.has(excerptId)) {
-        const usageData = entry.value;
-        orphanedUsage.push({
-          excerptId,
-          excerptName: usageData.excerptName || 'Unknown',
-          references: usageData.references || [],
-          referenceCount: (usageData.references || []).length
-        });
-      }
-    }
-
-    console.log('Found orphaned usage entries:', orphanedUsage.length);
-
-    return {
-      success: true,
-      orphanedUsage
-    };
-  } catch (error) {
-    console.error('Error getting orphaned usage:', error);
-    return {
-      success: false,
-      error: error.message,
-      orphanedUsage: []
-    };
-  }
-});
+resolver.define('getOrphanedUsage', getOrphanedUsageResolver);
 
 // Check all Include instances (verify they exist, clean up orphans, generate export data)
 resolver.define('checkAllIncludes', async (req) => {
@@ -1505,30 +1274,7 @@ resolver.define('checkAllIncludes', async (req) => {
 });
 
 // Get progress for checkAllIncludes operation
-resolver.define('getCheckProgress', async (req) => {
-  try {
-    const { progressId } = req.payload;
-    const progress = await storage.get(`progress:${progressId}`);
-
-    if (!progress) {
-      return {
-        success: false,
-        error: 'Progress not found'
-      };
-    }
-
-    return {
-      success: true,
-      progress
-    };
-  } catch (error) {
-    console.error('Error getting progress:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-});
+resolver.define('getCheckProgress', getCheckProgressResolver);
 
 // Import from MultiExcerpt and create SmartExcerpt
 resolver.define('importFromMultiExcerpt', async (req) => {
@@ -1623,72 +1369,13 @@ resolver.define('trackMigration', async (req) => {
 });
 
 // Get migration status
-resolver.define('getMigrationStatus', async () => {
-  try {
-    const tracker = await storage.get('migration-tracker') || { multiExcerpts: [] };
-
-    return {
-      success: true,
-      migrations: tracker.multiExcerpts
-    };
-  } catch (error) {
-    console.error('Error getting migration status:', error);
-    return {
-      success: false,
-      error: error.message,
-      migrations: []
-    };
-  }
-});
+resolver.define('getMigrationStatus', getMigrationStatusResolver);
 
 // Save categories to storage
-resolver.define('saveCategories', async (req) => {
-  try {
-    const { categories } = req.payload;
-
-    if (!Array.isArray(categories)) {
-      return {
-        success: false,
-        error: 'Categories must be an array'
-      };
-    }
-
-    await storage.set('categories', { categories });
-
-    return {
-      success: true
-    };
-  } catch (error) {
-    console.error('Error saving categories:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-});
+resolver.define('saveCategories', saveCategoriesResolver);
 
 // Get categories from storage
-resolver.define('getCategories', async () => {
-  try {
-    const data = await storage.get('categories');
-
-    // Return stored categories or default list if not found
-    const defaultCategories = ['General', 'Pricing', 'Technical', 'Legal', 'Marketing'];
-    const categories = data?.categories || defaultCategories;
-
-    return {
-      success: true,
-      categories
-    };
-  } catch (error) {
-    console.error('Error getting categories:', error);
-    return {
-      success: false,
-      error: error.message,
-      categories: ['General', 'Pricing', 'Technical', 'Legal', 'Marketing']
-    };
-  }
-});
+resolver.define('getCategories', getCategoriesResolver);
 
 // Scan for MultiExcerpt Include macros in 'cs' space
 resolver.define('scanMultiExcerptIncludes', async (req) => {
@@ -1874,30 +1561,7 @@ resolver.define('scanMultiExcerptIncludes', async (req) => {
 });
 
 // Get progress for scanMultiExcerptIncludes operation
-resolver.define('getMultiExcerptScanProgress', async (req) => {
-  try {
-    const { progressId } = req.payload;
-    const progress = await storage.get(`progress:${progressId}`);
-
-    if (!progress) {
-      return {
-        success: false,
-        error: 'Progress not found'
-      };
-    }
-
-    return {
-      success: true,
-      progress
-    };
-  } catch (error) {
-    console.error('Error getting scan progress:', error);
-    return {
-      success: false,
-      error: error.message
-    };
-  }
-});
+resolver.define('getMultiExcerptScanProgress', getMultiExcerptScanProgressResolver);
 
 // Bulk import MultiExcerpt Sources from JSON export
 resolver.define('bulkImportSources', async (req) => {
