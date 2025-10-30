@@ -1,146 +1,15 @@
 import Resolver from '@forge/resolver';
 import { storage, startsWith } from '@forge/api';
 import api, { route } from '@forge/api';
-import { generateUUID } from './utils';
+import { generateUUID } from './utils.js';
+
+// Import utility functions from modular files
+import { extractTextFromAdf, findHeadingBeforeMacro } from './utils/adf-utils.js';
+import { detectVariables, detectToggles } from './utils/detection-utils.js';
+import { updateExcerptIndex } from './utils/storage-utils.js';
+import { decodeTemplateData, storageToPlainText, cleanMultiExcerptMacros } from './utils/migration-utils.js';
 
 const resolver = new Resolver();
-
-// Extract text from ADF document
-function extractTextFromAdf(adfNode) {
-  if (!adfNode) return '';
-
-  let text = '';
-
-  // If it's a text node, return its text
-  if (adfNode.text) {
-    text += adfNode.text;
-  }
-
-  // Recursively process content array
-  if (adfNode.content && Array.isArray(adfNode.content)) {
-    for (const child of adfNode.content) {
-      text += extractTextFromAdf(child);
-    }
-  }
-
-  return text;
-}
-
-// Find the heading that appears directly before a macro with a specific localId
-function findHeadingBeforeMacro(adfDoc, targetLocalId) {
-  if (!adfDoc || !adfDoc.content) return null;
-
-  let lastHeading = null;
-
-  // Recursively traverse the ADF structure
-  function traverse(nodes) {
-    for (const node of nodes) {
-      // Track the most recent heading
-      if (node.type === 'heading' && node.content) {
-        lastHeading = extractTextFromAdf(node);
-      }
-
-      // Check if this is the target macro (extension or bodiedExtension)
-      if ((node.type === 'extension' || node.type === 'bodiedExtension') &&
-          node.attrs?.localId === targetLocalId) {
-        return lastHeading;
-      }
-
-      // Recursively check children
-      if (node.content && Array.isArray(node.content)) {
-        const result = traverse(node.content);
-        if (result !== null && result !== undefined) {
-          return result;
-        }
-      }
-    }
-    return null;
-  }
-
-  return traverse(adfDoc.content);
-}
-
-// Detect variables in content ({{variable}} syntax)
-// Supports both plain text and ADF format
-// Note: Excludes toggle markers from variable detection
-function detectVariables(content) {
-  const variables = [];
-  const variableRegex = /\{\{([^}]+)\}\}/g;
-  let match;
-
-  // Extract text from content (handle both string and ADF object)
-  let textContent = '';
-  if (typeof content === 'string') {
-    textContent = content;
-  } else if (content && typeof content === 'object') {
-    // ADF format
-    textContent = extractTextFromAdf(content);
-  }
-
-  while ((match = variableRegex.exec(textContent)) !== null) {
-    const varName = match[1].trim();
-    // Skip toggle markers (they start with "toggle:" or "/toggle:")
-    if (varName.startsWith('toggle:') || varName.startsWith('/toggle:')) {
-      continue;
-    }
-    if (!variables.find(v => v.name === varName)) {
-      variables.push({
-        name: varName,
-        description: '',
-        example: ''
-      });
-    }
-  }
-
-  return variables;
-}
-
-// Detect toggles in content ({{toggle:name}}...{{/toggle:name}} syntax)
-// Supports both plain text and ADF format
-function detectToggles(content) {
-  const toggles = [];
-  const toggleRegex = /\{\{toggle:([^}]+)\}\}/g;
-  let match;
-
-  // Extract text from content (handle both string and ADF object)
-  let textContent = '';
-  if (typeof content === 'string') {
-    textContent = content;
-  } else if (content && typeof content === 'object') {
-    // ADF format
-    textContent = extractTextFromAdf(content);
-  }
-
-  while ((match = toggleRegex.exec(textContent)) !== null) {
-    const toggleName = match[1].trim();
-    if (!toggles.find(t => t.name === toggleName)) {
-      toggles.push({
-        name: toggleName,
-        description: ''
-      });
-    }
-  }
-
-  return toggles;
-}
-
-// Update excerpt index
-async function updateExcerptIndex(excerpt) {
-  const index = await storage.get('excerpt-index') || { excerpts: [] };
-
-  // Remove old entry if exists
-  index.excerpts = index.excerpts.filter(e => e.id !== excerpt.id);
-
-  // Add updated entry
-  index.excerpts.push({
-    id: excerpt.id,
-    name: excerpt.name,
-    category: excerpt.category,
-    updatedAt: excerpt.updatedAt
-  });
-
-  await storage.set('excerpt-index', index);
-}
 
 // Detect variables from content (for UI to call)
 resolver.define('detectVariablesFromContent', async (req) => {
@@ -1813,29 +1682,6 @@ resolver.define('getCategories', async () => {
   }
 });
 
-// Decode MultiExcerpt templateData (base64 + zlib compressed JSON)
-function decodeTemplateData(templateDataString) {
-  try {
-    // Remove any whitespace
-    const cleaned = templateDataString.trim();
-
-    // Base64 decode
-    const compressed = Buffer.from(cleaned, 'base64');
-
-    // Zlib decompress
-    const zlib = require('zlib');
-    const decompressed = zlib.inflateSync(compressed);
-
-    // Parse JSON
-    const parsed = JSON.parse(decompressed.toString('utf-8'));
-
-    return parsed;
-  } catch (error) {
-    console.error('Error decoding templateData:', error);
-    return null;
-  }
-}
-
 // Scan for MultiExcerpt Include macros in 'cs' space
 resolver.define('scanMultiExcerptIncludes', async (req) => {
   try {
@@ -2044,76 +1890,6 @@ resolver.define('getMultiExcerptScanProgress', async (req) => {
     };
   }
 });
-
-// Convert storage format XML to plain text for SmartExcerpt
-function storageToPlainText(storageContent) {
-  if (!storageContent) return '';
-
-  let text = storageContent;
-
-  // Remove XML tags
-  text = text.replace(/<[^>]+>/g, ' ');
-
-  // Decode HTML entities
-  text = text.replace(/&nbsp;/g, ' ');
-  text = text.replace(/&amp;/g, '&');
-  text = text.replace(/&lt;/g, '<');
-  text = text.replace(/&gt;/g, '>');
-  text = text.replace(/&quot;/g, '"');
-
-  // Normalize whitespace
-  text = text.replace(/\s+/g, ' ');
-
-  return text.trim();
-}
-
-// Clean MultiExcerpt-specific macros from storage format content
-function cleanMultiExcerptMacros(storageContent) {
-  if (!storageContent) return '';
-
-  let cleaned = storageContent;
-
-  // Count opening and closing structured-macro tags before cleaning
-  const initialOpenCount = (cleaned.match(/<ac:structured-macro/g) || []).length;
-  const initialCloseCount = (cleaned.match(/<\/ac:structured-macro>/g) || []).length;
-
-  // Step 1: Remove multiexcerpt macro opening tags (with parameters)
-  // This regex finds the opening tag and all parameters up to the rich-text-body
-  cleaned = cleaned.replace(/<ac:structured-macro[^>]*ac:name="multiexcerpt-macro"[^>]*>[\s\S]*?<ac:rich-text-body>/g, '');
-  cleaned = cleaned.replace(/<ac:structured-macro ac:name="multiexcerpt-macro"[^>]*>[\s\S]*?<ac:rich-text-body>/g, '');
-
-  // Remove multiexcerpt-include-macro opening tags (usually self-contained or with parameters)
-  cleaned = cleaned.replace(/<ac:structured-macro[^>]*ac:name="multiexcerpt-include-macro"[^>]*>[\s\S]*?<\/ac:structured-macro>/g, '');
-  cleaned = cleaned.replace(/<ac:structured-macro ac:name="multiexcerpt-include-macro"[^>]*>[\s\S]*?<\/ac:structured-macro>/g, '');
-
-  // Step 2: Remove any remaining multiexcerpt opening tags (without trying to match content)
-  cleaned = cleaned.replace(/<ac:structured-macro[^>]*ac:name="multiexcerpt-macro"[^>]*>/g, '');
-  cleaned = cleaned.replace(/<ac:structured-macro ac:name="multiexcerpt-macro"[^>]*>/g, '');
-  cleaned = cleaned.replace(/<ac:structured-macro[^>]*ac:name="multiexcerpt-include-macro"[^>]*>/g, '');
-  cleaned = cleaned.replace(/<ac:structured-macro ac:name="multiexcerpt-include-macro"[^>]*>/g, '');
-
-  // Step 3: Remove orphaned </ac:rich-text-body> tags left from multiexcerpt removal
-  const finalOpenCount = (cleaned.match(/<ac:structured-macro/g) || []).length;
-  const finalCloseCount = (cleaned.match(/<\/ac:structured-macro>/g) || []).length;
-
-  // If we now have more closing tags than opening tags (orphaned closes from multiexcerpts)
-  if (finalCloseCount > finalOpenCount) {
-    const orphanedCount = finalCloseCount - finalOpenCount;
-    // Remove that many closing tags from the end
-    for (let i = 0; i < orphanedCount; i++) {
-      const lastCloseIndex = cleaned.lastIndexOf('</ac:structured-macro>');
-      if (lastCloseIndex !== -1) {
-        cleaned = cleaned.substring(0, lastCloseIndex) + cleaned.substring(lastCloseIndex + '</ac:structured-macro>'.length);
-      }
-    }
-  }
-
-  // Also remove orphaned rich-text-body closing tags
-  cleaned = cleaned.replace(/<\/ac:rich-text-body>\s*<\/ac:structured-macro>/g, '</ac:structured-macro>');
-  cleaned = cleaned.replace(/<\/ac:rich-text-body>/g, '');
-
-  return cleaned;
-}
 
 // Bulk import MultiExcerpt Sources from JSON export
 resolver.define('bulkImportSources', async (req) => {
