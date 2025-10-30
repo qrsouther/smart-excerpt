@@ -1,8 +1,10 @@
 # Bug: Toggle Markers Visible in Include Macro Published View
 
-**Status:** Documented - To Fix After Phase 1 Testing
+**Status:** ✅ RESOLVED (v6.31)
 **Date Discovered:** 2025-10-30
+**Date Resolved:** 2025-10-30
 **Discovered During:** Phase 1 refactoring testing
+**Resolution Version:** v6.31
 **Priority:** Medium
 
 ## Problem
@@ -96,12 +98,33 @@ text = text.replace(toggleRegex, (match, toggleName, content) => {
 - **Visual Cleanliness:** Low - Content is still readable, just cluttered
 - **Functionality:** None - Toggle enable/disable logic works correctly
 
-## Next Steps
+## Resolution (v6.31)
 
-1. ✅ Complete Phase 1 testing (confirm refactoring didn't introduce regressions)
-2. 🔧 Debug `filterContentByToggles` application in rendering pipeline
-3. 🧪 Add test case for toggle marker removal
-4. 🚀 Deploy fix to dev environment
+**Root Cause:** Rich text formatting in Confluence's ADF splits toggle content across multiple text nodes, breaking regex pattern matching. The original overlap detection logic only removed nodes COMPLETELY within the content range, missing nodes that contained toggle markers.
+
+**Fix Applied:** Modified overlap detection in `filterContentByToggles` (line 266) to remove ANY node that has overlap with the full toggle range (including markers):
+
+```javascript
+// OLD (BROKEN): Only removed nodes completely within content range
+if (item.textStart >= range.contentStart && item.textEnd <= range.contentEnd)
+
+// NEW (FIXED): Removes nodes with ANY overlap with full toggle range
+if (item.textEnd > range.fullStart && item.textStart < range.fullEnd)
+```
+
+**Implementation Details:**
+- Implemented two-pass algorithm: flatten all text nodes to find complete toggle patterns, then remove overlapping nodes
+- Changed from checking if nodes are within `contentStart`-`contentEnd` to checking overlap with `fullStart`-`fullEnd`
+- This ensures ALL nodes within disabled toggle blocks are removed, not just the middle ones
+
+**Testing Results:**
+✅ Published view: Markers hidden, toggle filtering works correctly
+✅ Edit > Write > Preview: Markers hidden, toggle filtering works correctly
+✅ Edit > Alternatives > Preview: Same as Write (markers hidden, toggle filtering works)
+✅ Edit > Free Write > Preview: Same as Write (markers hidden, toggle filtering works)
+
+**Cleanup:**
+- Removed all debug console.log statements added during investigation (v6.32)
 
 ## Related Code
 

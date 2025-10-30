@@ -171,41 +171,139 @@ const cleanupEmptyNodes = (adfNode) => {
 };
 
 // Helper function to filter content based on toggle states
-// Removes content between {{toggle:name}}...{{/toggle:name}} markers when toggle is disabled
-// Works with both plain text and ADF format, supporting inline toggles
+// Handles rich text formatting by processing toggle ranges across multiple nodes
 const filterContentByToggles = (adfNode, toggleStates) => {
   if (!adfNode) return null;
 
-  // If it's a text node, filter toggle blocks
-  if (adfNode.type === 'text' && adfNode.text) {
-    let text = adfNode.text;
+  // For container nodes (paragraph, doc, etc.), process toggle ranges across all children
+  if (adfNode.content && Array.isArray(adfNode.content)) {
+    // First pass: Flatten and extract all text with node references
+    const flattenNodes = (nodes, path = []) => {
+      const flattened = [];
+      let textPosition = 0;
 
-    // Process toggles - remove content for disabled toggles
-    // Match opening tag, content, and closing tag
+      for (let i = 0; i < nodes.length; i++) {
+        const node = nodes[i];
+        const currentPath = [...path, i];
+
+        if (node.type === 'text' && node.text) {
+          flattened.push({
+            node,
+            path: currentPath,
+            textStart: textPosition,
+            textEnd: textPosition + node.text.length,
+            text: node.text
+          });
+          textPosition += node.text.length;
+        } else if (node.content && Array.isArray(node.content)) {
+          // Recursively flatten nested content
+          const nested = flattenNodes(node.content, currentPath);
+          flattened.push({
+            node,
+            path: currentPath,
+            textStart: textPosition,
+            textEnd: textPosition + nested.totalText.length,
+            isContainer: true,
+            children: nested.flattened
+          });
+          textPosition += nested.totalText.length;
+        } else {
+          // Non-text, non-container nodes (images, etc.)
+          flattened.push({
+            node,
+            path: currentPath,
+            textStart: textPosition,
+            textEnd: textPosition,
+            isLeaf: true
+          });
+        }
+      }
+
+      const totalText = flattened
+        .map(f => f.text || '')
+        .join('');
+
+      return { flattened, totalText, textPosition };
+    };
+
+    const { flattened, totalText } = flattenNodes(adfNode.content);
+
+    // Find all toggle ranges
     const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
+    const toggleRanges = [];
+    let match;
 
-    text = text.replace(toggleRegex, (match, toggleName, content) => {
-      const trimmedName = toggleName.trim();
-      // If toggle is enabled (true), keep content without markers
-      // If toggle is disabled (false/undefined), remove everything
-      return toggleStates?.[trimmedName] === true ? content : '';
-    });
+    while ((match = toggleRegex.exec(totalText)) !== null) {
+      const toggleName = match[1].trim();
+      const isEnabled = toggleStates?.[toggleName] === true;
 
-    // If text is now empty or only whitespace after filtering, return null to remove this node
-    if (text.trim() === '') {
-      return null;
+      const openMarker = `{{toggle:${match[1]}}}`;
+      const closeMarker = `{{/toggle:${match[1]}}}`;
+
+      toggleRanges.push({
+        name: toggleName,
+        enabled: isEnabled,
+        fullStart: match.index,
+        fullEnd: match.index + match[0].length,
+        contentStart: match.index + openMarker.length,
+        contentEnd: match.index + match[0].length - closeMarker.length
+      });
     }
 
-    return { ...adfNode, text };
-  }
+    // Second pass: Filter and process nodes
+    const processFlattened = () => {
+      const newContent = [];
 
-  // Recursively process content array
-  if (adfNode.content && Array.isArray(adfNode.content)) {
-    const newContent = adfNode.content
-      .map(child => filterContentByToggles(child, toggleStates))
-      .filter(child => child !== null);  // Remove null nodes
+      for (const item of flattened) {
+        // Check if node overlaps with any toggle range
+        let inDisabledToggle = false;
+        let textModifications = [];
 
-    // If this node has no content left after filtering, remove it
+        for (const range of toggleRanges) {
+          if (!range.enabled) {
+            // Node overlaps with disabled toggle - remove entire node
+            // Check if node has ANY overlap with the full toggle range (including markers)
+            if (item.textEnd > range.fullStart && item.textStart < range.fullEnd) {
+              inDisabledToggle = true;
+              break;
+            }
+          }
+        }
+
+        if (inDisabledToggle) {
+          continue; // Skip this node
+        }
+
+        // For text nodes, strip toggle markers if present
+        if (item.node.type === 'text' && item.text) {
+          let newText = item.text;
+
+          // Remove any toggle markers from this text node
+          newText = newText.replace(/\{\{toggle:[^}]+\}\}/g, '');
+          newText = newText.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
+
+          if (newText.trim() === '') {
+            continue; // Skip empty nodes
+          }
+
+          newContent.push({ ...item.node, text: newText });
+        } else if (item.isContainer) {
+          // Recursively process container
+          const processed = filterContentByToggles({ ...item.node }, toggleStates);
+          if (processed) {
+            newContent.push(processed);
+          }
+        } else {
+          // Keep other nodes as-is
+          newContent.push(item.node);
+        }
+      }
+
+      return newContent;
+    };
+
+    const newContent = processFlattened();
+
     if (newContent.length === 0 && adfNode.type !== 'doc') {
       return null;
     }
@@ -213,6 +311,33 @@ const filterContentByToggles = (adfNode, toggleStates) => {
     return {
       ...adfNode,
       content: newContent
+    };
+  }
+
+  return adfNode;
+};
+
+// Helper function to strip toggle markers from text nodes
+// Removes {{toggle:name}} and {{/toggle:name}} markers from rendered content
+// This is applied AFTER filterContentByToggles to ensure markers are never visible
+const stripToggleMarkers = (adfNode) => {
+  if (!adfNode) return adfNode;
+
+  // If it's a text node, strip markers
+  if (adfNode.type === 'text' && adfNode.text) {
+    let text = adfNode.text;
+    // Remove opening toggle markers
+    text = text.replace(/\{\{toggle:[^}]+\}\}/g, '');
+    // Remove closing toggle markers
+    text = text.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
+    return { ...adfNode, text };
+  }
+
+  // Recursively process content array
+  if (adfNode.content && Array.isArray(adfNode.content)) {
+    return {
+      ...adfNode,
+      content: adfNode.content.map(child => stripToggleMarkers(child))
     };
   }
 
@@ -416,6 +541,7 @@ const App = () => {
   const [customText, setCustomText] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', or 'error'
+  const [selectedTabIndex, setSelectedTabIndex] = useState(0); // Track active tab (0=Write, 1=Alternatives, 2=Free Write)
   // View mode staleness detection state
   const [isStale, setIsStale] = useState(false);
   const [sourceLastModified, setSourceLastModified] = useState(null);
@@ -465,6 +591,26 @@ const App = () => {
                 freshContent = filterContentByToggles(freshContent, loadedToggleStates);
                 freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
                 freshContent = insertCustomParagraphsInAdf(freshContent, loadedCustomInsertions);
+              } else {
+                // For plain text, filter toggles
+                const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
+                freshContent = freshContent.replace(toggleRegex, (match, toggleName, content) => {
+                  const trimmedName = toggleName.trim();
+                  return loadedToggleStates?.[trimmedName] === true ? content : '';
+                });
+                // Strip any remaining markers
+                freshContent = freshContent.replace(/\{\{toggle:[^}]+\}\}/g, '');
+                freshContent = freshContent.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
+
+                // Substitute variables
+                const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                if (excerptResult.excerpt.variables) {
+                  excerptResult.excerpt.variables.forEach(variable => {
+                    const value = loadedVariableValues[variable.name] || `{{${variable.name}}}`;
+                    const regex = new RegExp(`\\{\\{${escapeRegex(variable.name)}\\}\\}`, 'g');
+                    freshContent = freshContent.replace(regex, value);
+                  });
+                }
               }
 
               setContent(freshContent);
@@ -541,7 +687,7 @@ const App = () => {
         const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
 
         if (isAdf) {
-          // First filter toggles, then substitute variables, then insert custom paragraphs
+          // First filter toggles, then substitute variables, insert custom paragraphs
           freshContent = filterContentByToggles(freshContent, loadedToggleStates);
           freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
           freshContent = insertCustomParagraphsInAdf(freshContent, loadedCustomInsertions);
@@ -552,6 +698,10 @@ const App = () => {
             const trimmedName = toggleName.trim();
             return loadedToggleStates?.[trimmedName] === true ? content : '';
           });
+
+          // Strip any remaining markers
+          freshContent = freshContent.replace(/\{\{toggle:[^}]+\}\}/g, '');
+          freshContent = freshContent.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
 
           // Then substitute variables
           const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -687,7 +837,7 @@ const App = () => {
     const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
     if (isAdf) {
-      // First filter toggles, then substitute variables, then insert custom paragraphs
+      // First filter toggles, substitute variables, insert custom paragraphs
       previewContent = filterContentByToggles(previewContent, toggleStates);
       previewContent = substituteVariablesInAdf(previewContent, variableValues);
       previewContent = insertCustomParagraphsInAdf(previewContent, customInsertions);
@@ -698,6 +848,42 @@ const App = () => {
       previewContent = previewContent.replace(toggleRegex, (match, toggleName, content) => {
         const trimmedName = toggleName.trim();
         return toggleStates?.[trimmedName] === true ? content : '';
+      });
+
+      // Strip any remaining markers (in case regex didn't match full pattern)
+      previewContent = previewContent.replace(/\{\{toggle:[^}]+\}\}/g, '');
+      previewContent = previewContent.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
+
+      // Then substitute variables
+      excerpt.variables?.forEach(variable => {
+        const value = variableValues[variable.name] || `{{${variable.name}}}`;
+        const regex = new RegExp(`\\{\\{${variable.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}\\}`, 'g');
+        previewContent = previewContent.replace(regex, value);
+      });
+      return previewContent;
+    }
+  };
+
+  // Get raw preview content for Alternatives and Free Write tabs (keeps toggle markers visible)
+  const getRawPreviewContent = () => {
+    if (!excerpt) return content;
+
+    let previewContent = excerpt.content;
+    const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
+
+    if (isAdf) {
+      // Filter toggles (removes disabled content) but DON'T strip markers
+      previewContent = filterContentByToggles(previewContent, toggleStates);
+      previewContent = substituteVariablesInAdf(previewContent, variableValues);
+      previewContent = insertCustomParagraphsInAdf(previewContent, customInsertions);
+      return cleanAdfForRenderer(previewContent);
+    } else {
+      // For plain text
+      const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
+      previewContent = previewContent.replace(toggleRegex, (match, toggleName, content) => {
+        const trimmedName = toggleName.trim();
+        // Keep full match (including markers) if enabled, remove everything if disabled
+        return toggleStates?.[trimmedName] === true ? match : '';
       });
 
       // Then substitute variables
@@ -740,6 +926,27 @@ const App = () => {
         freshContent = filterContentByToggles(freshContent, currentToggleStates);
         freshContent = substituteVariablesInAdf(freshContent, currentVariableValues);
         freshContent = insertCustomParagraphsInAdf(freshContent, currentCustomInsertions);
+      } else {
+        // For plain text, filter toggles first
+        const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
+        freshContent = freshContent.replace(toggleRegex, (match, toggleName, content) => {
+          const trimmedName = toggleName.trim();
+          return currentToggleStates?.[trimmedName] === true ? content : '';
+        });
+
+        // Strip any remaining markers
+        freshContent = freshContent.replace(/\{\{toggle:[^}]+\}\}/g, '');
+        freshContent = freshContent.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
+
+        // Substitute variables
+        const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (excerptResult.excerpt.variables) {
+          excerptResult.excerpt.variables.forEach(variable => {
+            const value = currentVariableValues[variable.name] || `{{${variable.name}}}`;
+            const regex = new RegExp(`\\{\\{${escapeRegex(variable.name)}\\}\\}`, 'g');
+            freshContent = freshContent.replace(regex, value);
+          });
+        }
       }
 
       // Update the displayed content
@@ -765,7 +972,13 @@ const App = () => {
 
   // EDIT MODE: Show variable inputs and preview
   if (isEditing && excerpt) {
-    const previewContent = getPreviewContent();
+    // Use different preview based on selected tab
+    // Write tab (0): Rendered without markers
+    // Alternatives tab (1): Raw with markers
+    // Free Write tab (2): Raw with markers
+    const previewContent = (selectedTabIndex === 1 || selectedTabIndex === 2)
+      ? getRawPreviewContent()
+      : getPreviewContent();
     const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
     // Format timestamps for display
@@ -817,7 +1030,7 @@ const App = () => {
           </Inline>
         </Inline>
 
-        <Tabs>
+        <Tabs onChange={(index) => setSelectedTabIndex(index)}>
         <TabList>
           <Tab>Write</Tab>
           <Tab>Alternatives</Tab>
