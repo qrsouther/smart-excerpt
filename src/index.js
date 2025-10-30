@@ -281,7 +281,11 @@ resolver.define('saveVariableValues', async (req) => {
           // Parse the ADF to find the heading above this Include macro
           if (pageData.body?.atlas_doc_format?.value) {
             const adfContent = JSON.parse(pageData.body.atlas_doc_format.value);
-            headingAnchor = findHeadingBeforeMacro(adfContent, localId);
+            const headingText = findHeadingBeforeMacro(adfContent, localId);
+            // Format heading for Confluence URL anchor (spaces → hyphens)
+            if (headingText) {
+              headingAnchor = headingText.replace(/\s+/g, '-');
+            }
           }
         } catch (apiError) {
           console.error('Error fetching page data:', apiError);
@@ -762,7 +766,11 @@ resolver.define('trackExcerptUsage', async (req) => {
       // Parse the ADF to find the heading above this Include macro
       if (pageData.body?.atlas_doc_format?.value) {
         const adfContent = JSON.parse(pageData.body.atlas_doc_format.value);
-        headingAnchor = findHeadingBeforeMacro(adfContent, localId);
+        const headingText = findHeadingBeforeMacro(adfContent, localId);
+        // Format heading for Confluence URL anchor (spaces → hyphens)
+        if (headingText) {
+          headingAnchor = headingText.replace(/\s+/g, '-');
+        }
       }
     } catch (apiError) {
       console.error('Error fetching page data via API:', apiError);
