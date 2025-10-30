@@ -119,12 +119,26 @@ const App = () => {
   const [includesCheckResult, setIncludesCheckResult] = useState(null);
   const [includesProgress, setIncludesProgress] = useState(null);
   const [progressId, setProgressId] = useState(null);
+  // MultiExcerpt scan state
+  const [isScanningMultiExcerpt, setIsScanningMultiExcerpt] = useState(false);
+  const [multiExcerptScanResult, setMultiExcerptScanResult] = useState(null);
+  const [multiExcerptProgress, setMultiExcerptProgress] = useState(null);
+  const [multiExcerptProgressId, setMultiExcerptProgressId] = useState(null);
+  // Bulk import state
+  const [importJsonData, setImportJsonData] = useState(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  // Create macros state
+  const [isCreatingMacros, setIsCreatingMacros] = useState(false);
+  const [macroCreationResult, setMacroCreationResult] = useState(null);
   // Category management
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [categories, setCategories] = useState(['General', 'Pricing', 'Technical', 'Legal', 'Marketing']);
   const [editingCategory, setEditingCategory] = useState(null);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
+  // Bulk initialization state
+  const [isInitializing, setIsInitializing] = useState(false);
 
   // Load categories from storage on mount
   useEffect(() => {
@@ -193,15 +207,15 @@ const App = () => {
 
           setExcerpts(sanitized);
 
-          // Load usage data for each excerpt
-          const usageMap = {};
-          for (const excerpt of sanitized) {
-            const usageResult = await invoke('getExcerptUsage', { excerptId: excerpt.id });
-            if (usageResult && usageResult.success) {
-              usageMap[excerpt.id] = usageResult.usage || [];
-            }
+          // Auto-discover categories from excerpts (in case new categories were added via import)
+          const categoriesFromExcerpts = [...new Set(sanitized.map(e => e.category || 'General'))];
+          const newCategories = categoriesFromExcerpts.filter(cat => !categories.includes(cat));
+          if (newCategories.length > 0) {
+            console.log('Auto-discovered new categories:', newCategories);
+            setCategories(prev => [...prev, ...newCategories]);
           }
-          setUsageData(usageMap);
+
+          // Usage data will be loaded on-demand when clicking an excerpt (lazy loading)
 
           // Load orphaned usage data
           try {
@@ -549,6 +563,400 @@ const App = () => {
     }
   };
 
+  // Generate CSV for MultiExcerpt Includes scan results
+  const generateMultiExcerptCSV = (includeData) => {
+    // Helper to escape CSV values
+    const escapeCSV = (value) => {
+      if (value === null || value === undefined) return '';
+      const stringValue = String(value);
+      if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
+        return `"${stringValue.replace(/"/g, '""')}"`;
+      }
+      return stringValue;
+    };
+
+    // Collect all unique variable names across all includes
+    const allVariables = new Set();
+    includeData.forEach(inc => {
+      if (inc.variableValues && Array.isArray(inc.variableValues)) {
+        inc.variableValues.forEach(varObj => {
+          if (varObj.k) {
+            allVariables.add(varObj.k);
+          }
+        });
+      }
+    });
+
+    const variableColumns = Array.from(allVariables).sort();
+
+    // Build CSV header
+    const baseHeaders = [
+      'Page ID',
+      'Page Title',
+      'Page URL',
+      'MultiExcerpt Name',
+      'Source Page Title'
+    ];
+
+    // Add variable columns
+    const variableHeaders = variableColumns.map(varName => `Variable: ${varName}`);
+
+    const headers = [...baseHeaders, ...variableHeaders];
+
+    // Build CSV rows
+    const rows = includeData.map(inc => {
+      const row = [
+        escapeCSV(inc.pageId || ''),
+        escapeCSV(inc.pageTitle || ''),
+        escapeCSV(inc.pageUrl || ''),
+        escapeCSV(inc.multiExcerptName || ''),
+        escapeCSV(inc.sourcePageTitle || '')
+      ];
+
+      // Add variable values
+      variableColumns.forEach(varName => {
+        const varObj = inc.variableValues?.find(v => v.k === varName);
+        const value = varObj?.v || '';
+        row.push(escapeCSV(value));
+      });
+
+      return row.join(',');
+    });
+
+    // Combine header and rows
+    return [headers.join(','), ...rows].join('\n');
+  };
+
+  // Handle Scan MultiExcerpt Includes button click
+  const handleScanMultiExcerptIncludes = async () => {
+    setIsScanningMultiExcerpt(true);
+    setMultiExcerptProgress({
+      phase: 'starting',
+      total: 0,
+      processed: 0,
+      percent: 0,
+      status: 'Initializing scan...'
+    });
+
+    try {
+      console.log('🔍 Starting MultiExcerpt Includes scan in cs space...');
+
+      // Start the backend scan
+      const result = await invoke('scanMultiExcerptIncludes');
+      console.log('Scan result:', result);
+
+      if (result.success) {
+        console.log('Got progressId:', result.progressId);
+
+        // Fetch final progress state
+        if (result.progressId) {
+          const progressResult = await invoke('getMultiExcerptScanProgress', { progressId: result.progressId });
+          if (progressResult.success && progressResult.progress) {
+            setMultiExcerptProgress(progressResult.progress);
+            // Give user time to see 100% completion
+            await new Promise(resolve => setTimeout(resolve, 800));
+          }
+        }
+
+        setMultiExcerptScanResult(result);
+
+        // Build summary message
+        let message = `✅ Scan complete:\n`;
+        message += `• Found ${result.summary.totalIncludes} MultiExcerpt Include(s)\n`;
+        message += `• Across ${result.summary.totalPages} page(s) in 'cs' space`;
+
+        console.log(message);
+        alert(message);
+
+        // Offer to download CSV
+        if (result.includeData && result.includeData.length > 0) {
+          if (confirm(`\nWould you like to download a CSV report of all ${result.summary.totalIncludes} MultiExcerpt Include instances?`)) {
+            const csv = generateMultiExcerptCSV(result.includeData);
+            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `multiexcerpt-includes-scan-${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
+        }
+      } else {
+        console.error('Scan failed:', result.error);
+        alert('Scan failed: ' + result.error);
+      }
+    } catch (err) {
+      console.error('Error scanning MultiExcerpt includes:', err);
+      alert('Error scanning MultiExcerpt includes: ' + err.message);
+    } finally {
+      setIsScanningMultiExcerpt(false);
+      setMultiExcerptProgressId(null);
+      setMultiExcerptProgress(null);
+    }
+  };
+
+  // Poll for MultiExcerpt scan progress updates
+  useEffect(() => {
+    if (!multiExcerptProgressId || !isScanningMultiExcerpt) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const result = await invoke('getMultiExcerptScanProgress', { progressId: multiExcerptProgressId });
+        if (result.success && result.progress) {
+          setMultiExcerptProgress(result.progress);
+
+          // Stop polling when complete
+          if (result.progress.phase === 'complete') {
+            clearInterval(pollInterval);
+          }
+        }
+      } catch (err) {
+        console.error('Error polling MultiExcerpt scan progress:', err);
+      }
+    }, 1000); // Poll every second
+
+    return () => clearInterval(pollInterval);
+  }, [multiExcerptProgressId, isScanningMultiExcerpt]);
+
+  // Handle JSON paste for bulk import
+  const [jsonTextInput, setJsonTextInput] = useState('');
+
+  const handleJsonParse = () => {
+    if (!jsonTextInput.trim()) {
+      alert('Please paste JSON content first');
+      return;
+    }
+
+    try {
+      const json = JSON.parse(jsonTextInput);
+      setImportJsonData(json);
+      setImportResult(null);
+      console.log('JSON loaded:', json.sourceCount, 'sources');
+    } catch (error) {
+      alert('Error parsing JSON: ' + error.message);
+    }
+  };
+
+  // Handle bulk import
+  const handleBulkImport = async () => {
+    if (!importJsonData || !importJsonData.sources) {
+      alert('Please upload a valid JSON file first');
+      return;
+    }
+
+    if (!confirm(`Import ${importJsonData.sourceCount} MultiExcerpt Sources into SmartExcerpt?`)) {
+      return;
+    }
+
+    setIsImporting(true);
+
+    try {
+      console.log('Starting bulk import...');
+
+      const result = await invoke('bulkImportSources', {
+        sources: importJsonData.sources
+      });
+
+      console.log('Import result:', result);
+
+      if (result.success) {
+        setImportResult(result);
+
+        // Add "Migrated from MultiExcerpt" category if it doesn't exist
+        const migrationCategory = 'Migrated from MultiExcerpt';
+        if (!categories.includes(migrationCategory)) {
+          setCategories(prev => [...prev, migrationCategory]);
+        }
+
+        let message = `✅ Import complete!\n\n`;
+        message += `• ${result.summary.imported} Source(s) imported successfully\n`;
+        if (result.summary.errors > 0) {
+          message += `• ${result.summary.errors} error(s) occurred\n`;
+        }
+        message += `\nAll imported Sources are in the "Migrated from MultiExcerpt" category.`;
+
+        alert(message);
+
+        // Reload excerpts to show newly imported ones
+        const reloadResult = await invoke('getAllExcerpts');
+        if (reloadResult.success) {
+          const sanitized = (reloadResult.excerpts || []).map(excerpt => ({
+            ...excerpt,
+            variables: Array.isArray(excerpt.variables) ? excerpt.variables.filter(v => v && typeof v === 'object' && v.name) : [],
+            toggles: Array.isArray(excerpt.toggles) ? excerpt.toggles.filter(t => t && typeof t === 'object' && t.name) : [],
+            category: String(excerpt.category || 'General'),
+            updatedAt: excerpt.updatedAt ? String(excerpt.updatedAt) : null
+          }));
+          setExcerpts(sanitized);
+        }
+
+      } else {
+        alert('Import failed: ' + result.error);
+      }
+
+    } catch (error) {
+      console.error('Error importing sources:', error);
+      alert('Import error: ' + error.message);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Handle creating Source macros on page
+  const handleCreateSourceMacros = async () => {
+    const pageId = '80150529'; // Migrated Content page
+    const category = 'Migrated from MultiExcerpt';
+
+    // Count excerpts in this category
+    const migrated = excerpts.filter(e => e.category === category);
+
+    if (migrated.length === 0) {
+      alert('No excerpts found in "Migrated from MultiExcerpt" category');
+      return;
+    }
+
+    const confirmed = confirm(
+      `Create ${migrated.length} SmartExcerpt Source macros on the "Migrated Content" page?\n\n` +
+      `This will:\n` +
+      `• Add each Source as a bodied macro with heading\n` +
+      `• Organize them alphabetically\n` +
+      `• Link macros to storage entries\n\n` +
+      `This cannot be easily undone. Continue?`
+    );
+
+    if (!confirmed) return;
+
+    setIsCreatingMacros(true);
+    setMacroCreationResult(null);
+
+    try {
+      console.log(`Creating ${migrated.length} Source macros on page ${pageId}...`);
+
+      const result = await invoke('createSourceMacrosOnPage', {
+        pageId,
+        category
+      });
+
+      console.log('Macro creation result:', result);
+
+      if (result.success) {
+        setMacroCreationResult(result);
+
+        let message = `✅ Source macros created successfully!\n\n`;
+        message += `• ${result.summary.created} Source macro(s) created\n`;
+        if (result.summary.skipped > 0) {
+          message += `• ${result.summary.skipped} macro(s) skipped (malformed XML)\n`;
+        }
+        message += `• Page ID: ${result.summary.pageId}\n`;
+        message += `• Page version: ${result.summary.pageVersion}\n\n`;
+        message += `View the page to see all Sources organized with headings.`;
+
+        if (result.skippedMacros && result.skippedMacros.length > 0) {
+          message += `\n\nSkipped excerpts:\n`;
+          result.skippedMacros.forEach(s => {
+            message += `  • ${s.name} (${s.reason})\n`;
+          });
+        }
+
+        alert(message);
+
+      } else {
+        alert('Failed to create macros: ' + result.error);
+      }
+
+    } catch (error) {
+      console.error('Error creating Source macros:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsCreatingMacros(false);
+    }
+  };
+
+  // Handle converting MultiExcerpt macros to SmartExcerpt on page
+  const [isConverting, setIsConverting] = useState(false);
+  const [conversionResult, setConversionResult] = useState(null);
+
+  const handleConvertMultiExcerpts = async () => {
+    const pageId = '80150529'; // Migrated Content page
+
+    const confirmed = confirm(
+      `Convert all MultiExcerpt macros on the "Migrated Content" page to SmartExcerpt Source macros?\n\n` +
+      `This will:\n` +
+      `• Find all MultiExcerpt macros on the page\n` +
+      `• Extract their content (preserving all formatting)\n` +
+      `• Replace them with SmartExcerpt Source macros\n` +
+      `• Link to existing storage entries by name\n\n` +
+      `Continue?`
+    );
+
+    if (!confirmed) return;
+
+    setIsConverting(true);
+    setConversionResult(null);
+
+    try {
+      console.log(`Converting MultiExcerpt macros on page ${pageId}...`);
+
+      const result = await invoke('convertMultiExcerptsOnPage', { pageId });
+
+      console.log('Conversion result:', result);
+
+      if (result.success) {
+        setConversionResult(result);
+
+        let message = `✅ Conversion completed!\n\n`;
+        message += `• ${result.summary.converted} macro(s) converted successfully\n`;
+        if (result.summary.skipped > 0) {
+          message += `• ${result.summary.skipped} macro(s) skipped\n`;
+        }
+        message += `• Page ID: ${result.summary.pageId}\n`;
+        message += `• Page version: ${result.summary.pageVersion}\n\n`;
+        message += `View the page to see the converted SmartExcerpt macros.`;
+
+        if (result.skipped && result.skipped.length > 0) {
+          message += `\n\nSkipped:\n`;
+          result.skipped.forEach(s => {
+            message += `  • ${s.name || 'Unknown'} (${s.reason})\n`;
+          });
+        }
+
+        alert(message);
+
+      } else {
+        alert('Failed to convert: ' + result.error);
+      }
+
+    } catch (error) {
+      console.error('Error converting MultiExcerpt macros:', error);
+      alert('Error: ' + error.message);
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
+  // Lazy load usage data for a specific excerpt
+  const loadUsageForExcerpt = async (excerptId) => {
+    // Check if already loaded
+    if (usageData[excerptId]) {
+      return; // Already loaded
+    }
+
+    try {
+      console.log('Loading usage data for excerpt:', excerptId);
+      const usageResult = await invoke('getExcerptUsage', { excerptId });
+      if (usageResult && usageResult.success) {
+        setUsageData(prev => ({
+          ...prev,
+          [excerptId]: usageResult.usage || []
+        }));
+      }
+    } catch (error) {
+      console.error('Error loading usage data:', error);
+    }
+  };
+
   const handleDelete = async (excerptId) => {
     if (!confirm('Delete this source? This cannot be undone.')) {
       return;
@@ -619,8 +1027,35 @@ const App = () => {
       {/* Top Toolbar - Filters and Actions */}
       <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
         <Inline space="space.200" alignBlock="center" spread="space-between">
-          {/* Left side - empty for now */}
-          <Box />
+          {/* Left side - bulk initialization button */}
+          <Box>
+            <Button
+              appearance="warning"
+              isDisabled={isInitializing}
+              onClick={async () => {
+                if (!confirm('Initialize all 147 excerpts? This will set their names based on the CSV mapping.')) {
+                  return;
+                }
+
+                setIsInitializing(true);
+                try {
+                  const result = await invoke('bulkInitializeAllExcerpts', {});
+                  console.log('Bulk init result:', result);
+                  alert(`Success! Initialized ${result.successful} out of ${result.total} excerpts.`);
+
+                  // Refresh the page to show updated names
+                  window.location.reload();
+                } catch (error) {
+                  console.error('Bulk init error:', error);
+                  alert(`Error: ${error.message}`);
+                } finally {
+                  setIsInitializing(false);
+                }
+              }}
+            >
+              Bulk Initialize All Excerpts
+            </Button>
+          </Box>
 
           {/* Right side - filters and buttons */}
           <Inline space="space.150" alignBlock="center">
@@ -680,12 +1115,111 @@ const App = () => {
 
             <Button
               appearance="primary"
+              onClick={handleScanMultiExcerptIncludes}
+              isDisabled={isScanningMultiExcerpt}
+            >
+              {isScanningMultiExcerpt ? 'Scanning...' : '📦 Scan MultiExcerpt Includes'}
+            </Button>
+
+            <Button
+              appearance="primary"
               onClick={() => setIsCategoryModalOpen(true)}
             >
               Manage Categories
             </Button>
           </Inline>
         </Inline>
+      </Box>
+
+      {/* Bulk Import Section */}
+      <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
+        <SectionMessage appearance="information">
+          <Stack space="space.200">
+            <Text><Strong>📥 Import MultiExcerpt Sources</Strong></Text>
+            <Text>Paste the JSON content from the Chrome Extension export below, then click Load JSON.</Text>
+
+            <Textfield
+              placeholder='Paste JSON content here... {"exportedAt": "...", "sources": [...]}'
+              value={jsonTextInput}
+              onChange={(e) => setJsonTextInput(e.target.value)}
+            />
+
+            <Inline space="space.200" alignBlock="center">
+              <Button
+                appearance="default"
+                onClick={handleJsonParse}
+                isDisabled={!jsonTextInput.trim()}
+              >
+                📋 Load JSON
+              </Button>
+
+              {importJsonData && (
+                <Text><Strong>✅ {importJsonData.sourceCount} source(s) loaded</Strong></Text>
+              )}
+            </Inline>
+
+            <Inline space="space.200" alignBlock="center">
+              <Button
+                appearance="primary"
+                onClick={handleBulkImport}
+                isDisabled={!importJsonData || isImporting}
+              >
+                {isImporting ? 'Importing...' : '⬆️ Import Sources'}
+              </Button>
+
+              {importResult && (
+                <Text>
+                  <Strong>✅ Imported {importResult.summary.imported} of {importResult.summary.total}</Strong>
+                </Text>
+              )}
+            </Inline>
+
+            {/* Create Source Macros Button */}
+            {excerpts.some(e => e.category === 'Migrated from MultiExcerpt') && (
+              <Fragment>
+                <Text>{' '}</Text>
+                <Text><Strong>Step 2: Create Source Macros</Strong></Text>
+                <Text>Once imported, create the actual Source macros on your Migrated Content page.</Text>
+
+                <Inline space="space.200" alignBlock="center">
+                  <Button
+                    appearance="primary"
+                    onClick={handleCreateSourceMacros}
+                    isDisabled={isCreatingMacros}
+                  >
+                    {isCreatingMacros ? 'Creating Macros...' : '📄 Create Source Macros on Page'}
+                  </Button>
+
+                  {macroCreationResult && (
+                    <Text>
+                      <Strong>✅ Created {macroCreationResult.summary.created} macro(s)</Strong>
+                    </Text>
+                  )}
+                </Inline>
+
+                <Text>{' '}</Text>
+                <Text><Strong>Step 3: Convert MultiExcerpt Macros (Alternative)</Strong></Text>
+                <Text>If you've pasted MultiExcerpt macros onto the page, convert them to SmartExcerpt macros.</Text>
+
+                <Inline space="space.200" alignBlock="center">
+                  <Button
+                    appearance="primary"
+                    onClick={handleConvertMultiExcerpts}
+                    isDisabled={isConverting}
+                  >
+                    {isConverting ? 'Converting...' : '🔄 Convert MultiExcerpts on Page'}
+                  </Button>
+
+                  {conversionResult && (
+                    <Text>
+                      <Strong>✅ Converted {conversionResult.summary.converted} macro(s)</Strong>
+                    </Text>
+                  )}
+                </Inline>
+              </Fragment>
+            )}
+          </Stack>
+        </SectionMessage>
       </Box>
 
       {/* Progress Bar for Check All Includes */}
@@ -721,6 +1255,44 @@ const App = () => {
               ) : (
                 <Fragment>
                   <Text>Starting check...</Text>
+                  <ProgressBar />
+                </Fragment>
+              )}
+            </Stack>
+          </SectionMessage>
+        </Box>
+      )}
+
+      {/* Progress Bar for MultiExcerpt Scan */}
+      {isScanningMultiExcerpt && (
+        <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
+          <SectionMessage appearance="information">
+            <Stack space="space.200">
+              <Text><Strong>Scanning for MultiExcerpt Includes...</Strong></Text>
+              <Text><Em>⚠️ Please stay on this page until the scan completes. Navigating away will cancel the operation.</Em></Text>
+              {multiExcerptProgress ? (
+                <Fragment>
+                  <Text>{multiExcerptProgress.status || 'Processing...'}</Text>
+                  <ProgressBar value={multiExcerptProgress.percent / 100} />
+                  <Inline space="space.200" alignBlock="center">
+                    <Text><Strong>{multiExcerptProgress.percent}%</Strong></Text>
+                    {multiExcerptProgress.total > 0 && (
+                      <Fragment>
+                        <Text>|</Text>
+                        <Text>{multiExcerptProgress.processed} / {multiExcerptProgress.total} pages scanned</Text>
+                      </Fragment>
+                    )}
+                    {multiExcerptProgress.processed > 0 && (
+                      <Fragment>
+                        <Text>|</Text>
+                        <Text><Em>{calculateETA(multiExcerptProgress)}</Em></Text>
+                      </Fragment>
+                    )}
+                  </Inline>
+                </Fragment>
+              ) : (
+                <Fragment>
+                  <Text>Starting scan...</Text>
                   <ProgressBar />
                 </Fragment>
               )}
@@ -767,6 +1339,8 @@ const App = () => {
                     onClick={() => {
                       console.log('Row clicked for:', excerpt.name);
                       setSelectedExcerptForDetails(excerpt);
+                      // Lazy load usage data for this excerpt
+                      loadUsageForExcerpt(excerpt.id);
                     }}
                     xcss={xcss({
                       padding: 'space.100',

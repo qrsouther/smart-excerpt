@@ -63,4 +63,6 @@ permissions:
     - read:confluence-content.all
     - read:confluence-space.summary
     - read:page:confluence
+    - write:page:confluence
+    - search:confluence
     - storage:app
