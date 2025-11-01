@@ -21,12 +21,14 @@ import ForgeReconciler, {
   Spinner,
   SectionMessage,
   Select,
+  Lozenge,
   xcss,
   useConfig,
   useProductContext,
   AdfRenderer
 } from '@forge/react';
 import { invoke, router } from '@forge/bridge';
+import { requestCachedContent } from './batch-coordinator.js';
 
 // Style for preview border
 const previewBoxStyle = xcss({
@@ -36,6 +38,48 @@ const previewBoxStyle = xcss({
   borderRadius: 'border.radius',
   padding: 'space.200'
 });
+
+/**
+ * Skeleton component for loading state
+ * Uses lh (line-height) units to scale with user font settings
+ */
+const SkeletonLine = ({ linesHeight = 2.5 }) => (
+  <Box
+    style={{
+      height: `${linesHeight}lh`,
+      backgroundColor: '#f4f5f7',
+      borderRadius: '3px',
+      backgroundImage: 'linear-gradient(90deg, #f4f5f7 0px, #e8e9eb 40px, #f4f5f7 80px)',
+      backgroundSize: '800px',
+      animation: 'shimmer 1.6s infinite linear'
+    }}
+  />
+);
+
+// Keyframes for shimmer animation (CSS in style tag won't work, but linear gradient gives subtle effect)
+const SkeletonParagraph = () => (
+  <Stack space="space.075">
+    <SkeletonLine linesHeight={1} />
+    <SkeletonLine linesHeight={1} />
+    <SkeletonLine linesHeight={0.7} />
+  </Stack>
+);
+
+/**
+ * Full skeleton for Include macro loading state
+ * Metadata-driven: Uses paragraph count from cached metadata if available
+ */
+const IncludeSkeleton = ({ metadata }) => {
+  const paragraphCount = metadata?.paragraphCount || 3;
+
+  return (
+    <Stack space="space.200">
+      {Array(Math.min(paragraphCount, 5)).fill(0).map((_, i) => (
+        <SkeletonParagraph key={i} />
+      ))}
+    </Stack>
+  );
+};
 
 // Style for full-width variable table container
 const variableBoxStyle = xcss({
@@ -676,6 +720,10 @@ const App = () => {
   const config = useConfig();
   const context = useProductContext();
   const isEditing = context?.extension?.isEditing;  // Fixed: it's on extension, not extensionContext!
+
+  // Use context.localId directly - recovery happens lazily only when data is missing
+  const effectiveLocalId = context?.localId;
+
   const [content, setContent] = useState(null);
   const [excerpt, setExcerpt] = useState(null);
   const [variableValues, setVariableValues] = useState(config?.variableValues || {});
@@ -696,10 +744,19 @@ const App = () => {
   const [showDiffView, setShowDiffView] = useState(false);
   const [latestRenderedContent, setLatestRenderedContent] = useState(null);
 
+  // Helper: Calculate metadata for skeleton sizing
+  const calculateMetadata = (content) => {
+    if (!content) return null;
+
+    const paragraphs = extractParagraphsFromAdf(content);
+    return {
+      paragraphCount: paragraphs.length
+    };
+  };
 
   // Load cached content in view mode
   useEffect(() => {
-    if (!config || !config.excerptId || !context?.localId) {
+    if (!config || !config.excerptId || !effectiveLocalId) {
       return;
     }
 
@@ -707,20 +764,57 @@ const App = () => {
     if (!isEditing) {
       const loadCachedContent = async () => {
         try {
-          const result = await invoke('getCachedContent', { localId: context.localId });
-          if (result.success && result.content) {
+          console.log(`[BATCH-LOAD] Loading cached content for localId: ${context.localId}`);
+
+          // Use batch coordinator for performance (auto-batches with other macros on page)
+          const result = await requestCachedContent(effectiveLocalId);
+          console.log(`[BATCH-LOAD] Result:`, result);
+
+          if (result && result.content) {
             setContent(result.content);
           } else {
             // No cached content exists - fall back to fetching fresh content once
-            // This happens for existing Include macros that haven't been edited since caching was added
-            console.log('No cached content found, fetching fresh content to populate cache');
+            // This happens for existing Include macros that haven't been edited since caching was added OR after drag-to-move
+            console.log('[DRAG-DEBUG-VIEW] No cached content found, fetching fresh content to populate cache');
 
             const excerptResult = await invoke('getExcerpt', { excerptId: config.excerptId });
             if (excerptResult.success && excerptResult.excerpt) {
               setExcerpt(excerptResult.excerpt);
 
               // Load variable values and generate content
-              const varsResult = await invoke('getVariableValues', { localId: context.localId });
+              console.log(`[DRAG-DEBUG-VIEW] Loading vars for localId: ${context.localId}`);
+              let varsResult = await invoke('getVariableValues', { localId: effectiveLocalId });
+              console.log(`[DRAG-DEBUG-VIEW] getVariableValues result:`, varsResult);
+
+              // CRITICAL: Check if data is missing - attempt recovery from drag-to-move
+              const hasNoData = !varsResult.lastSynced &&
+                                Object.keys(varsResult.variableValues || {}).length === 0 &&
+                                Object.keys(varsResult.toggleStates || {}).length === 0 &&
+                                (varsResult.customInsertions || []).length === 0 &&
+                                (varsResult.internalNotes || []).length === 0;
+
+              console.log(`[DRAG-DEBUG-VIEW] hasNoData: ${hasNoData}, excerptId: ${config.excerptId}`);
+
+              if (varsResult.success && hasNoData && config.excerptId) {
+                console.log('[DRAG-DEBUG-VIEW] Attempting recovery in view mode...');
+                const pageId = context?.contentId || context?.extension?.content?.id;
+
+                const recoveryResult = await invoke('recoverOrphanedData', {
+                  pageId: pageId,
+                  excerptId: config.excerptId,
+                  currentLocalId: context.localId
+                });
+
+                console.log('[DRAG-DEBUG-VIEW] Recovery result:', recoveryResult);
+
+                if (recoveryResult.success && recoveryResult.recovered) {
+                  console.log(`[DRAG-DEBUG-VIEW] Data recovered from ${recoveryResult.migratedFrom}!`);
+                  // Reload the data
+                  varsResult = await invoke('getVariableValues', { localId: effectiveLocalId });
+                  console.log('[DRAG-DEBUG-VIEW] Reloaded data after recovery:', varsResult);
+                }
+              }
+
               const loadedVariableValues = varsResult.success ? varsResult.variableValues : {};
               const loadedToggleStates = varsResult.success ? varsResult.toggleStates : {};
               const loadedCustomInsertions = varsResult.success ? varsResult.customInsertions : [];
@@ -764,10 +858,11 @@ const App = () => {
 
               setContent(freshContent);
 
-              // Cache it for next time
+              // Cache it for next time with metadata for skeleton sizing
               await invoke('saveCachedContent', {
-                localId: context.localId,
-                renderedContent: freshContent
+                localId: effectiveLocalId,
+                renderedContent: freshContent,
+                metadata: calculateMetadata(freshContent)
               });
             }
           }
@@ -795,7 +890,46 @@ const App = () => {
         setExcerpt(excerptResult.excerpt);
 
         // Load saved variable values, toggle states, custom insertions, and internal notes from storage
-        const varsResultForLoading = await invoke('getVariableValues', { localId: context.localId });
+        console.log(`[DRAG-DEBUG] Loading data for localId: ${context.localId}`);
+        let varsResultForLoading = await invoke('getVariableValues', { localId: effectiveLocalId });
+        console.log(`[DRAG-DEBUG] getVariableValues result:`, varsResultForLoading);
+
+        // CRITICAL: Check if data is missing - if so, attempt recovery from drag-to-move scenario
+        // When a macro is dragged in Confluence, it may get a new localId, orphaning the data
+        const hasNoData = !varsResultForLoading.lastSynced &&
+                          Object.keys(varsResultForLoading.variableValues || {}).length === 0 &&
+                          Object.keys(varsResultForLoading.toggleStates || {}).length === 0 &&
+                          (varsResultForLoading.customInsertions || []).length === 0 &&
+                          (varsResultForLoading.internalNotes || []).length === 0;
+
+        console.log(`[DRAG-DEBUG] hasNoData: ${hasNoData}, excerptId: ${config.excerptId}`);
+
+        if (varsResultForLoading.success && hasNoData && config.excerptId) {
+          console.log('[DRAG-DEBUG] No data found for localId, attempting recovery...');
+          const pageId = context?.contentId || context?.extension?.content?.id;
+          console.log(`[DRAG-DEBUG] Recovery params - pageId: ${pageId}, excerptId: ${config.excerptId}, currentLocalId: ${context.localId}`);
+
+          const recoveryResult = await invoke('recoverOrphanedData', {
+            pageId: pageId,
+            excerptId: config.excerptId,
+            currentLocalId: context.localId
+          });
+
+          console.log('[DRAG-DEBUG] Recovery result:', recoveryResult);
+
+          if (recoveryResult.success && recoveryResult.recovered) {
+            console.log(`[DRAG-DEBUG] Data recovered from ${recoveryResult.migratedFrom}!`);
+            // Reload the data now that it's been migrated
+            varsResultForLoading = await invoke('getVariableValues', { localId: effectiveLocalId });
+            console.log('[DRAG-DEBUG] Reloaded data after recovery:', varsResultForLoading);
+          } else if (recoveryResult.success) {
+            console.log(`[DRAG-DEBUG] Recovery attempted but no data found: ${recoveryResult.reason}`);
+            if (recoveryResult.candidateCount) {
+              console.log(`[DRAG-DEBUG] Found ${recoveryResult.candidateCount} candidates (ambiguous)`);
+            }
+          }
+        }
+
         const loadedVariableValues = varsResultForLoading.success ? varsResultForLoading.variableValues : {};
         const loadedToggleStates = varsResultForLoading.success ? varsResultForLoading.toggleStates : {};
         const loadedCustomInsertions = varsResultForLoading.success ? varsResultForLoading.customInsertions : [];
@@ -827,6 +961,12 @@ const App = () => {
             loadedVariableValues['client'] = afterBlueprint;
           }
         }
+
+        console.log('[DRAG-DEBUG] Setting state with recovered values:');
+        console.log('[DRAG-DEBUG] - variableValues:', loadedVariableValues);
+        console.log('[DRAG-DEBUG] - toggleStates:', loadedToggleStates);
+        console.log('[DRAG-DEBUG] - customInsertions:', loadedCustomInsertions);
+        console.log('[DRAG-DEBUG] - internalNotes:', loadedInternalNotes);
 
         setVariableValues(loadedVariableValues);
         setToggleStates(loadedToggleStates);
@@ -875,11 +1015,11 @@ const App = () => {
     };
 
     loadContent();
-  }, [config?.excerptId, context?.localId, isEditing]);
+  }, [config?.excerptId, effectiveLocalId, isEditing]);
 
   // Auto-save effect with debouncing (saves variable values AND caches rendered content)
   useEffect(() => {
-    if (!isEditing || !context?.localId || !config?.excerptId || !excerpt) {
+    if (!isEditing || !effectiveLocalId || !config?.excerptId || !excerpt) {
       return;
     }
 
@@ -889,7 +1029,7 @@ const App = () => {
       try {
         // Save variable values, toggle states, custom insertions, and internal notes
         const result = await invoke('saveVariableValues', {
-          localId: context.localId,
+          localId: effectiveLocalId,
           excerptId: config.excerptId,
           variableValues,
           toggleStates,
@@ -898,11 +1038,12 @@ const App = () => {
         });
 
         if (result.success) {
-          // Also cache the rendered content for view mode
+          // Also cache the rendered content for view mode with metadata
           const previewContent = getPreviewContent();
           await invoke('saveCachedContent', {
-            localId: context.localId,
-            renderedContent: previewContent
+            localId: effectiveLocalId,
+            renderedContent: previewContent,
+            metadata: calculateMetadata(previewContent)
           });
 
           setSaveStatus('saved');
@@ -917,11 +1058,11 @@ const App = () => {
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [variableValues, toggleStates, customInsertions, internalNotes, isEditing, context?.localId, config?.excerptId, excerpt]);
+  }, [variableValues, toggleStates, customInsertions, internalNotes, isEditing, effectiveLocalId, config?.excerptId, excerpt]);
 
   // Check for staleness in view mode
   useEffect(() => {
-    if (isEditing || !content || !config?.excerptId || !context?.localId) {
+    if (isEditing || !content || !config?.excerptId || !effectiveLocalId) {
       return;
     }
 
@@ -934,7 +1075,7 @@ const App = () => {
         }
 
         // Get variable values to check lastSynced
-        const varsResult = await invoke('getVariableValues', { localId: context.localId });
+        const varsResult = await invoke('getVariableValues', { localId: effectiveLocalId });
         if (!varsResult.success) {
           return;
         }
@@ -970,16 +1111,15 @@ const App = () => {
     };
 
     checkStaleness();
-  }, [content, isEditing, config?.excerptId, context?.localId]);
+  }, [content, isEditing, config?.excerptId, effectiveLocalId]);
 
   if (!config || !config.excerptId) {
     return <Text>SmartExcerpt Include not configured. Click Edit to select an excerpt.</Text>;
   }
 
-  // In view mode, don't show loading state - content loads so fast from cache it appears instant
-  // Just render empty until content arrives (typically <100ms)
+  // Show skeleton while loading in view mode
   if (!content && !isEditing) {
-    return <Fragment></Fragment>;
+    return <IncludeSkeleton metadata={null} />;
   }
 
   // Helper function to get preview content with current variable and toggle values
@@ -1053,7 +1193,7 @@ const App = () => {
 
   // Handler for updating to latest version (defined before edit mode rendering)
   const handleUpdateToLatest = async () => {
-    if (!config?.excerptId || !context?.localId) {
+    if (!config?.excerptId || !effectiveLocalId) {
       return;
     }
 
@@ -1068,7 +1208,7 @@ const App = () => {
       }
 
       // Get current variable values, toggle states, custom insertions, and internal notes
-      const varsResult = await invoke('getVariableValues', { localId: context.localId });
+      const varsResult = await invoke('getVariableValues', { localId: effectiveLocalId });
       const currentVariableValues = varsResult.success ? varsResult.variableValues : {};
       const currentToggleStates = varsResult.success ? varsResult.toggleStates : {};
       const currentCustomInsertions = varsResult.success ? varsResult.customInsertions : [];
@@ -1109,10 +1249,11 @@ const App = () => {
       // Update the displayed content
       setContent(freshContent);
 
-      // Cache the updated content
+      // Cache the updated content with metadata
       await invoke('saveCachedContent', {
-        localId: context.localId,
-        renderedContent: freshContent
+        localId: effectiveLocalId,
+        renderedContent: freshContent,
+        metadata: calculateMetadata(freshContent)
       });
 
       // Clear staleness flags
@@ -1191,7 +1332,7 @@ const App = () => {
         <TabList>
           <Tab>Write</Tab>
           <Tab>Alternatives</Tab>
-          <Tab>Free Write</Tab>
+          <Tab>Custom</Tab>
         </TabList>
         {/* Write Tab - Variables */}
         <TabPanel>
@@ -1203,17 +1344,17 @@ const App = () => {
                       {
                         key: 'variable',
                         content: 'Variable',
-                        width: 25
+                        width: 20
                       },
                       {
                         key: 'value',
                         content: 'Value',
-                        width: 65
+                        width: 75
                       },
                       {
                         key: 'status',
                         content: 'Status',
-                        width: 10
+                        width: 5
                       }
                     ]
                   }}
@@ -1271,7 +1412,7 @@ const App = () => {
                                 <Icon glyph="checkbox-unchecked" label="Optional - Empty" color="color.icon.subtle" />
                               )
                             ) : (
-                              <Icon glyph="checkbox" label="Filled" color="color.icon.success" />
+                              <Icon glyph="check-circle" label="Filled" color="color.icon.success" />
                             )
                           )
                         }
@@ -1345,176 +1486,238 @@ const App = () => {
           )}
         </TabPanel>
 
-        {/* Free Write Tab - Custom paragraph insertions and internal notes */}
+        {/* Custom Tab - Custom paragraph insertions and internal notes */}
         <TabPanel>
-          <Stack space="space.200">
-            <Text>Insert custom content at a position of your choosing:</Text>
+          {(() => {
+            console.log('[DRAG-DEBUG-RENDER] Custom tab rendering with state:');
+            console.log('[DRAG-DEBUG-RENDER] - customInsertions:', customInsertions);
+            console.log('[DRAG-DEBUG-RENDER] - internalNotes:', internalNotes);
 
-            {/* Toggle to choose between Body Paragraph and Internal Note */}
-            <Inline space="space.100" alignBlock="center">
-              <Text><Strong>Type:</Strong></Text>
-              <Toggle
-                label="Body Paragraph"
-                isChecked={insertionType === 'body'}
-                onChange={() => {
-                  setInsertionType('body');
-                  setSelectedPosition(null);
-                  setCustomText('');
-                }}
-              />
-              <Text>Body Paragraph</Text>
-              <Toggle
-                label="Internal Note"
-                isChecked={insertionType === 'note'}
-                onChange={() => {
-                  setInsertionType('note');
-                  setSelectedPosition(null);
-                  setCustomText('');
-                }}
-              />
-              <Text>Internal Note</Text>
-            </Inline>
+            // Extract paragraphs from ORIGINAL excerpt content only (not preview with custom insertions)
+            // This ensures users can only position custom content relative to source content
+            let originalContent = excerpt?.content;
+            if (originalContent && typeof originalContent === 'object' && originalContent.type === 'doc') {
+              // Apply variable substitution and toggle filtering to show accurate text
+              originalContent = filterContentByToggles(originalContent, toggleStates);
+              originalContent = substituteVariablesInAdf(originalContent, variableValues);
+            }
 
-            {(() => {
-              // Extract paragraphs from the preview content
-              const paragraphs = extractParagraphsFromAdf(previewContent);
+            const paragraphs = extractParagraphsFromAdf(originalContent);
 
-              if (paragraphs.length === 0) {
-                return <Text><Em>No paragraphs available for insertion. Please add content first.</Em></Text>;
-              }
+            if (paragraphs.length === 0) {
+              return <Text><Em>No paragraphs available for insertion. Please add content first.</Em></Text>;
+            }
 
-              // Create dropdown options from paragraphs
-              const paragraphOptions = paragraphs.map(p => ({
-                label: `After paragraph ${p.index + 1}: "${p.lastSentence}"`,
-                value: p.index
-              }));
+            // Create dropdown options from ONLY original source paragraphs
+            const paragraphOptions = paragraphs.map(p => ({
+              label: `After paragraph ${p.index + 1}: "${p.lastSentence}"`,
+              value: p.index
+            }));
 
-              return (
-                <Fragment>
-                  <Select
-                    label={insertionType === 'body' ? "Insert custom paragraph one line below:" : "Add internal note after:"}
-                    options={paragraphOptions}
-                    value={paragraphOptions.find(opt => opt.value === selectedPosition)}
-                    placeholder="Choose a paragraph..."
-                    onChange={(e) => setSelectedPosition(e.value)}
-                  />
+            // Combine existing content and sort by position
+            const existingContent = [
+              ...customInsertions.map((item, idx) => ({
+                type: 'paragraph',
+                position: item.position,
+                content: item.text,
+                originalIndex: idx
+              })),
+              ...internalNotes.map((item, idx) => ({
+                type: 'note',
+                position: item.position,
+                content: item.content,
+                originalIndex: idx
+              }))
+            ].sort((a, b) => a.position - b.position);
 
-                  <Textfield
-                    label={insertionType === 'body' ? "Custom paragraph content" : "Internal note content"}
-                    placeholder={insertionType === 'body' ? "Enter your custom paragraph text..." : "Enter your internal note..."}
-                    value={customText}
-                    onChange={(e) => setCustomText(e.target.value)}
-                    isDisabled={selectedPosition === null}
-                  />
+            // Build table rows: "Add New" row + existing content rows
+            const tableRows = [
+              // Add New row
+              {
+                key: 'add-new',
+                cells: [
+                  {
+                    key: 'type-toggle',
+                    content: (
+                      <Inline space="space.050" alignBlock="center">
+                        <Text>📝</Text>
+                        <Tooltip content="📝 is saved as a custom paragraph that is visible to clients, 🔒 is saved as an Internal Note that is visible only to SeatGeek employees.">
+                          <Toggle
+                            isChecked={insertionType === 'note'}
+                            onChange={(e) => {
+                              setInsertionType(e.target.checked ? 'note' : 'body');
+                              setSelectedPosition(null);
+                              setCustomText('');
+                            }}
+                          />
+                        </Tooltip>
+                        <Text>🔒</Text>
+                      </Inline>
+                    )
+                  },
+                  {
+                    key: 'position',
+                    content: (
+                      <Select
+                        options={paragraphOptions}
+                        value={paragraphOptions.find(opt => opt.value === selectedPosition)}
+                        placeholder="After paragraph..."
+                        onChange={(e) => setSelectedPosition(e.value)}
+                      />
+                    )
+                  },
+                  {
+                    key: 'content',
+                    content: (
+                      <Textfield
+                        placeholder={insertionType === 'body' ? "Enter paragraph text..." : "Enter internal note..."}
+                        value={customText}
+                        onChange={(e) => setCustomText(e.target.value)}
+                        isDisabled={selectedPosition === null}
+                      />
+                    )
+                  },
+                  {
+                    key: 'action',
+                    content: (() => {
+                      // Calculate target position for the disabled check
+                      let targetPosition = null;
+                      if (selectedPosition !== null) {
+                        const rendered = [];
+                        const originalCount = paragraphs.length - customInsertions.length;
 
-                  <Button
-                    appearance="primary"
-                    isDisabled={selectedPosition === null || !customText.trim() || (insertionType === 'note' && internalNotes.some(n => n.position === selectedPosition))}
-                    onClick={() => {
-                      // Map rendered paragraph index to original paragraph index
-                      // by building the rendered structure and finding what the selected position maps to
-                      const rendered = [];
-                      const originalCount = paragraphs.length - customInsertions.length;
+                        for (let i = 0; i < originalCount; i++) {
+                          rendered.push({ type: 'original', index: i });
+                          const customsHere = customInsertions.filter(ins => ins.position === i);
+                          for (const custom of customsHere) {
+                            rendered.push({ type: 'custom', insertedAfter: i });
+                          }
+                        }
 
-                      for (let i = 0; i < originalCount; i++) {
-                        rendered.push({ type: 'original', index: i });
-
-                        // Add any custom insertions after this original paragraph
-                        const customsHere = customInsertions.filter(ins => ins.position === i);
-                        for (const custom of customsHere) {
-                          rendered.push({ type: 'custom', insertedAfter: i });
+                        const selected = rendered[selectedPosition];
+                        if (selected) {
+                          targetPosition = selected.type === 'original' ? selected.index : selected.insertedAfter;
                         }
                       }
 
-                      // Find what the selected position maps to
-                      const selected = rendered[selectedPosition];
-                      let targetPosition;
+                      const hasNoteAtPosition = targetPosition !== null && internalNotes.some(n => n.position === targetPosition);
 
-                      if (selected.type === 'original') {
-                        // Insert after this original paragraph
-                        targetPosition = selected.index;
-                      } else {
-                        // Insert after the same original paragraph as this custom one
-                        targetPosition = selected.insertedAfter;
+                      return (
+                        <Button
+                          appearance="primary"
+                          isDisabled={selectedPosition === null || !customText.trim() || (insertionType === 'note' && hasNoteAtPosition)}
+                          onClick={() => {
+                            if (insertionType === 'body') {
+                              const newInsertion = {
+                                position: targetPosition,
+                                text: customText.trim()
+                              };
+                              setCustomInsertions([...customInsertions, newInsertion]);
+                            } else {
+                              if (!hasNoteAtPosition) {
+                                const newNote = {
+                                  position: targetPosition,
+                                  content: customText.trim()
+                                };
+                                setInternalNotes([...internalNotes, newNote]);
+                              }
+                            }
+
+                            setSelectedPosition(null);
+                            setCustomText('');
+                          }}
+                        >
+                          Add
+                        </Button>
+                      );
+                    })()
+                  }
+                ]
+              },
+              // Existing content rows
+              ...existingContent.map((item, idx) => {
+                // Get the paragraph text preview for the position
+                const targetParagraph = paragraphs.find(p => p.index === item.position);
+                const positionPreview = targetParagraph
+                  ? targetParagraph.lastSentence.substring(0, 30) + (targetParagraph.lastSentence.length > 30 ? '...' : '')
+                  : `¶${item.position + 1}`;
+
+                return {
+                  key: `existing-${idx}`,
+                  cells: [
+                    {
+                      key: 'type-indicator',
+                      content: (
+                        <Inline space="space.075" alignBlock="center">
+                          <Text>{item.type === 'paragraph' ? '📝' : '🔒'}</Text>
+                          <Lozenge appearance={item.type === 'paragraph' ? 'success' : 'moved'}>
+                            {item.type === 'paragraph' ? 'External' : 'Internal'}
+                          </Lozenge>
+                        </Inline>
+                      )
+                    },
+                    {
+                      key: 'position-display',
+                      content: <Text><Em>After: "{positionPreview}"</Em></Text>
+                    },
+                    {
+                      key: 'content-display',
+                      content: <Text>{item.content.substring(0, 100)}{item.content.length > 100 ? '...' : ''}</Text>
+                    },
+                    {
+                      key: 'delete-action',
+                      content: (
+                        <Button
+                          appearance="subtle"
+                          onClick={() => {
+                            if (item.type === 'paragraph') {
+                              setCustomInsertions(customInsertions.filter((_, i) => i !== item.originalIndex));
+                            } else {
+                              setInternalNotes(internalNotes.filter((_, i) => i !== item.originalIndex));
+                            }
+                          }}
+                        >
+                          <Icon glyph="trash" size="small" label="Delete" />
+                        </Button>
+                      )
+                    }
+                  ]
+                };
+              })
+            ];
+
+            return (
+              <Box xcss={variableBoxStyle}>
+                <DynamicTable
+                  head={{
+                    cells: [
+                      {
+                        key: 'type',
+                        content: 'Internal? 🔒',
+                        width: 12
+                      },
+                      {
+                        key: 'position',
+                        content: 'Placement',
+                        width: 18
+                      },
+                      {
+                        key: 'content',
+                        content: 'Content',
+                        width: 65
+                      },
+                      {
+                        key: 'action',
+                        content: '',
+                        width: 5
                       }
-
-                      if (insertionType === 'body') {
-                        // Add to custom insertions (body paragraphs)
-                        const newInsertion = {
-                          position: targetPosition,
-                          text: customText.trim()
-                        };
-                        setCustomInsertions([...customInsertions, newInsertion]);
-                      } else {
-                        // Add to internal notes (one per position)
-                        if (!internalNotes.some(n => n.position === targetPosition)) {
-                          const newNote = {
-                            position: targetPosition,
-                            content: customText.trim()
-                          };
-                          setInternalNotes([...internalNotes, newNote]);
-                        }
-                      }
-
-                      // Reset form
-                      setSelectedPosition(null);
-                      setCustomText('');
-                    }}
-                  >
-                    {insertionType === 'body' ? 'Add Custom Paragraph' : 'Add Internal Note'}
-                  </Button>
-
-                  {/* Display custom paragraphs */}
-                  {customInsertions.length > 0 && (
-                    <Fragment>
-                      <Text><Strong>Added custom paragraphs:</Strong></Text>
-                      <Stack space="space.100">
-                        {customInsertions.map((insertion, idx) => (
-                          <Inline key={`custom-${idx}`} space="space.100" alignBlock="center" spread="space-between">
-                            <Text>
-                              <Em>After paragraph {insertion.position + 1}:</Em> {insertion.text.substring(0, 50)}{insertion.text.length > 50 ? '...' : ''}
-                            </Text>
-                            <Button
-                              appearance="subtle"
-                              onClick={() => {
-                                setCustomInsertions(customInsertions.filter((_, i) => i !== idx));
-                              }}
-                            >
-                              Remove
-                            </Button>
-                          </Inline>
-                        ))}
-                      </Stack>
-                    </Fragment>
-                  )}
-
-                  {/* Display internal notes */}
-                  {internalNotes.length > 0 && (
-                    <Fragment>
-                      <Text><Strong>Added internal notes:</Strong></Text>
-                      <Stack space="space.100">
-                        {internalNotes.map((note, idx) => (
-                          <Inline key={`note-${idx}`} space="space.100" alignBlock="center" spread="space-between">
-                            <Text>
-                              💬 <Em>After paragraph {note.position + 1}:</Em> {note.content.substring(0, 50)}{note.content.length > 50 ? '...' : ''}
-                            </Text>
-                            <Button
-                              appearance="subtle"
-                              onClick={() => {
-                                setInternalNotes(internalNotes.filter((_, i) => i !== idx));
-                              }}
-                            >
-                              Remove
-                            </Button>
-                          </Inline>
-                        ))}
-                      </Stack>
-                    </Fragment>
-                  )}
-                </Fragment>
-              );
-            })()}
-          </Stack>
+                    ]
+                  }}
+                  rows={tableRows}
+                />
+              </Box>
+            );
+          })()}
         </TabPanel>
         </Tabs>
 

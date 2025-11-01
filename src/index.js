@@ -17,7 +17,10 @@ import {
   getExcerpt as getExcerptResolver,
   getPageTitle as getPageTitleResolver,
   getVariableValues as getVariableValuesResolver,
+  getCanonicalLocalId as getCanonicalLocalIdResolver,
+  recoverOrphanedData as recoverOrphanedDataResolver,
   getCachedContent as getCachedContentResolver,
+  getCachedContentBatch as getCachedContentBatchResolver,
   saveCachedContent as saveCachedContentResolver,
   getCategories as getCategoriesResolver,
   saveCategories as saveCategoriesResolver,
@@ -104,6 +107,9 @@ resolver.define('saveCachedContent', saveCachedContentResolver);
 // Get cached rendered content for an Include instance (view mode)
 resolver.define('getCachedContent', getCachedContentResolver);
 
+// Batch fetch cached content for multiple macros (performance optimization)
+resolver.define('getCachedContentBatch', getCachedContentBatchResolver);
+
 // Check if Include instance has stale content (update available)
 resolver.define('checkVersionStaleness', checkVersionStalenessResolver);
 
@@ -118,6 +124,12 @@ resolver.define('getPageTitle', getPageTitleResolver);
 
 // Get variable values and toggle states for a specific macro instance
 resolver.define('getVariableValues', getVariableValuesResolver);
+
+// Get canonical localId for excerpt on page (prevents drag-move data loss)
+resolver.define('getCanonicalLocalId', getCanonicalLocalIdResolver);
+
+// Recover orphaned data after macro has been moved (localId changed) - DEPRECATED
+resolver.define('recoverOrphanedData', recoverOrphanedDataResolver);
 
 // Get all excerpts with full details (for admin page)
 resolver.define('getAllExcerpts', getAllExcerptsResolver);

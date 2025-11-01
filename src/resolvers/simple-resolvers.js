@@ -154,10 +154,147 @@ export async function getVariableValues(req) {
       toggleStates: data.toggleStates || {},
       customInsertions: data.customInsertions || [],
       internalNotes: data.internalNotes || [],
-      lastSynced: data.lastSynced
+      lastSynced: data.lastSynced,
+      excerptId: data.excerptId
     };
   } catch (error) {
     console.error('Error getting variable values:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * DEPRECATED: Get or register the canonical localId for an excerpt on a page
+ *
+ * This approach had performance issues (extra network call on every render)
+ * and didn't handle multiple instances of same excerpt on one page well.
+ *
+ * Replaced with lazy recovery approach: use context.localId directly,
+ * only call recoverOrphanedData when data is missing.
+ *
+ * Keeping this function for backward compatibility during transition.
+ */
+export async function getCanonicalLocalId(req) {
+  // Simply return the current localId - no longer doing canonical mapping
+  return {
+    success: true,
+    canonicalLocalId: req.payload.currentLocalId,
+    isDragged: false
+  };
+}
+
+/**
+ * Recover orphaned data after a macro has been moved (localId changed)
+ * This handles the case where dragging a macro in Confluence assigns it a new localId
+ *
+ * Performance: Only called when data is missing (lazy recovery), not on every render
+ * Multiple instances: Uses most recent updatedAt timestamp as tiebreaker
+ */
+export async function recoverOrphanedData(req) {
+  try {
+    const { pageId, excerptId, currentLocalId } = req.payload;
+
+    console.log(`Attempting data recovery for localId ${currentLocalId}, excerptId ${excerptId} on page ${pageId}`);
+
+    // Query all macro-vars entries
+    const allEntries = await storage.query()
+      .where('key', startsWith('macro-vars:'))
+      .getMany();
+
+    console.log(`Found ${allEntries.results.length} total macro-vars entries`);
+
+    // Find candidates: entries with matching excerptId that were recently accessed
+    const now = new Date();
+    const candidates = [];
+
+    for (const entry of allEntries.results) {
+      const data = entry.value;
+      const entryLocalId = entry.key.replace('macro-vars:', '');
+
+      // Skip if this is the current localId (we already checked it)
+      if (entryLocalId === currentLocalId) {
+        continue;
+      }
+
+      // Check if excerptId matches
+      if (data.excerptId === excerptId) {
+        // Check if recently synced (within last 5 minutes - generous window)
+        if (data.lastSynced) {
+          const lastSyncTime = new Date(data.lastSynced);
+          const ageInSeconds = (now - lastSyncTime) / 1000;
+
+          if (ageInSeconds < 300) { // 5 minutes
+            candidates.push({
+              localId: entryLocalId,
+              data: data,
+              ageInSeconds: ageInSeconds,
+              updatedAt: data.updatedAt || data.lastSynced // Use updatedAt for tiebreaker
+            });
+            console.log(`Found candidate: localId ${entryLocalId}, age ${ageInSeconds}s, updatedAt: ${data.updatedAt || data.lastSynced}`);
+          }
+        }
+      }
+    }
+
+    // If we found candidate(s), pick the most recently updated one
+    if (candidates.length >= 1) {
+      // Sort by updatedAt timestamp, most recent first
+      candidates.sort((a, b) => {
+        const dateA = new Date(a.updatedAt);
+        const dateB = new Date(b.updatedAt);
+        return dateB - dateA; // Most recent first
+      });
+
+      const orphanedEntry = candidates[0];
+
+      if (candidates.length > 1) {
+        console.log(`Found ${candidates.length} candidates (multiple instances of same excerpt on page)`);
+        console.log(`Using most recently updated: ${orphanedEntry.localId} (${orphanedEntry.updatedAt})`);
+      } else {
+        console.log(`Migrating data from ${orphanedEntry.localId} to ${currentLocalId}`);
+      }
+
+      // Update excerptId to match (in case it was somehow different)
+      orphanedEntry.data.excerptId = excerptId;
+
+      // Save to new localId
+      await storage.set(`macro-vars:${currentLocalId}`, orphanedEntry.data);
+
+      // Delete old entry (only if not same as current)
+      if (orphanedEntry.localId !== currentLocalId) {
+        await storage.delete(`macro-vars:${orphanedEntry.localId}`);
+      }
+
+      // Also migrate cache if it exists
+      const oldCache = await storage.get(`macro-cache:${orphanedEntry.localId}`);
+      if (oldCache) {
+        await storage.set(`macro-cache:${currentLocalId}`, oldCache);
+        if (orphanedEntry.localId !== currentLocalId) {
+          await storage.delete(`macro-cache:${orphanedEntry.localId}`);
+        }
+        console.log(`Also migrated cache from ${orphanedEntry.localId} to ${currentLocalId}`);
+      }
+
+      return {
+        success: true,
+        recovered: true,
+        data: orphanedEntry.data,
+        migratedFrom: orphanedEntry.localId,
+        candidateCount: candidates.length
+      };
+    } else {
+      console.log('No recent orphaned data found');
+      return {
+        success: true,
+        recovered: false,
+        reason: 'no_candidates'
+      };
+    }
+  } catch (error) {
+    console.error('Error recovering orphaned data:', error);
     return {
       success: false,
       error: error.message
@@ -184,11 +321,70 @@ export async function getCachedContent(req) {
     return {
       success: true,
       content: cached.content,
-      cachedAt: cached.cachedAt
+      cachedAt: cached.cachedAt,
+      metadata: cached.metadata || null
     };
   } catch (error) {
     console.error('Error loading cached content:', error);
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Batch fetch cached content for multiple macros
+ * This is a major performance optimization for pages with many Include macros
+ * Instead of 50 separate network calls, make 1 call to fetch all cached content
+ */
+export async function getCachedContentBatch(req) {
+  try {
+    const { localIds } = req.payload;
+
+    if (!Array.isArray(localIds) || localIds.length === 0) {
+      return {
+        success: false,
+        error: 'localIds must be a non-empty array'
+      };
+    }
+
+    console.log(`[BATCH] Fetching cached content for ${localIds.length} macros`);
+
+    // Fetch all in parallel
+    const results = await Promise.all(
+      localIds.map(async (localId) => {
+        try {
+          const key = `macro-cache:${localId}`;
+          const cached = await storage.get(key);
+
+          return {
+            localId,
+            success: !!cached,
+            content: cached?.content || null,
+            cachedAt: cached?.cachedAt || null,
+            metadata: cached?.metadata || null
+          };
+        } catch (error) {
+          console.error(`[BATCH] Error fetching ${localId}:`, error);
+          return {
+            localId,
+            success: false,
+            error: error.message
+          };
+        }
+      })
+    );
+
+    console.log(`[BATCH] Successfully fetched ${results.filter(r => r.success).length}/${localIds.length} cached contents`);
+
+    return {
+      success: true,
+      results
+    };
+  } catch (error) {
+    console.error('[BATCH] Error in batch fetch:', error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
 }
 
@@ -368,17 +564,18 @@ export async function getMultiExcerptScanProgress(req) {
  */
 export async function saveCachedContent(req) {
   try {
-    const { localId, renderedContent } = req.payload;
+    const { localId, renderedContent, metadata } = req.payload;
 
     const key = `macro-cache:${localId}`;
     const now = new Date().toISOString();
 
     await storage.set(key, {
       content: renderedContent,
-      cachedAt: now
+      cachedAt: now,
+      metadata: metadata || null  // Store paragraph count, etc. for skeleton sizing
     });
 
-    console.log(`saveCachedContent: Cached content for localId ${localId}`);
+    console.log(`saveCachedContent: Cached content for localId ${localId}${metadata ? ' with metadata' : ''}`);
 
     // Also update lastSynced in macro-vars
     const varsKey = `macro-vars:${localId}`;
