@@ -25,7 +25,7 @@ import { findHeadingBeforeMacro } from '../utils/adf-utils.js';
  */
 export async function saveVariableValues(req) {
   try {
-    const { localId, excerptId, variableValues, toggleStates, customInsertions, pageId: explicitPageId } = req.payload;
+    const { localId, excerptId, variableValues, toggleStates, customInsertions, internalNotes, pageId: explicitPageId } = req.payload;
 
     const key = `macro-vars:${localId}`;
     const now = new Date().toISOString();
@@ -34,6 +34,7 @@ export async function saveVariableValues(req) {
       variableValues,
       toggleStates: toggleStates || {},
       customInsertions: customInsertions || [],
+      internalNotes: internalNotes || [],
       updatedAt: now,
       lastSynced: now  // Track when this Include instance last synced with Source
     });

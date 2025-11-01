@@ -153,6 +153,7 @@ export async function getVariableValues(req) {
       variableValues: data.variableValues || {},
       toggleStates: data.toggleStates || {},
       customInsertions: data.customInsertions || [],
+      internalNotes: data.internalNotes || [],
       lastSynced: data.lastSynced
     };
   } catch (error) {

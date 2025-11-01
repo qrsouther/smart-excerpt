@@ -471,6 +471,150 @@ const insertCustomParagraphsInAdf = (adfNode, customInsertions) => {
   };
 };
 
+// Helper function to insert internal note markers inline in ADF content
+// Uses footnote-style numbering with content collected at the bottom
+// All internal note elements use 'internal-note-marker' class for:
+// 1. CSS styling in Confluence (distinctive appearance)
+// 2. External filtering (hide from external users)
+// internalNotes is an array of { position: number, content: string }
+const insertInternalNotesInAdf = (adfNode, internalNotes) => {
+  if (!adfNode || !adfNode.content || !internalNotes || internalNotes.length === 0) {
+    return adfNode;
+  }
+
+  // Sort notes by position to assign sequential footnote numbers
+  const sortedNotes = [...internalNotes].sort((a, b) => a.position - b.position);
+
+  // Create a map of position -> footnote number
+  const positionToNumber = {};
+  sortedNotes.forEach((note, index) => {
+    positionToNumber[note.position] = index + 1;
+  });
+
+  // Unicode superscript numbers
+  const superscriptNumbers = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
+  const toSuperscript = (num) => {
+    return num.toString().split('').map(digit => superscriptNumbers[parseInt(digit)]).join('');
+  };
+
+  const newContent = [];
+  let paragraphIndex = 0;
+
+  // Traverse content and insert inline markers at the end of specified paragraphs
+  adfNode.content.forEach(node => {
+    if (node.type === 'paragraph') {
+      // Check if there's an internal note for this position
+      const noteNumber = positionToNumber[paragraphIndex];
+
+      if (noteNumber) {
+        // Add the paragraph with an inline footnote marker at the end
+        const paragraphContent = [...(node.content || [])];
+
+        // Add inline marker with distinctive purple color for internal notes
+        // External filtering app should remove text nodes with color #6554C0 (purple)
+        paragraphContent.push({
+          type: 'text',
+          text: toSuperscript(noteNumber),
+          marks: [
+            {
+              type: 'textColor',
+              attrs: {
+                color: '#6554C0' // Purple marks internal note references
+              }
+            },
+            {
+              type: 'strong'
+            }
+          ]
+        });
+
+        newContent.push({
+          ...node,
+          content: paragraphContent
+        });
+      } else {
+        // No note at this position, keep the paragraph as is
+        newContent.push(node);
+      }
+
+      paragraphIndex++;
+    } else {
+      // Not a paragraph, keep as is
+      newContent.push(node);
+    }
+  });
+
+  // Add footnotes section at the bottom wrapped in an expand node
+  if (sortedNotes.length > 0) {
+    // Wrap entire footnotes section in an expandable/collapsible section
+    // External filtering app will hide all expand nodes
+    const footnotesContent = [];
+
+    // Add "Internal Notes" heading with lock icon
+    footnotesContent.push({
+      type: 'paragraph',
+      content: [
+        {
+          type: 'text',
+          text: '🔒 Internal Notes',
+          marks: [
+            {
+              type: 'strong'
+            },
+            {
+              type: 'em'
+            }
+          ]
+        }
+      ]
+    });
+
+    // Add each footnote with its number
+    sortedNotes.forEach((note, index) => {
+      const footnoteNumber = index + 1;
+      footnotesContent.push({
+        type: 'paragraph',
+        content: [
+          {
+            type: 'text',
+            text: `${toSuperscript(footnoteNumber)} `,
+            marks: [
+              {
+                type: 'strong'
+              }
+            ]
+          },
+          {
+            type: 'text',
+            text: note.content,
+            marks: [
+              {
+                type: 'em'
+              }
+            ]
+          }
+        ]
+      });
+    });
+
+    // Use an expand (collapsible section) for internal notes
+    // This gives us a cleaner appearance without forced panel icons
+    // External filtering app should hide expand nodes with title '🔒 Internal Notes'
+    newContent.push({
+      type: 'expand',
+      attrs: {
+        title: '🔒 Internal Notes'
+      },
+      content: footnotesContent.slice(1) // Skip the heading since expand already has a title
+    });
+  }
+
+  return {
+    ...adfNode,
+    content: newContent
+  };
+};
+
 // Helper function to extract paragraphs from ADF content
 // Returns array of { index, lastSentence, fullText }
 const extractParagraphsFromAdf = (adfNode) => {
@@ -537,6 +681,8 @@ const App = () => {
   const [variableValues, setVariableValues] = useState(config?.variableValues || {});
   const [toggleStates, setToggleStates] = useState(config?.toggleStates || {});
   const [customInsertions, setCustomInsertions] = useState(config?.customInsertions || []);
+  const [internalNotes, setInternalNotes] = useState(config?.internalNotes || []);
+  const [insertionType, setInsertionType] = useState('body'); // 'body' or 'note'
   const [selectedPosition, setSelectedPosition] = useState(null);
   const [customText, setCustomText] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -578,10 +724,12 @@ const App = () => {
               const loadedVariableValues = varsResult.success ? varsResult.variableValues : {};
               const loadedToggleStates = varsResult.success ? varsResult.toggleStates : {};
               const loadedCustomInsertions = varsResult.success ? varsResult.customInsertions : [];
+              const loadedInternalNotes = varsResult.success ? varsResult.internalNotes : [];
 
               setVariableValues(loadedVariableValues);
               setToggleStates(loadedToggleStates);
               setCustomInsertions(loadedCustomInsertions);
+              setInternalNotes(loadedInternalNotes);
 
               // Generate and cache the content
               let freshContent = excerptResult.excerpt.content;
@@ -591,6 +739,7 @@ const App = () => {
                 freshContent = filterContentByToggles(freshContent, loadedToggleStates);
                 freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
                 freshContent = insertCustomParagraphsInAdf(freshContent, loadedCustomInsertions);
+                freshContent = insertInternalNotesInAdf(freshContent, loadedInternalNotes);
               } else {
                 // For plain text, filter toggles
                 const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
@@ -645,11 +794,12 @@ const App = () => {
 
         setExcerpt(excerptResult.excerpt);
 
-        // Load saved variable values, toggle states, and custom insertions from storage
+        // Load saved variable values, toggle states, custom insertions, and internal notes from storage
         const varsResultForLoading = await invoke('getVariableValues', { localId: context.localId });
         const loadedVariableValues = varsResultForLoading.success ? varsResultForLoading.variableValues : {};
         const loadedToggleStates = varsResultForLoading.success ? varsResultForLoading.toggleStates : {};
         const loadedCustomInsertions = varsResultForLoading.success ? varsResultForLoading.customInsertions : [];
+        const loadedInternalNotes = varsResultForLoading.success ? varsResultForLoading.internalNotes : [];
 
         // Auto-infer "client" variable from page title if it follows "Blueprint: [Client Name]" pattern
         let pageTitle = '';
@@ -681,16 +831,18 @@ const App = () => {
         setVariableValues(loadedVariableValues);
         setToggleStates(loadedToggleStates);
         setCustomInsertions(loadedCustomInsertions || []);
+        setInternalNotes(loadedInternalNotes || []);
 
         // NOW: Generate the fresh rendered content with loaded settings
         let freshContent = excerptResult.excerpt.content;
         const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
 
         if (isAdf) {
-          // First filter toggles, then substitute variables, insert custom paragraphs
+          // First filter toggles, then substitute variables, insert custom paragraphs, then internal notes
           freshContent = filterContentByToggles(freshContent, loadedToggleStates);
           freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
           freshContent = insertCustomParagraphsInAdf(freshContent, loadedCustomInsertions);
+          freshContent = insertInternalNotesInAdf(freshContent, loadedInternalNotes);
         } else {
           // For plain text, filter toggles first
           const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
@@ -735,13 +887,14 @@ const App = () => {
 
     const timeoutId = setTimeout(async () => {
       try {
-        // Save variable values, toggle states, and custom insertions
+        // Save variable values, toggle states, custom insertions, and internal notes
         const result = await invoke('saveVariableValues', {
           localId: context.localId,
           excerptId: config.excerptId,
           variableValues,
           toggleStates,
-          customInsertions
+          customInsertions,
+          internalNotes
         });
 
         if (result.success) {
@@ -764,7 +917,7 @@ const App = () => {
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [variableValues, toggleStates, customInsertions, isEditing, context?.localId, config?.excerptId, excerpt]);
+  }, [variableValues, toggleStates, customInsertions, internalNotes, isEditing, context?.localId, config?.excerptId, excerpt]);
 
   // Check for staleness in view mode
   useEffect(() => {
@@ -837,10 +990,11 @@ const App = () => {
     const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
     if (isAdf) {
-      // First filter toggles, substitute variables, insert custom paragraphs
+      // First filter toggles, substitute variables, insert custom paragraphs, then internal notes
       previewContent = filterContentByToggles(previewContent, toggleStates);
       previewContent = substituteVariablesInAdf(previewContent, variableValues);
       previewContent = insertCustomParagraphsInAdf(previewContent, customInsertions);
+      previewContent = insertInternalNotesInAdf(previewContent, internalNotes);
       return cleanAdfForRenderer(previewContent);
     } else {
       // For plain text, filter toggles first
@@ -876,6 +1030,7 @@ const App = () => {
       previewContent = filterContentByToggles(previewContent, toggleStates);
       previewContent = substituteVariablesInAdf(previewContent, variableValues);
       previewContent = insertCustomParagraphsInAdf(previewContent, customInsertions);
+      previewContent = insertInternalNotesInAdf(previewContent, internalNotes);
       return cleanAdfForRenderer(previewContent);
     } else {
       // For plain text
@@ -912,11 +1067,12 @@ const App = () => {
         return;
       }
 
-      // Get current variable values and toggle states
+      // Get current variable values, toggle states, custom insertions, and internal notes
       const varsResult = await invoke('getVariableValues', { localId: context.localId });
       const currentVariableValues = varsResult.success ? varsResult.variableValues : {};
       const currentToggleStates = varsResult.success ? varsResult.toggleStates : {};
       const currentCustomInsertions = varsResult.success ? varsResult.customInsertions : [];
+      const currentInternalNotes = varsResult.success ? varsResult.internalNotes : [];
 
       // Generate fresh content with current settings
       let freshContent = excerptResult.excerpt.content;
@@ -926,6 +1082,7 @@ const App = () => {
         freshContent = filterContentByToggles(freshContent, currentToggleStates);
         freshContent = substituteVariablesInAdf(freshContent, currentVariableValues);
         freshContent = insertCustomParagraphsInAdf(freshContent, currentCustomInsertions);
+        freshContent = insertInternalNotesInAdf(freshContent, currentInternalNotes);
       } else {
         // For plain text, filter toggles first
         const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
@@ -1188,10 +1345,35 @@ const App = () => {
           )}
         </TabPanel>
 
-        {/* Free Write Tab - Custom paragraph insertions */}
+        {/* Free Write Tab - Custom paragraph insertions and internal notes */}
         <TabPanel>
           <Stack space="space.200">
-            <Text>Insert custom paragraph content at a position of your choosing:</Text>
+            <Text>Insert custom content at a position of your choosing:</Text>
+
+            {/* Toggle to choose between Body Paragraph and Internal Note */}
+            <Inline space="space.100" alignBlock="center">
+              <Text><Strong>Type:</Strong></Text>
+              <Toggle
+                label="Body Paragraph"
+                isChecked={insertionType === 'body'}
+                onChange={() => {
+                  setInsertionType('body');
+                  setSelectedPosition(null);
+                  setCustomText('');
+                }}
+              />
+              <Text>Body Paragraph</Text>
+              <Toggle
+                label="Internal Note"
+                isChecked={insertionType === 'note'}
+                onChange={() => {
+                  setInsertionType('note');
+                  setSelectedPosition(null);
+                  setCustomText('');
+                }}
+              />
+              <Text>Internal Note</Text>
+            </Inline>
 
             {(() => {
               // Extract paragraphs from the preview content
@@ -1210,7 +1392,7 @@ const App = () => {
               return (
                 <Fragment>
                   <Select
-                    label="Insert custom paragraph one line below:"
+                    label={insertionType === 'body' ? "Insert custom paragraph one line below:" : "Add internal note after:"}
                     options={paragraphOptions}
                     value={paragraphOptions.find(opt => opt.value === selectedPosition)}
                     placeholder="Choose a paragraph..."
@@ -1218,8 +1400,8 @@ const App = () => {
                   />
 
                   <Textfield
-                    label="Custom paragraph content"
-                    placeholder="Enter your custom paragraph text..."
+                    label={insertionType === 'body' ? "Custom paragraph content" : "Internal note content"}
+                    placeholder={insertionType === 'body' ? "Enter your custom paragraph text..." : "Enter your internal note..."}
                     value={customText}
                     onChange={(e) => setCustomText(e.target.value)}
                     isDisabled={selectedPosition === null}
@@ -1227,7 +1409,7 @@ const App = () => {
 
                   <Button
                     appearance="primary"
-                    isDisabled={selectedPosition === null || !customText.trim()}
+                    isDisabled={selectedPosition === null || !customText.trim() || (insertionType === 'note' && internalNotes.some(n => n.position === selectedPosition))}
                     onClick={() => {
                       // Map rendered paragraph index to original paragraph index
                       // by building the rendered structure and finding what the selected position maps to
@@ -1256,26 +1438,39 @@ const App = () => {
                         targetPosition = selected.insertedAfter;
                       }
 
-                      const newInsertion = {
-                        position: targetPosition,
-                        text: customText.trim()
-                      };
-                      setCustomInsertions([...customInsertions, newInsertion]);
+                      if (insertionType === 'body') {
+                        // Add to custom insertions (body paragraphs)
+                        const newInsertion = {
+                          position: targetPosition,
+                          text: customText.trim()
+                        };
+                        setCustomInsertions([...customInsertions, newInsertion]);
+                      } else {
+                        // Add to internal notes (one per position)
+                        if (!internalNotes.some(n => n.position === targetPosition)) {
+                          const newNote = {
+                            position: targetPosition,
+                            content: customText.trim()
+                          };
+                          setInternalNotes([...internalNotes, newNote]);
+                        }
+                      }
 
                       // Reset form
                       setSelectedPosition(null);
                       setCustomText('');
                     }}
                   >
-                    Add Custom Paragraph
+                    {insertionType === 'body' ? 'Add Custom Paragraph' : 'Add Internal Note'}
                   </Button>
 
+                  {/* Display custom paragraphs */}
                   {customInsertions.length > 0 && (
                     <Fragment>
                       <Text><Strong>Added custom paragraphs:</Strong></Text>
                       <Stack space="space.100">
                         {customInsertions.map((insertion, idx) => (
-                          <Inline key={idx} space="space.100" alignBlock="center" spread="space-between">
+                          <Inline key={`custom-${idx}`} space="space.100" alignBlock="center" spread="space-between">
                             <Text>
                               <Em>After paragraph {insertion.position + 1}:</Em> {insertion.text.substring(0, 50)}{insertion.text.length > 50 ? '...' : ''}
                             </Text>
@@ -1283,6 +1478,30 @@ const App = () => {
                               appearance="subtle"
                               onClick={() => {
                                 setCustomInsertions(customInsertions.filter((_, i) => i !== idx));
+                              }}
+                            >
+                              Remove
+                            </Button>
+                          </Inline>
+                        ))}
+                      </Stack>
+                    </Fragment>
+                  )}
+
+                  {/* Display internal notes */}
+                  {internalNotes.length > 0 && (
+                    <Fragment>
+                      <Text><Strong>Added internal notes:</Strong></Text>
+                      <Stack space="space.100">
+                        {internalNotes.map((note, idx) => (
+                          <Inline key={`note-${idx}`} space="space.100" alignBlock="center" spread="space-between">
+                            <Text>
+                              💬 <Em>After paragraph {note.position + 1}:</Em> {note.content.substring(0, 50)}{note.content.length > 50 ? '...' : ''}
+                            </Text>
+                            <Button
+                              appearance="subtle"
+                              onClick={() => {
+                                setInternalNotes(internalNotes.filter((_, i) => i !== idx));
                               }}
                             >
                               Remove

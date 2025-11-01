@@ -4,10 +4,10 @@ A high-performance Forge app for Confluence that enables reusable content blocks
 
 ---
 
-## 🔧 Refactoring Progress (refactor/modularize-index-js branch)
+## 🔧 Refactoring Progress (main branch)
 
-**Current Version:** 6.43.0
-**Status:** ALL PHASES COMPLETE ✅ (Phases 1-7)
+**Current Version:** 6.54.0
+**Status:** ALL PHASES COMPLETE ✅ (Phases 1-7) - Merged to main
 
 This branch contains a major refactoring effort to modularize the monolithic `index.js` file into maintainable, organized resolver modules.
 
@@ -106,7 +106,7 @@ All one-time migration code is clearly marked with `⚠️ ONE-TIME USE` warning
 
 ## 🎯 Current Implementation
 
-**Version:** 4.203.0 (main branch) / 6.40.0 (refactor branch)
+**Version:** 6.54.0
 **Architecture:** Option 4 - Optimistic Rendering with Background Refresh
 
 ### How It Works
@@ -354,7 +354,7 @@ Each row contains:
 
 ## ✨ Features
 
-### Current Features (v4.203.0)
+### Current Features (v6.54.0)
 
 ✅ **ID-Based References** - UUID-based excerpt identification for rename-safe references
 
@@ -381,6 +381,8 @@ Each row contains:
 ✅ **Rich Text Content** - Full WYSIWYG editing for Source macros with bold, italic, tables, and more
 
 ✅ **Free Write Feature** - Insert custom paragraph content at chosen positions within Include macros
+
+✅ **Internal Notes** - Add footnote-style internal annotations visible only to Confluence users, hidden from external clients (see [Internal Notes](#-internal-notes-feature) section below)
 
 ✅ **Toggle Content Blocks** - Show/hide sections using `{{toggle:name}}` syntax
 
@@ -594,6 +596,72 @@ The Free Write feature allows you to insert custom paragraph content at specific
 - Remove custom paragraphs individually
 - Auto-saves with other Include configurations
 - Appears immediately in live preview
+
+### 📝 Internal Notes Feature
+
+The Internal Notes feature allows you to add footnote-style annotations to Include macros that are visible to Confluence users but hidden from external clients viewing content through integrations like Salesforce.
+
+**How It Works:**
+
+1. Open an Include macro in edit mode
+2. Navigate to the "Free Write" tab
+3. Toggle the insertion type from "Body Paragraph" to "Internal Note"
+4. Select a paragraph position where you want to add the note
+5. Enter your internal note content
+6. Click "Add Internal Note"
+
+**What You'll See:**
+
+- **Inline Markers:** Purple superscript numbers (¹, ², ³) appear at the end of paragraphs in the published view
+- **Expandable Panel:** A collapsible section titled "🔒 Internal Notes" appears at the bottom of the excerpt
+- **Numbered List:** Each note is displayed with its corresponding number and content
+- **Preview:** Internal notes appear in all tab previews (Write, Alternatives, Free Write)
+
+**Technical Details:**
+
+**Storage Structure:**
+```javascript
+{
+  excerptId: "abc-123",
+  variableValues: {...},
+  toggleStates: {...},
+  customInsertions: [...],
+  internalNotes: [
+    { position: 2, content: "This client prefers quarterly billing" },
+    { position: 5, content: "Reference ticket #1234 for pricing exception" }
+  ]
+}
+```
+
+**ADF Rendering:**
+- Inline markers: Text nodes with `textColor: '#6554C0'` (purple) and superscript Unicode numbers
+- Notes panel: ADF `expand` node with `title: '🔒 Internal Notes'`
+- One note per paragraph position (button disabled if position already has a note)
+
+**External Content Filtering:**
+
+Internal Notes are designed to work with external content filtering for Salesforce/CRM integrations. When content is displayed to external clients:
+
+**Filter Rules:**
+1. Remove all ADF `expand` nodes (type: 'expand') - this hides the entire Internal Notes panel
+2. Remove text nodes with `textColor: '#6554C0'` - this removes the inline footnote markers (¹, ², ³)
+
+**Architecture Note:** The actual filtering logic will be implemented in a separate Confluence-Salesforce integration app. The filtering rules are documented in `/Users/quinnsouther/Documents/Code projects/confluence-salesforce-integration/ARCHITECTURAL_OPTIONS.md`.
+
+**Use Cases:**
+- Add internal context about client preferences or special arrangements
+- Document pricing exceptions or custom terms
+- Reference support tickets or internal discussions
+- Add reminders for account managers without exposing to clients
+- Track client-specific notes that shouldn't appear in external-facing blueprints
+
+**Features:**
+- Footnote-style numbering (automatically sequential)
+- One note per paragraph position
+- Visible in all Confluence views (published and edit mode previews)
+- Hidden from external clients via content filtering
+- Auto-saves with other Include configurations
+- Collapsible panel for clean presentation
 
 ### Staleness Detection & Diff View
 When viewing a published page with Include macros, the app automatically detects if the Source excerpt has been updated since the Include was last synced:
