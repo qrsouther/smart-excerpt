@@ -308,6 +308,9 @@ export async function getCheckProgress(req) {
 
 /**
  * Get migration status
+ * ⚠️ ONE-TIME USE ONLY - DELETE AFTER PRODUCTION MIGRATION
+ * This function reads migration-tracker data written by migration resolvers.
+ * Once production migration is complete, this can be safely deleted.
  */
 export async function getMigrationStatus() {
   try {
@@ -329,6 +332,10 @@ export async function getMigrationStatus() {
 
 /**
  * Get MultiExcerpt scan progress
+ * ⚠️ ONE-TIME USE ONLY - DELETE AFTER PRODUCTION MIGRATION
+ * This function provides progress tracking for scanMultiExcerptIncludes operation.
+ * Only used by hidden migration UI (SHOW_MIGRATION_TOOLS flag).
+ * Once production migration is complete, this can be safely deleted.
  */
 export async function getMultiExcerptScanProgress(req) {
   try {

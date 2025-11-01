@@ -1229,9 +1229,35 @@ const App = () => {
                     appearance="primary"
                     isDisabled={selectedPosition === null || !customText.trim()}
                     onClick={() => {
-                      // Add the custom insertion
+                      // Map rendered paragraph index to original paragraph index
+                      // by building the rendered structure and finding what the selected position maps to
+                      const rendered = [];
+                      const originalCount = paragraphs.length - customInsertions.length;
+
+                      for (let i = 0; i < originalCount; i++) {
+                        rendered.push({ type: 'original', index: i });
+
+                        // Add any custom insertions after this original paragraph
+                        const customsHere = customInsertions.filter(ins => ins.position === i);
+                        for (const custom of customsHere) {
+                          rendered.push({ type: 'custom', insertedAfter: i });
+                        }
+                      }
+
+                      // Find what the selected position maps to
+                      const selected = rendered[selectedPosition];
+                      let targetPosition;
+
+                      if (selected.type === 'original') {
+                        // Insert after this original paragraph
+                        targetPosition = selected.index;
+                      } else {
+                        // Insert after the same original paragraph as this custom one
+                        targetPosition = selected.insertedAfter;
+                      }
+
                       const newInsertion = {
-                        position: selectedPosition,
+                        position: targetPosition,
                         text: customText.trim()
                       };
                       setCustomInsertions([...customInsertions, newInsertion]);

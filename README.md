@@ -2,9 +2,88 @@
 
 A high-performance Forge app for Confluence that enables reusable content blocks with variable substitution and automatic updates.
 
+---
+
+## 🔧 Refactoring Progress (refactor/modularize-index-js branch)
+
+**Current Version:** 6.40.0
+**Status:** Phase 4 Complete ✅
+
+This branch contains a major refactoring effort to modularize the monolithic `index.js` file into maintainable, organized resolver modules.
+
+### ✅ Completed Phases
+
+#### **Phase 1: Create Utils Module** ✅
+- Extracted `generateUUID` utility function to `src/utils.js`
+- **Result:** Foundation for modular architecture established
+
+#### **Phase 2: Create Detection Utils Module** ✅
+- Extracted `detectVariables` and `detectToggles` to `src/utils/detection-utils.js`
+- Extracted `extractTextFromAdf` helper function
+- **Result:** Core detection logic separated from business logic
+
+#### **Phase 3: Create Excerpt Resolvers Module** ✅
+- Extracted all excerpt CRUD operations to `src/resolvers/excerpt-resolvers.js`:
+  - `saveExcerpt` - Create/update excerpts
+  - `updateExcerptContent` - Auto-update from Source macro changes
+  - `getAllExcerpts` - Fetch all excerpts with details
+  - `deleteExcerpt` - Remove excerpts
+  - `updateExcerptMetadata` - Edit name/category
+  - `massUpdateExcerpts` - Bulk operations
+- **Result:** Core business logic cleanly separated (~286 lines extracted)
+
+#### **Phase 4: Create Migration Resolvers Module** ✅
+- Extracted all one-time migration operations to `src/resolvers/migration-resolvers.js`:
+  - 7 migration functions (~1,644 lines)
+  - Hidden migration UI via `SHOW_MIGRATION_TOOLS` feature flag
+  - Added comprehensive deletion markers throughout codebase
+- **Result:** `index.js` reduced from 2,703 → 1,103 lines (60% reduction!)
+
+### 📊 Impact Summary
+
+| Metric | Before | After | Change |
+|--------|--------|-------|--------|
+| **index.js size** | 2,703 lines | 1,103 lines | **-1,600 lines (-59%)** |
+| **Modular files** | 1 file | 7 files | **+6 files** |
+| **Migration code** | Inline | Separate file | **Isolated** |
+| **Maintainability** | Low | High | **Significantly improved** |
+
+### 📁 New File Structure
+
+```
+src/
+├── index.js (1,103 lines) - Resolver registration only
+├── utils.js - Core utilities
+├── utils/
+│   ├── detection-utils.js - Variable/toggle detection
+│   ├── migration-utils.js - Migration helpers
+│   └── storage-utils.js - Storage operations
+└── resolvers/
+    ├── excerpt-resolvers.js - Excerpt CRUD operations
+    ├── migration-resolvers.js - One-time migration tools ⚠️
+    └── simple-resolvers.js - Simple resolver functions
+```
+
+### 🗑️ Ready for Deletion (Post-Production Migration)
+
+All one-time migration code is clearly marked with `⚠️ ONE-TIME USE` warnings and ready for deletion after production setup:
+- `src/resolvers/migration-resolvers.js` (entire file)
+- Migration-related code in `index.js`, `simple-resolvers.js`, and `admin-page.jsx`
+- See `migration-resolvers.js:10-16` for complete deletion checklist
+
+### 🎯 Benefits Achieved
+
+1. **Dramatically improved code organization** - Related functions grouped logically
+2. **Easier maintenance** - Changes isolated to specific modules
+3. **Better testing potential** - Modules can be tested independently
+4. **Reduced cognitive load** - Developers can focus on one concern at a time
+5. **Clear migration path** - One-time code clearly marked for future deletion
+
+---
+
 ## 🎯 Current Implementation
 
-**Version:** 4.203.0
+**Version:** 4.203.0 (main branch) / 6.40.0 (refactor branch)
 **Architecture:** Option 4 - Optimistic Rendering with Background Refresh
 
 ### How It Works

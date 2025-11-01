@@ -99,6 +99,16 @@ const rightContentStyles = xcss({
   borderRadius: 'border.radius'
 });
 
+// ⚠️ ONE-TIME USE MIGRATION FEATURE FLAG - DELETE AFTER PRODUCTION MIGRATION ⚠️
+// Feature flag: Set to true to show migration tools in Admin UI
+// Migration resolvers are still available in backend (src/resolvers/migration-resolvers.js)
+// After production migration is complete:
+// 1. Delete all code wrapped in {SHOW_MIGRATION_TOOLS && ...} conditionals
+// 2. Delete this flag
+// 3. Delete migration state variables below (lines ~127-138)
+// 4. Delete migration handler functions (search for "handleScanMultiExcerpt", "handleBulkImport", etc.)
+const SHOW_MIGRATION_TOOLS = false;
+
 const App = () => {
   const [excerpts, setExcerpts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -119,26 +129,27 @@ const App = () => {
   const [includesCheckResult, setIncludesCheckResult] = useState(null);
   const [includesProgress, setIncludesProgress] = useState(null);
   const [progressId, setProgressId] = useState(null);
-  // MultiExcerpt scan state
+  // ⚠️ ONE-TIME USE MIGRATION STATE - DELETE AFTER PRODUCTION MIGRATION ⚠️
+  // Migration tools state (kept for handler functions, hidden via SHOW_MIGRATION_TOOLS flag)
+  // Delete this entire block after production migration is complete
   const [isScanningMultiExcerpt, setIsScanningMultiExcerpt] = useState(false);
   const [multiExcerptScanResult, setMultiExcerptScanResult] = useState(null);
   const [multiExcerptProgress, setMultiExcerptProgress] = useState(null);
   const [multiExcerptProgressId, setMultiExcerptProgressId] = useState(null);
-  // Bulk import state
   const [importJsonData, setImportJsonData] = useState(null);
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
-  // Create macros state
   const [isCreatingMacros, setIsCreatingMacros] = useState(false);
   const [macroCreationResult, setMacroCreationResult] = useState(null);
+  const [isConverting, setIsConverting] = useState(false);
+  const [conversionResult, setConversionResult] = useState(null);
+  const [isInitializing, setIsInitializing] = useState(false);
   // Category management
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [categories, setCategories] = useState(['General', 'Pricing', 'Technical', 'Legal', 'Marketing']);
   const [editingCategory, setEditingCategory] = useState(null);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
-  // Bulk initialization state
-  const [isInitializing, setIsInitializing] = useState(false);
 
   // Load categories from storage on mount
   useEffect(() => {
@@ -875,9 +886,6 @@ const App = () => {
   };
 
   // Handle converting MultiExcerpt macros to SmartExcerpt on page
-  const [isConverting, setIsConverting] = useState(false);
-  const [conversionResult, setConversionResult] = useState(null);
-
   const handleConvertMultiExcerpts = async () => {
     const pageId = '80150529'; // Migrated Content page
 
@@ -1027,35 +1035,37 @@ const App = () => {
       {/* Top Toolbar - Filters and Actions */}
       <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
         <Inline space="space.200" alignBlock="center" spread="space-between">
-          {/* Left side - bulk initialization button */}
-          <Box>
-            <Button
-              appearance="warning"
-              isDisabled={isInitializing}
-              onClick={async () => {
-                if (!confirm('Initialize all 147 excerpts? This will set their names based on the CSV mapping.')) {
-                  return;
-                }
+          {/* Left side - bulk initialization button (hidden via feature flag) */}
+          {SHOW_MIGRATION_TOOLS && (
+            <Box>
+              <Button
+                appearance="warning"
+                isDisabled={isInitializing}
+                onClick={async () => {
+                  if (!confirm('Initialize all 147 excerpts? This will set their names based on the CSV mapping.')) {
+                    return;
+                  }
 
-                setIsInitializing(true);
-                try {
-                  const result = await invoke('bulkInitializeAllExcerpts', {});
-                  console.log('Bulk init result:', result);
-                  alert(`Success! Initialized ${result.successful} out of ${result.total} excerpts.`);
+                  setIsInitializing(true);
+                  try {
+                    const result = await invoke('bulkInitializeAllExcerpts', {});
+                    console.log('Bulk init result:', result);
+                    alert(`Success! Initialized ${result.successful} out of ${result.total} excerpts.`);
 
-                  // Refresh the page to show updated names
-                  window.location.reload();
-                } catch (error) {
-                  console.error('Bulk init error:', error);
-                  alert(`Error: ${error.message}`);
-                } finally {
-                  setIsInitializing(false);
-                }
-              }}
-            >
-              Bulk Initialize All Excerpts
-            </Button>
-          </Box>
+                    // Refresh the page to show updated names
+                    window.location.reload();
+                  } catch (error) {
+                    console.error('Bulk init error:', error);
+                    alert(`Error: ${error.message}`);
+                  } finally {
+                    setIsInitializing(false);
+                  }
+                }}
+              >
+                Bulk Initialize All Excerpts
+              </Button>
+            </Box>
+          )}
 
           {/* Right side - filters and buttons */}
           <Inline space="space.150" alignBlock="center">
@@ -1113,13 +1123,15 @@ const App = () => {
               {isCheckingIncludes ? 'Checking...' : '🔍 Check All Includes'}
             </Button>
 
-            <Button
-              appearance="primary"
-              onClick={handleScanMultiExcerptIncludes}
-              isDisabled={isScanningMultiExcerpt}
-            >
-              {isScanningMultiExcerpt ? 'Scanning...' : '📦 Scan MultiExcerpt Includes'}
-            </Button>
+            {SHOW_MIGRATION_TOOLS && (
+              <Button
+                appearance="primary"
+                onClick={handleScanMultiExcerptIncludes}
+                isDisabled={isScanningMultiExcerpt}
+              >
+                {isScanningMultiExcerpt ? 'Scanning...' : '📦 Scan MultiExcerpt Includes'}
+              </Button>
+            )}
 
             <Button
               appearance="primary"
@@ -1131,96 +1143,98 @@ const App = () => {
         </Inline>
       </Box>
 
-      {/* Bulk Import Section */}
-      <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
-        <SectionMessage appearance="information">
-          <Stack space="space.200">
-            <Text><Strong>📥 Import MultiExcerpt Sources</Strong></Text>
-            <Text>Paste the JSON content from the Chrome Extension export below, then click Load JSON.</Text>
+      {/* Bulk Import Section (hidden via feature flag) */}
+      {SHOW_MIGRATION_TOOLS && (
+        <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
+          <SectionMessage appearance="information">
+            <Stack space="space.200">
+              <Text><Strong>📥 Import MultiExcerpt Sources</Strong></Text>
+              <Text>Paste the JSON content from the Chrome Extension export below, then click Load JSON.</Text>
 
-            <Textfield
-              placeholder='Paste JSON content here... {"exportedAt": "...", "sources": [...]}'
-              value={jsonTextInput}
-              onChange={(e) => setJsonTextInput(e.target.value)}
-            />
+              <Textfield
+                placeholder='Paste JSON content here... {"exportedAt": "...", "sources": [...]}'
+                value={jsonTextInput}
+                onChange={(e) => setJsonTextInput(e.target.value)}
+              />
 
-            <Inline space="space.200" alignBlock="center">
-              <Button
-                appearance="default"
-                onClick={handleJsonParse}
-                isDisabled={!jsonTextInput.trim()}
-              >
-                📋 Load JSON
-              </Button>
+              <Inline space="space.200" alignBlock="center">
+                <Button
+                  appearance="default"
+                  onClick={handleJsonParse}
+                  isDisabled={!jsonTextInput.trim()}
+                >
+                  📋 Load JSON
+                </Button>
 
-              {importJsonData && (
-                <Text><Strong>✅ {importJsonData.sourceCount} source(s) loaded</Strong></Text>
+                {importJsonData && (
+                  <Text><Strong>✅ {importJsonData.sourceCount} source(s) loaded</Strong></Text>
+                )}
+              </Inline>
+
+              <Inline space="space.200" alignBlock="center">
+                <Button
+                  appearance="primary"
+                  onClick={handleBulkImport}
+                  isDisabled={!importJsonData || isImporting}
+                >
+                  {isImporting ? 'Importing...' : '⬆️ Import Sources'}
+                </Button>
+
+                {importResult && (
+                  <Text>
+                    <Strong>✅ Imported {importResult.summary.imported} of {importResult.summary.total}</Strong>
+                  </Text>
+                )}
+              </Inline>
+
+              {/* Create Source Macros Button */}
+              {excerpts.some(e => e.category === 'Migrated from MultiExcerpt') && (
+                <Fragment>
+                  <Text>{' '}</Text>
+                  <Text><Strong>Step 2: Create Source Macros</Strong></Text>
+                  <Text>Once imported, create the actual Source macros on your Migrated Content page.</Text>
+
+                  <Inline space="space.200" alignBlock="center">
+                    <Button
+                      appearance="primary"
+                      onClick={handleCreateSourceMacros}
+                      isDisabled={isCreatingMacros}
+                    >
+                      {isCreatingMacros ? 'Creating Macros...' : '📄 Create Source Macros on Page'}
+                    </Button>
+
+                    {macroCreationResult && (
+                      <Text>
+                        <Strong>✅ Created {macroCreationResult.summary.created} macro(s)</Strong>
+                      </Text>
+                    )}
+                  </Inline>
+
+                  <Text>{' '}</Text>
+                  <Text><Strong>Step 3: Convert MultiExcerpt Macros (Alternative)</Strong></Text>
+                  <Text>If you've pasted MultiExcerpt macros onto the page, convert them to SmartExcerpt macros.</Text>
+
+                  <Inline space="space.200" alignBlock="center">
+                    <Button
+                      appearance="primary"
+                      onClick={handleConvertMultiExcerpts}
+                      isDisabled={isConverting}
+                    >
+                      {isConverting ? 'Converting...' : '🔄 Convert MultiExcerpts on Page'}
+                    </Button>
+
+                    {conversionResult && (
+                      <Text>
+                        <Strong>✅ Converted {conversionResult.summary.converted} macro(s)</Strong>
+                      </Text>
+                    )}
+                  </Inline>
+                </Fragment>
               )}
-            </Inline>
-
-            <Inline space="space.200" alignBlock="center">
-              <Button
-                appearance="primary"
-                onClick={handleBulkImport}
-                isDisabled={!importJsonData || isImporting}
-              >
-                {isImporting ? 'Importing...' : '⬆️ Import Sources'}
-              </Button>
-
-              {importResult && (
-                <Text>
-                  <Strong>✅ Imported {importResult.summary.imported} of {importResult.summary.total}</Strong>
-                </Text>
-              )}
-            </Inline>
-
-            {/* Create Source Macros Button */}
-            {excerpts.some(e => e.category === 'Migrated from MultiExcerpt') && (
-              <Fragment>
-                <Text>{' '}</Text>
-                <Text><Strong>Step 2: Create Source Macros</Strong></Text>
-                <Text>Once imported, create the actual Source macros on your Migrated Content page.</Text>
-
-                <Inline space="space.200" alignBlock="center">
-                  <Button
-                    appearance="primary"
-                    onClick={handleCreateSourceMacros}
-                    isDisabled={isCreatingMacros}
-                  >
-                    {isCreatingMacros ? 'Creating Macros...' : '📄 Create Source Macros on Page'}
-                  </Button>
-
-                  {macroCreationResult && (
-                    <Text>
-                      <Strong>✅ Created {macroCreationResult.summary.created} macro(s)</Strong>
-                    </Text>
-                  )}
-                </Inline>
-
-                <Text>{' '}</Text>
-                <Text><Strong>Step 3: Convert MultiExcerpt Macros (Alternative)</Strong></Text>
-                <Text>If you've pasted MultiExcerpt macros onto the page, convert them to SmartExcerpt macros.</Text>
-
-                <Inline space="space.200" alignBlock="center">
-                  <Button
-                    appearance="primary"
-                    onClick={handleConvertMultiExcerpts}
-                    isDisabled={isConverting}
-                  >
-                    {isConverting ? 'Converting...' : '🔄 Convert MultiExcerpts on Page'}
-                  </Button>
-
-                  {conversionResult && (
-                    <Text>
-                      <Strong>✅ Converted {conversionResult.summary.converted} macro(s)</Strong>
-                    </Text>
-                  )}
-                </Inline>
-              </Fragment>
-            )}
-          </Stack>
-        </SectionMessage>
-      </Box>
+            </Stack>
+          </SectionMessage>
+        </Box>
+      )}
 
       {/* Progress Bar for Check All Includes */}
       {isCheckingIncludes && (
@@ -1263,8 +1277,8 @@ const App = () => {
         </Box>
       )}
 
-      {/* Progress Bar for MultiExcerpt Scan */}
-      {isScanningMultiExcerpt && (
+      {/* Progress Bar for MultiExcerpt Scan (hidden via feature flag) */}
+      {SHOW_MIGRATION_TOOLS && isScanningMultiExcerpt && (
         <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
           <SectionMessage appearance="information">
             <Stack space="space.200">
