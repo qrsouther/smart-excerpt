@@ -20,7 +20,6 @@ import {
   getCanonicalLocalId as getCanonicalLocalIdResolver,
   recoverOrphanedData as recoverOrphanedDataResolver,
   getCachedContent as getCachedContentResolver,
-  getCachedContentBatch as getCachedContentBatchResolver,
   saveCachedContent as saveCachedContentResolver,
   getCategories as getCategoriesResolver,
   saveCategories as saveCategoriesResolver,
@@ -106,9 +105,6 @@ resolver.define('saveCachedContent', saveCachedContentResolver);
 
 // Get cached rendered content for an Include instance (view mode)
 resolver.define('getCachedContent', getCachedContentResolver);
-
-// Batch fetch cached content for multiple macros (performance optimization)
-resolver.define('getCachedContentBatch', getCachedContentBatchResolver);
 
 // Check if Include instance has stale content (update available)
 resolver.define('checkVersionStaleness', checkVersionStalenessResolver);

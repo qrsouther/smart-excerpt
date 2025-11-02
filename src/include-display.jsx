@@ -28,7 +28,6 @@ import ForgeReconciler, {
   AdfRenderer
 } from '@forge/react';
 import { invoke, router } from '@forge/bridge';
-import { requestCachedContent } from './batch-coordinator.js';
 
 // Style for preview border
 const previewBoxStyle = xcss({
@@ -38,48 +37,6 @@ const previewBoxStyle = xcss({
   borderRadius: 'border.radius',
   padding: 'space.200'
 });
-
-/**
- * Skeleton component for loading state
- * Uses lh (line-height) units to scale with user font settings
- */
-const SkeletonLine = ({ linesHeight = 2.5 }) => (
-  <Box
-    style={{
-      height: `${linesHeight}lh`,
-      backgroundColor: '#f4f5f7',
-      borderRadius: '3px',
-      backgroundImage: 'linear-gradient(90deg, #f4f5f7 0px, #e8e9eb 40px, #f4f5f7 80px)',
-      backgroundSize: '800px',
-      animation: 'shimmer 1.6s infinite linear'
-    }}
-  />
-);
-
-// Keyframes for shimmer animation (CSS in style tag won't work, but linear gradient gives subtle effect)
-const SkeletonParagraph = () => (
-  <Stack space="space.075">
-    <SkeletonLine linesHeight={1} />
-    <SkeletonLine linesHeight={1} />
-    <SkeletonLine linesHeight={0.7} />
-  </Stack>
-);
-
-/**
- * Full skeleton for Include macro loading state
- * Metadata-driven: Uses paragraph count from cached metadata if available
- */
-const IncludeSkeleton = ({ metadata }) => {
-  const paragraphCount = metadata?.paragraphCount || 3;
-
-  return (
-    <Stack space="space.200">
-      {Array(Math.min(paragraphCount, 5)).fill(0).map((_, i) => (
-        <SkeletonParagraph key={i} />
-      ))}
-    </Stack>
-  );
-};
 
 // Style for full-width variable table container
 const variableBoxStyle = xcss({
@@ -744,16 +701,6 @@ const App = () => {
   const [showDiffView, setShowDiffView] = useState(false);
   const [latestRenderedContent, setLatestRenderedContent] = useState(null);
 
-  // Helper: Calculate metadata for skeleton sizing
-  const calculateMetadata = (content) => {
-    if (!content) return null;
-
-    const paragraphs = extractParagraphsFromAdf(content);
-    return {
-      paragraphCount: paragraphs.length
-    };
-  };
-
   // Load cached content in view mode
   useEffect(() => {
     if (!config || !config.excerptId || !effectiveLocalId) {
@@ -764,11 +711,7 @@ const App = () => {
     if (!isEditing) {
       const loadCachedContent = async () => {
         try {
-          console.log(`[BATCH-LOAD] Loading cached content for localId: ${context.localId}`);
-
-          // Use batch coordinator for performance (auto-batches with other macros on page)
-          const result = await requestCachedContent(effectiveLocalId);
-          console.log(`[BATCH-LOAD] Result:`, result);
+          const result = await invoke('getCachedContent', { localId: effectiveLocalId });
 
           if (result && result.content) {
             setContent(result.content);
@@ -861,8 +804,7 @@ const App = () => {
               // Cache it for next time with metadata for skeleton sizing
               await invoke('saveCachedContent', {
                 localId: effectiveLocalId,
-                renderedContent: freshContent,
-                metadata: calculateMetadata(freshContent)
+                renderedContent: freshContent
               });
             }
           }
@@ -1038,12 +980,11 @@ const App = () => {
         });
 
         if (result.success) {
-          // Also cache the rendered content for view mode with metadata
+          // Also cache the rendered content for view mode
           const previewContent = getPreviewContent();
           await invoke('saveCachedContent', {
             localId: effectiveLocalId,
-            renderedContent: previewContent,
-            metadata: calculateMetadata(previewContent)
+            renderedContent: previewContent
           });
 
           setSaveStatus('saved');
@@ -1117,9 +1058,9 @@ const App = () => {
     return <Text>SmartExcerpt Include not configured. Click Edit to select an excerpt.</Text>;
   }
 
-  // Show skeleton while loading in view mode
+  // Show spinner while loading in view mode
   if (!content && !isEditing) {
-    return <IncludeSkeleton metadata={null} />;
+    return <Spinner />;
   }
 
   // Helper function to get preview content with current variable and toggle values
@@ -1249,11 +1190,10 @@ const App = () => {
       // Update the displayed content
       setContent(freshContent);
 
-      // Cache the updated content with metadata
+      // Cache the updated content
       await invoke('saveCachedContent', {
         localId: effectiveLocalId,
-        renderedContent: freshContent,
-        metadata: calculateMetadata(freshContent)
+        renderedContent: freshContent
       });
 
       // Clear staleness flags

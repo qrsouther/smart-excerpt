@@ -321,70 +321,11 @@ export async function getCachedContent(req) {
     return {
       success: true,
       content: cached.content,
-      cachedAt: cached.cachedAt,
-      metadata: cached.metadata || null
+      cachedAt: cached.cachedAt
     };
   } catch (error) {
     console.error('Error loading cached content:', error);
     return { success: false, error: error.message };
-  }
-}
-
-/**
- * Batch fetch cached content for multiple macros
- * This is a major performance optimization for pages with many Include macros
- * Instead of 50 separate network calls, make 1 call to fetch all cached content
- */
-export async function getCachedContentBatch(req) {
-  try {
-    const { localIds } = req.payload;
-
-    if (!Array.isArray(localIds) || localIds.length === 0) {
-      return {
-        success: false,
-        error: 'localIds must be a non-empty array'
-      };
-    }
-
-    console.log(`[BATCH] Fetching cached content for ${localIds.length} macros`);
-
-    // Fetch all in parallel
-    const results = await Promise.all(
-      localIds.map(async (localId) => {
-        try {
-          const key = `macro-cache:${localId}`;
-          const cached = await storage.get(key);
-
-          return {
-            localId,
-            success: !!cached,
-            content: cached?.content || null,
-            cachedAt: cached?.cachedAt || null,
-            metadata: cached?.metadata || null
-          };
-        } catch (error) {
-          console.error(`[BATCH] Error fetching ${localId}:`, error);
-          return {
-            localId,
-            success: false,
-            error: error.message
-          };
-        }
-      })
-    );
-
-    console.log(`[BATCH] Successfully fetched ${results.filter(r => r.success).length}/${localIds.length} cached contents`);
-
-    return {
-      success: true,
-      results
-    };
-  } catch (error) {
-    console.error('[BATCH] Error in batch fetch:', error);
-    return {
-      success: false,
-      error: error.message
-    };
   }
 }
 
@@ -564,18 +505,17 @@ export async function getMultiExcerptScanProgress(req) {
  */
 export async function saveCachedContent(req) {
   try {
-    const { localId, renderedContent, metadata } = req.payload;
+    const { localId, renderedContent } = req.payload;
 
     const key = `macro-cache:${localId}`;
     const now = new Date().toISOString();
 
     await storage.set(key, {
       content: renderedContent,
-      cachedAt: now,
-      metadata: metadata || null  // Store paragraph count, etc. for skeleton sizing
+      cachedAt: now
     });
 
-    console.log(`saveCachedContent: Cached content for localId ${localId}${metadata ? ' with metadata' : ''}`);
+    console.log(`saveCachedContent: Cached content for localId ${localId}`);
 
     // Also update lastSynced in macro-vars
     const varsKey = `macro-vars:${localId}`;
