@@ -2,7 +2,7 @@ modules:
   macro:
     - key: smart-excerpt-source
       title: SmartExcerpt
-      description: Create a reusable content block that can be included on other pages
+      description: Create a reusable content block that can be included on other pages (v7.5.0)
       layout: bodied
       resource: source-display-resource
       render: native
@@ -15,15 +15,11 @@ modules:
 
     - key: smart-excerpt-include
       title: SmartExcerpt Include
-      description: Include a SmartExcerpt from another page
+      description: Include a SmartExcerpt from another page (v7.5.0)
       resource: include-display
       render: native
       resolver:
         function: resolver
-      config:
-        resource: include-config
-        render: native
-        viewportSize: max
 
   confluence:globalSettings:
     - key: smartexcerpt-admin
@@ -46,9 +42,6 @@ resources:
 
   - key: include-display
     path: src/include-display.jsx
-
-  - key: include-config
-    path: src/include-config-simple.jsx
 
   - key: admin-page
     path: src/admin-page.jsx

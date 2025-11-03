@@ -369,9 +369,23 @@ const App = () => {
       </Tabs>
 
       <FormFooter>
-        <Button appearance="primary" type="submit">
-          Save
-        </Button>
+        <Inline space="space.200">
+          <Button appearance="primary" type="submit">
+            Save
+          </Button>
+          <Button
+            appearance="link"
+            onClick={async () => {
+              try {
+                await router.open('/wiki/admin/forge?id=ari%3Acloud%3Aecosystem%3A%3Aextension%2Fbe1ff96b-d44d-4975-98d3-25b80a813bdd%2Fbbebcb82-f8af-4cd4-8ddb-38c88a94d142%2Fstatic%2Fsmartexcerpt-admin');
+              } catch (err) {
+                console.error('Navigation error:', err);
+              }
+            }}
+          >
+            View Admin
+          </Button>
+        </Inline>
       </FormFooter>
     </Form>
   );

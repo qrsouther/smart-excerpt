@@ -27,7 +27,9 @@ import ForgeReconciler, {
   useProductContext,
   AdfRenderer
 } from '@forge/react';
-import { invoke, router } from '@forge/bridge';
+import { invoke, router, view } from '@forge/bridge';
+import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 // Style for preview border
 const previewBoxStyle = xcss({
@@ -673,16 +675,273 @@ const extractParagraphsFromAdf = (adfNode) => {
   return paragraphs;
 };
 
+// Create a client for React Query
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      cacheTime: 1000 * 60 * 30, // 30 minutes
+      refetchOnWindowFocus: false,
+      retry: 1
+    }
+  }
+});
+
+// Custom hook for fetching excerpt data with React Query
+const useExcerptData = (excerptId, enabled) => {
+  return useQuery({
+    queryKey: ['excerpt', excerptId],
+    queryFn: async () => {
+      // This shouldn't run when excerptId is null due to enabled check,
+      // but React Query may still initialize - just skip silently
+      if (!excerptId) {
+        return null;
+      }
+
+      console.log('[REACT-QUERY] Fetching excerpt:', excerptId);
+      const result = await invoke('getExcerpt', { excerptId });
+
+      if (!result.success || !result.excerpt) {
+        throw new Error('Failed to load excerpt');
+      }
+
+      console.log('[REACT-QUERY] Excerpt fetched successfully:', {
+        id: result.excerpt.id,
+        name: result.excerpt.name,
+        cached: false
+      });
+
+      return result.excerpt;
+    },
+    enabled: enabled && !!excerptId,
+    staleTime: 1000 * 60 * 5, // Consider data fresh for 5 minutes
+    gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes (renamed from cacheTime in v5)
+  });
+};
+
+// Custom hook for saving variable values with React Query mutation
+const useSaveVariableValues = () => {
+  return useMutation({
+    mutationFn: async ({ localId, excerptId, variableValues, toggleStates, customInsertions, internalNotes }) => {
+      console.log('[REACT-QUERY-MUTATION] Saving variable values:', {
+        localId,
+        excerptId,
+        variableCount: Object.keys(variableValues || {}).length,
+        toggleCount: Object.keys(toggleStates || {}).length,
+        insertionCount: (customInsertions || []).length,
+        noteCount: (internalNotes || []).length
+      });
+
+      const result = await invoke('saveVariableValues', {
+        localId,
+        excerptId,
+        variableValues,
+        toggleStates,
+        customInsertions,
+        internalNotes
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to save variable values');
+      }
+
+      console.log('[REACT-QUERY-MUTATION] Save successful!');
+      return result;
+    },
+    onSuccess: (data) => {
+      console.log('[REACT-QUERY-MUTATION] onSuccess callback - data saved to backend');
+    },
+    onError: (error) => {
+      console.error('[REACT-QUERY-MUTATION] Save failed:', error);
+    }
+  });
+};
+
+// Custom hook for fetching available excerpts list with React Query
+const useAvailableExcerpts = (enabled) => {
+  return useQuery({
+    queryKey: ['excerpts', 'list'],
+    queryFn: async () => {
+      console.log('[REACT-QUERY] Fetching available excerpts list');
+      const result = await invoke('getExcerpts');
+
+      if (!result.success) {
+        throw new Error('Failed to load excerpts');
+      }
+
+      console.log('[REACT-QUERY] Available excerpts loaded:', {
+        count: (result.excerpts || []).length,
+        cached: false
+      });
+
+      return result.excerpts || [];
+    },
+    enabled: enabled,
+    staleTime: 1000 * 60 * 2, // 2 minutes - excerpt list doesn't change often
+    gcTime: 1000 * 60 * 10, // 10 minutes
+  });
+};
+
+// Custom hook for fetching variable values with React Query
+const useVariableValues = (localId, enabled) => {
+  return useQuery({
+    queryKey: ['variableValues', localId],
+    queryFn: async () => {
+      console.log('[REACT-QUERY] Fetching variable values for localId:', localId);
+      const result = await invoke('getVariableValues', { localId });
+
+      if (!result.success) {
+        throw new Error('Failed to load variable values');
+      }
+
+      console.log('[REACT-QUERY] Variable values loaded:', {
+        excerptId: result.excerptId || null,
+        variableCount: Object.keys(result.variableValues || {}).length,
+        toggleCount: Object.keys(result.toggleStates || {}).length,
+        insertionCount: (result.customInsertions || []).length,
+        noteCount: (result.internalNotes || []).length
+      });
+
+      return result;
+    },
+    enabled: enabled && !!localId,
+    staleTime: 1000 * 30, // 30 seconds - this changes frequently during editing
+    gcTime: 1000 * 60 * 5, // 5 minutes
+  });
+};
+
+// Custom hook for fetching cached content in view mode with React Query
+const useCachedContent = (localId, excerptId, enabled, context, setVariableValues, setToggleStates, setCustomInsertions, setInternalNotes, setExcerptForViewMode) => {
+  return useQuery({
+    queryKey: ['cachedContent', localId],
+    queryFn: async () => {
+      console.log('[REACT-QUERY] Fetching cached content for localId:', localId);
+
+      // First, try to get cached content
+      const cachedResult = await invoke('getCachedContent', { localId });
+
+      if (cachedResult && cachedResult.content) {
+        console.log('[REACT-QUERY] Cached content found');
+        return { content: cachedResult.content, fromCache: true };
+      }
+
+      // No cached content - fetch fresh and process
+      console.log('[REACT-QUERY] No cached content found, fetching fresh content to populate cache');
+
+      const excerptResult = await invoke('getExcerpt', { excerptId });
+      if (!excerptResult.success || !excerptResult.excerpt) {
+        throw new Error('Failed to load excerpt');
+      }
+
+      setExcerptForViewMode(excerptResult.excerpt);
+
+      // Load variable values and check for orphaned data
+      console.log(`[REACT-QUERY] Loading vars for localId: ${localId}`);
+      let varsResult = await invoke('getVariableValues', { localId });
+      console.log(`[REACT-QUERY] getVariableValues result:`, varsResult);
+
+      // CRITICAL: Check if data is missing - attempt recovery from drag-to-move
+      const hasNoData = !varsResult.lastSynced &&
+                        Object.keys(varsResult.variableValues || {}).length === 0 &&
+                        Object.keys(varsResult.toggleStates || {}).length === 0 &&
+                        (varsResult.customInsertions || []).length === 0 &&
+                        (varsResult.internalNotes || []).length === 0;
+
+      console.log(`[REACT-QUERY] hasNoData: ${hasNoData}, excerptId: ${excerptId}`);
+
+      if (varsResult.success && hasNoData && excerptId) {
+        console.log('[REACT-QUERY] Attempting recovery in view mode...');
+        const pageId = context?.contentId || context?.extension?.content?.id;
+
+        const recoveryResult = await invoke('recoverOrphanedData', {
+          pageId: pageId,
+          excerptId: excerptId,
+          currentLocalId: context.localId
+        });
+
+        console.log('[REACT-QUERY] Recovery result:', recoveryResult);
+
+        if (recoveryResult.success && recoveryResult.recovered) {
+          console.log(`[REACT-QUERY] Data recovered from ${recoveryResult.migratedFrom}!`);
+          // Reload the data
+          varsResult = await invoke('getVariableValues', { localId });
+          console.log('[REACT-QUERY] Reloaded data after recovery:', varsResult);
+        }
+      }
+
+      const loadedVariableValues = varsResult.success ? varsResult.variableValues : {};
+      const loadedToggleStates = varsResult.success ? varsResult.toggleStates : {};
+      const loadedCustomInsertions = varsResult.success ? varsResult.customInsertions : [];
+      const loadedInternalNotes = varsResult.success ? varsResult.internalNotes : [];
+
+      setVariableValues(loadedVariableValues);
+      setToggleStates(loadedToggleStates);
+      setCustomInsertions(loadedCustomInsertions);
+      setInternalNotes(loadedInternalNotes);
+
+      // Generate and cache the content
+      let freshContent = excerptResult.excerpt.content;
+      const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
+
+      if (isAdf) {
+        freshContent = filterContentByToggles(freshContent, loadedToggleStates);
+        freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
+        freshContent = insertCustomParagraphsInAdf(freshContent, loadedCustomInsertions);
+        freshContent = insertInternalNotesInAdf(freshContent, loadedInternalNotes);
+      } else {
+        // For plain text, filter toggles
+        const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
+        freshContent = freshContent.replace(toggleRegex, (match, toggleName, content) => {
+          const trimmedName = toggleName.trim();
+          return loadedToggleStates?.[trimmedName] === true ? content : '';
+        });
+        // Strip any remaining markers
+        freshContent = freshContent.replace(/\{\{toggle:[^}]+\}\}/g, '');
+        freshContent = freshContent.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
+
+        // Substitute variables
+        const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        if (excerptResult.excerpt.variables) {
+          excerptResult.excerpt.variables.forEach(variable => {
+            const value = loadedVariableValues[variable.name] || `{{${variable.name}}}`;
+            const regex = new RegExp(`\\{\\{${escapeRegex(variable.name)}\\}\\}`, 'g');
+            freshContent = freshContent.replace(regex, value);
+          });
+        }
+      }
+
+      // Cache it for next time
+      await invoke('saveCachedContent', {
+        localId,
+        renderedContent: freshContent
+      });
+
+      console.log('[REACT-QUERY] Fresh content generated and cached');
+      return { content: freshContent, fromCache: false };
+    },
+    enabled: enabled && !!localId && !!excerptId,
+    staleTime: 1000 * 60 * 5, // 5 minutes - cached content should be stable
+    gcTime: 1000 * 60 * 30, // 30 minutes
+  });
+};
+
 const App = () => {
   const config = useConfig();
   const context = useProductContext();
+  const queryClient = useQueryClient();
   const isEditing = context?.extension?.isEditing;  // Fixed: it's on extension, not extensionContext!
 
   // Use context.localId directly - recovery happens lazily only when data is missing
   const effectiveLocalId = context?.localId;
 
+  // NEW: Inline excerpt selection state (will be loaded from backend storage)
+  const [selectedExcerptId, setSelectedExcerptId] = useState(null);
+  // availableExcerpts state removed - now managed by React Query
+  const [isInitializing, setIsInitializing] = useState(true);
+
   const [content, setContent] = useState(null);
-  const [excerpt, setExcerpt] = useState(null);
+  // excerpt state removed - now managed by React Query
+  const [excerptForViewMode, setExcerptForViewMode] = useState(null);
   const [variableValues, setVariableValues] = useState(config?.variableValues || {});
   const [toggleStates, setToggleStates] = useState(config?.toggleStates || {});
   const [customInsertions, setCustomInsertions] = useState(config?.customInsertions || []);
@@ -701,135 +960,99 @@ const App = () => {
   const [showDiffView, setShowDiffView] = useState(false);
   const [latestRenderedContent, setLatestRenderedContent] = useState(null);
 
-  // Load cached content in view mode
+  // Use React Query to fetch excerpt data (only in edit mode)
+  const {
+    data: excerptFromQuery,
+    isLoading: isLoadingExcerpt,
+    error: excerptError,
+    isFetching: isFetchingExcerpt
+  } = useExcerptData(selectedExcerptId, isEditing);
+
+  // Use React Query mutation for saving variable values
+  const {
+    mutate: saveVariableValuesMutation,
+    isPending: isSavingVariables,
+    isSuccess: isSaveSuccess,
+    isError: isSaveError
+  } = useSaveVariableValues();
+
+  // Use React Query to fetch available excerpts list (only in edit mode)
+  const {
+    data: availableExcerpts = [],
+    isLoading: isLoadingExcerpts,
+    error: excerptsError
+  } = useAvailableExcerpts(isEditing);
+
+  // Use React Query to fetch variable values (always, both edit and view mode)
+  const {
+    data: variableValuesData,
+    isLoading: isLoadingVariableValues,
+    error: variableValuesError
+  } = useVariableValues(effectiveLocalId, true);
+
+  // Use React Query to fetch cached content (view mode only)
+  const {
+    data: cachedContentData,
+    isLoading: isLoadingCachedContent,
+    error: cachedContentError
+  } = useCachedContent(
+    effectiveLocalId,
+    selectedExcerptId,
+    !isEditing, // Only fetch in view mode
+    context,
+    setVariableValues,
+    setToggleStates,
+    setCustomInsertions,
+    setInternalNotes,
+    setExcerptForViewMode
+  );
+
+  // Use excerptFromQuery when available (edit mode), fallback to manual state for view mode
+  const excerpt = isEditing ? excerptFromQuery : excerptForViewMode;
+
+  // Load excerptId from React Query data
   useEffect(() => {
-    if (!config || !config.excerptId || !effectiveLocalId) {
+    if (variableValuesData && variableValuesData.excerptId) {
+      setSelectedExcerptId(variableValuesData.excerptId);
+    }
+    if (!isLoadingVariableValues) {
+      setIsInitializing(false);
+    }
+  }, [variableValuesData, isLoadingVariableValues]);
+
+  // Set content from React Query cached content data (view mode)
+  useEffect(() => {
+    if (!isEditing && cachedContentData) {
+      console.log('[REACT-QUERY] Setting content from cached data:', {
+        fromCache: cachedContentData.fromCache
+      });
+      setContent(cachedContentData.content);
+    }
+  }, [isEditing, cachedContentData]);
+
+  // In edit mode, process excerpt data from React Query
+  useEffect(() => {
+    if (!isEditing || !selectedExcerptId || !effectiveLocalId) {
       return;
     }
 
-    // In view mode, load cached content only
-    if (!isEditing) {
-      const loadCachedContent = async () => {
-        try {
-          const result = await invoke('getCachedContent', { localId: effectiveLocalId });
-
-          if (result && result.content) {
-            setContent(result.content);
-          } else {
-            // No cached content exists - fall back to fetching fresh content once
-            // This happens for existing Include macros that haven't been edited since caching was added OR after drag-to-move
-            console.log('[DRAG-DEBUG-VIEW] No cached content found, fetching fresh content to populate cache');
-
-            const excerptResult = await invoke('getExcerpt', { excerptId: config.excerptId });
-            if (excerptResult.success && excerptResult.excerpt) {
-              setExcerpt(excerptResult.excerpt);
-
-              // Load variable values and generate content
-              console.log(`[DRAG-DEBUG-VIEW] Loading vars for localId: ${context.localId}`);
-              let varsResult = await invoke('getVariableValues', { localId: effectiveLocalId });
-              console.log(`[DRAG-DEBUG-VIEW] getVariableValues result:`, varsResult);
-
-              // CRITICAL: Check if data is missing - attempt recovery from drag-to-move
-              const hasNoData = !varsResult.lastSynced &&
-                                Object.keys(varsResult.variableValues || {}).length === 0 &&
-                                Object.keys(varsResult.toggleStates || {}).length === 0 &&
-                                (varsResult.customInsertions || []).length === 0 &&
-                                (varsResult.internalNotes || []).length === 0;
-
-              console.log(`[DRAG-DEBUG-VIEW] hasNoData: ${hasNoData}, excerptId: ${config.excerptId}`);
-
-              if (varsResult.success && hasNoData && config.excerptId) {
-                console.log('[DRAG-DEBUG-VIEW] Attempting recovery in view mode...');
-                const pageId = context?.contentId || context?.extension?.content?.id;
-
-                const recoveryResult = await invoke('recoverOrphanedData', {
-                  pageId: pageId,
-                  excerptId: config.excerptId,
-                  currentLocalId: context.localId
-                });
-
-                console.log('[DRAG-DEBUG-VIEW] Recovery result:', recoveryResult);
-
-                if (recoveryResult.success && recoveryResult.recovered) {
-                  console.log(`[DRAG-DEBUG-VIEW] Data recovered from ${recoveryResult.migratedFrom}!`);
-                  // Reload the data
-                  varsResult = await invoke('getVariableValues', { localId: effectiveLocalId });
-                  console.log('[DRAG-DEBUG-VIEW] Reloaded data after recovery:', varsResult);
-                }
-              }
-
-              const loadedVariableValues = varsResult.success ? varsResult.variableValues : {};
-              const loadedToggleStates = varsResult.success ? varsResult.toggleStates : {};
-              const loadedCustomInsertions = varsResult.success ? varsResult.customInsertions : [];
-              const loadedInternalNotes = varsResult.success ? varsResult.internalNotes : [];
-
-              setVariableValues(loadedVariableValues);
-              setToggleStates(loadedToggleStates);
-              setCustomInsertions(loadedCustomInsertions);
-              setInternalNotes(loadedInternalNotes);
-
-              // Generate and cache the content
-              let freshContent = excerptResult.excerpt.content;
-              const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
-
-              if (isAdf) {
-                freshContent = filterContentByToggles(freshContent, loadedToggleStates);
-                freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
-                freshContent = insertCustomParagraphsInAdf(freshContent, loadedCustomInsertions);
-                freshContent = insertInternalNotesInAdf(freshContent, loadedInternalNotes);
-              } else {
-                // For plain text, filter toggles
-                const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
-                freshContent = freshContent.replace(toggleRegex, (match, toggleName, content) => {
-                  const trimmedName = toggleName.trim();
-                  return loadedToggleStates?.[trimmedName] === true ? content : '';
-                });
-                // Strip any remaining markers
-                freshContent = freshContent.replace(/\{\{toggle:[^}]+\}\}/g, '');
-                freshContent = freshContent.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
-
-                // Substitute variables
-                const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                if (excerptResult.excerpt.variables) {
-                  excerptResult.excerpt.variables.forEach(variable => {
-                    const value = loadedVariableValues[variable.name] || `{{${variable.name}}}`;
-                    const regex = new RegExp(`\\{\\{${escapeRegex(variable.name)}\\}\\}`, 'g');
-                    freshContent = freshContent.replace(regex, value);
-                  });
-                }
-              }
-
-              setContent(freshContent);
-
-              // Cache it for next time with metadata for skeleton sizing
-              await invoke('saveCachedContent', {
-                localId: effectiveLocalId,
-                renderedContent: freshContent
-              });
-            }
-          }
-        } catch (err) {
-          console.error('Error loading cached content:', err);
-        }
-      };
-      loadCachedContent();
-      return;
-    }
-
-    // In edit mode, load fresh excerpt data
     const loadContent = async () => {
+      // Wait for React Query to load the excerpt
+      if (!excerptFromQuery) {
+        console.log('[REACT-QUERY] Waiting for excerpt data...');
+        return;
+      }
+
       setIsRefreshing(true);
 
       try {
-        // Load the excerpt
-        const excerptResult = await invoke('getExcerpt', { excerptId: config.excerptId });
-
-        if (!excerptResult.success || !excerptResult.excerpt) {
-          console.error('Failed to load excerpt');
-          return;
-        }
-
-        setExcerpt(excerptResult.excerpt);
+        console.log('[REACT-QUERY] Processing loaded excerpt:', {
+          id: excerptFromQuery.id,
+          name: excerptFromQuery.name,
+          sourcePageId: excerptFromQuery.sourcePageId,
+          sourceSpaceKey: excerptFromQuery.sourceSpaceKey,
+          fromCache: !isFetchingExcerpt
+        });
 
         // Load saved variable values, toggle states, custom insertions, and internal notes from storage
         console.log(`[DRAG-DEBUG] Loading data for localId: ${context.localId}`);
@@ -844,16 +1067,16 @@ const App = () => {
                           (varsResultForLoading.customInsertions || []).length === 0 &&
                           (varsResultForLoading.internalNotes || []).length === 0;
 
-        console.log(`[DRAG-DEBUG] hasNoData: ${hasNoData}, excerptId: ${config.excerptId}`);
+        console.log(`[DRAG-DEBUG] hasNoData: ${hasNoData}, excerptId: ${selectedExcerptId}`);
 
-        if (varsResultForLoading.success && hasNoData && config.excerptId) {
+        if (varsResultForLoading.success && hasNoData && selectedExcerptId) {
           console.log('[DRAG-DEBUG] No data found for localId, attempting recovery...');
           const pageId = context?.contentId || context?.extension?.content?.id;
-          console.log(`[DRAG-DEBUG] Recovery params - pageId: ${pageId}, excerptId: ${config.excerptId}, currentLocalId: ${context.localId}`);
+          console.log(`[DRAG-DEBUG] Recovery params - pageId: ${pageId}, excerptId: ${selectedExcerptId}, currentLocalId: ${context.localId}`);
 
           const recoveryResult = await invoke('recoverOrphanedData', {
             pageId: pageId,
-            excerptId: config.excerptId,
+            excerptId: selectedExcerptId,
             currentLocalId: context.localId
           });
 
@@ -916,7 +1139,7 @@ const App = () => {
         setInternalNotes(loadedInternalNotes || []);
 
         // NOW: Generate the fresh rendered content with loaded settings
-        let freshContent = excerptResult.excerpt.content;
+        let freshContent = excerptFromQuery.content;
         const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
 
         if (isAdf) {
@@ -939,8 +1162,8 @@ const App = () => {
 
           // Then substitute variables
           const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-          if (excerptResult.excerpt.variables) {
-            excerptResult.excerpt.variables.forEach(variable => {
+          if (excerptFromQuery.variables) {
+            excerptFromQuery.variables.forEach(variable => {
               const value = loadedVariableValues[variable.name] || `{{${variable.name}}}`;
               const regex = new RegExp(`\\{\\{${escapeRegex(variable.name)}\\}\\}`, 'g');
               freshContent = freshContent.replace(regex, value);
@@ -957,11 +1180,12 @@ const App = () => {
     };
 
     loadContent();
-  }, [config?.excerptId, effectiveLocalId, isEditing]);
+  }, [excerptFromQuery, effectiveLocalId, isEditing, isFetchingExcerpt]);
 
   // Auto-save effect with debouncing (saves variable values AND caches rendered content)
+  // Now uses React Query mutation for better state management
   useEffect(() => {
-    if (!isEditing || !effectiveLocalId || !config?.excerptId || !excerpt) {
+    if (!isEditing || !effectiveLocalId || !selectedExcerptId || !excerpt) {
       return;
     }
 
@@ -969,29 +1193,31 @@ const App = () => {
 
     const timeoutId = setTimeout(async () => {
       try {
-        // Save variable values, toggle states, custom insertions, and internal notes
-        const result = await invoke('saveVariableValues', {
+        // Use React Query mutation to save variable values
+        saveVariableValuesMutation({
           localId: effectiveLocalId,
-          excerptId: config.excerptId,
+          excerptId: selectedExcerptId,
           variableValues,
           toggleStates,
           customInsertions,
           internalNotes
+        }, {
+          onSuccess: async () => {
+            // Also cache the rendered content for view mode
+            const previewContent = getPreviewContent();
+            await invoke('saveCachedContent', {
+              localId: effectiveLocalId,
+              renderedContent: previewContent
+            });
+
+            setSaveStatus('saved');
+            console.log('[REACT-QUERY-MUTATION] Auto-save complete with cache update');
+          },
+          onError: (error) => {
+            console.error('[REACT-QUERY-MUTATION] Auto-save failed:', error);
+            setSaveStatus('error');
+          }
         });
-
-        if (result.success) {
-          // Also cache the rendered content for view mode
-          const previewContent = getPreviewContent();
-          await invoke('saveCachedContent', {
-            localId: effectiveLocalId,
-            renderedContent: previewContent
-          });
-
-          setSaveStatus('saved');
-        } else {
-          console.error('Auto-save failed:', result.error);
-          setSaveStatus('error');
-        }
       } catch (error) {
         console.error('Error during auto-save:', error);
         setSaveStatus('error');
@@ -999,18 +1225,18 @@ const App = () => {
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [variableValues, toggleStates, customInsertions, internalNotes, isEditing, effectiveLocalId, config?.excerptId, excerpt]);
+  }, [variableValues, toggleStates, customInsertions, internalNotes, isEditing, effectiveLocalId, selectedExcerptId, excerpt]);
 
   // Check for staleness in view mode
   useEffect(() => {
-    if (isEditing || !content || !config?.excerptId || !effectiveLocalId) {
+    if (isEditing || !content || !selectedExcerptId || !effectiveLocalId) {
       return;
     }
 
     const checkStaleness = async () => {
       try {
         // Get excerpt metadata to check updatedAt
-        const excerptResult = await invoke('getExcerpt', { excerptId: config.excerptId });
+        const excerptResult = await invoke('getExcerpt', { excerptId: selectedExcerptId });
         if (!excerptResult.success || !excerptResult.excerpt) {
           return;
         }
@@ -1052,10 +1278,73 @@ const App = () => {
     };
 
     checkStaleness();
-  }, [content, isEditing, config?.excerptId, effectiveLocalId]);
+  }, [content, isEditing, selectedExcerptId, effectiveLocalId]);
 
-  if (!config || !config.excerptId) {
-    return <Text>SmartExcerpt Include not configured. Click Edit to select an excerpt.</Text>;
+  // Handler for excerpt selection from Select (must be defined before early returns)
+  const handleExcerptSelection = async (selectedOption) => {
+    if (!selectedOption || !effectiveLocalId) return;
+
+    // Select component passes the entire option object
+    const newExcerptId = selectedOption.value;
+    console.log('[REACT-QUERY] Excerpt selection changed to:', newExcerptId);
+
+    setSelectedExcerptId(newExcerptId);
+    setIsRefreshing(true);
+
+    // Save the selection via backend storage using React Query mutation
+    const pageId = context?.contentId || context?.extension?.content?.id;
+
+    // Use mutation to save the selection
+    saveVariableValuesMutation({
+      localId: effectiveLocalId,
+      excerptId: newExcerptId,
+      variableValues: {},
+      toggleStates: {},
+      customInsertions: [],
+      internalNotes: []
+    });
+
+    // Track usage
+    if (pageId) {
+      await invoke('trackExcerptUsage', {
+        excerptId: newExcerptId,
+        pageId: pageId,
+        localId: effectiveLocalId
+      });
+    }
+
+    // Invalidate relevant caches to force refetch
+    console.log('[REACT-QUERY] Invalidating caches after excerpt selection');
+    await queryClient.invalidateQueries({ queryKey: ['excerpt', newExcerptId] });
+    await queryClient.invalidateQueries({ queryKey: ['variableValues', effectiveLocalId] });
+  };
+
+  // NEW: Handle missing excerpt selection
+  if (!selectedExcerptId) {
+    if (isEditing) {
+      // In edit mode: Show the excerpt selector immediately
+      return (
+        <Stack space="space.200">
+          <Heading size="medium">Select an Excerpt to Include</Heading>
+          <Text>Choose a SmartExcerpt to display on this page:</Text>
+          {isLoadingExcerpts ? (
+            <Spinner size="medium" label="Loading excerpts..." />
+          ) : (
+            <Select
+              options={availableExcerpts.map(ex => ({
+                label: `${ex.name}${ex.category ? ` (${ex.category})` : ''}`,
+                value: ex.id
+              }))}
+              onChange={handleExcerptSelection}
+              placeholder="Choose an excerpt..."
+            />
+          )}
+        </Stack>
+      );
+    } else {
+      // In view mode: Show simple message
+      return <Text>No excerpt selected. Edit this macro to choose one.</Text>;
+    }
   }
 
   // Show spinner while loading in view mode
@@ -1134,7 +1423,7 @@ const App = () => {
 
   // Handler for updating to latest version (defined before edit mode rendering)
   const handleUpdateToLatest = async () => {
-    if (!config?.excerptId || !effectiveLocalId) {
+    if (!selectedExcerptId || !effectiveLocalId) {
       return;
     }
 
@@ -1142,7 +1431,7 @@ const App = () => {
 
     try {
       // Fetch fresh excerpt
-      const excerptResult = await invoke('getExcerpt', { excerptId: config.excerptId });
+      const excerptResult = await invoke('getExcerpt', { excerptId: selectedExcerptId });
       if (!excerptResult.success || !excerptResult.excerpt) {
         alert('Failed to fetch latest excerpt content');
         return;
@@ -1233,23 +1522,63 @@ const App = () => {
 
     return (
       <Stack space="space.100">
+        {/* Excerpt Selector - always visible at top of edit mode */}
+        <Box xcss={xcss({ paddingBlock: 'space.100', paddingInline: 'space.100', backgroundColor: 'color.background.neutral.subtle' })}>
+          {isLoadingExcerpts ? (
+            <Spinner size="small" label="Loading..." />
+          ) : (
+            <Select
+              options={availableExcerpts.map(ex => ({
+                label: `${ex.name}${ex.category ? ` (${ex.category})` : ''}`,
+                value: ex.id
+              }))}
+              value={availableExcerpts.map(ex => ({
+                label: `${ex.name}${ex.category ? ` (${ex.category})` : ''}`,
+                value: ex.id
+              })).find(opt => opt.value === selectedExcerptId)}
+              onChange={handleExcerptSelection}
+              placeholder="Choose an excerpt..."
+            />
+          )}
+        </Box>
+
         <Inline space="space.300" alignBlock="center" spread="space-between">
           <Inline space="space.100" alignBlock="center">
             <Heading size="large">{excerpt.name}</Heading>
             <Button
-              appearance="subtle-link"
+              appearance="link"
               onClick={async () => {
                 try {
-                  // TODO: Update this URL after installing to production environment
-                  // Current URL is for dev environment: qrsouther.atlassian.net
-                  // Format: /wiki/admin/forge?id=ari:cloud:ecosystem::extension/{appId}/{extensionId}/static/smartexcerpt-admin
-                  await router.open('/wiki/admin/forge?id=ari%3Acloud%3Aecosystem%3A%3Aextension%2Fbe1ff96b-d44d-4975-98d3-25b80a813bdd%2Fae38f536-b4c8-4dfa-a1c9-62026d61b4f9%2Fstatic%2Fsmartexcerpt-admin');
+                  // Navigate to the source page where this excerpt is defined
+                  const pageId = excerpt.sourcePageId || excerpt.pageId;
+                  // Use excerpt's space key, or fallback to current space key
+                  const spaceKey = excerpt.sourceSpaceKey || context?.extension?.space?.key || productContext?.spaceKey;
+
+                  console.log('[VIEW-SOURCE] Navigating to page:', { pageId, spaceKey, excerptSpaceKey: excerpt.sourceSpaceKey, currentSpaceKey: context?.extension?.space?.key });
+
+                  if (pageId && spaceKey) {
+                    // Build the URL manually since we have both pageId and spaceKey
+                    const url = `/wiki/spaces/${spaceKey}/pages/${pageId}`;
+                    console.log('[VIEW-SOURCE] Opening URL:', url);
+                    await router.open(url);
+                  } else if (pageId) {
+                    // Fallback: Try using view.createContentLink if we only have pageId
+                    console.log('[VIEW-SOURCE] Trying createContentLink fallback');
+                    const contentLink = await view.createContentLink({
+                      contentType: 'page',
+                      contentId: pageId
+                    });
+                    console.log('[VIEW-SOURCE] Generated content link:', contentLink);
+                    await router.open(contentLink);
+                  } else {
+                    console.warn('[VIEW-SOURCE] No pageId found for excerpt');
+                  }
                 } catch (err) {
-                  console.error('Navigation error:', err);
+                  console.error('[VIEW-SOURCE] Navigation error:', err);
                 }
               }}
             >
-              Admin View
+              View Source
             </Button>
           </Inline>
           <Inline space="space.100" alignBlock="center">
@@ -1838,4 +2167,9 @@ const App = () => {
   );
 };
 
-ForgeReconciler.render(<App />);
+ForgeReconciler.render(
+  <QueryClientProvider client={queryClient}>
+    <App />
+    <ReactQueryDevtools initialIsOpen={false} />
+  </QueryClientProvider>
+);
