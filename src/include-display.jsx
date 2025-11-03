@@ -698,18 +698,11 @@ const useExcerptData = (excerptId, enabled) => {
         return null;
       }
 
-      console.log('[REACT-QUERY] Fetching excerpt:', excerptId);
       const result = await invoke('getExcerpt', { excerptId });
 
       if (!result.success || !result.excerpt) {
         throw new Error('Failed to load excerpt');
       }
-
-      console.log('[REACT-QUERY] Excerpt fetched successfully:', {
-        id: result.excerpt.id,
-        name: result.excerpt.name,
-        cached: false
-      });
 
       return result.excerpt;
     },
@@ -723,15 +716,6 @@ const useExcerptData = (excerptId, enabled) => {
 const useSaveVariableValues = () => {
   return useMutation({
     mutationFn: async ({ localId, excerptId, variableValues, toggleStates, customInsertions, internalNotes }) => {
-      console.log('[REACT-QUERY-MUTATION] Saving variable values:', {
-        localId,
-        excerptId,
-        variableCount: Object.keys(variableValues || {}).length,
-        toggleCount: Object.keys(toggleStates || {}).length,
-        insertionCount: (customInsertions || []).length,
-        noteCount: (internalNotes || []).length
-      });
-
       const result = await invoke('saveVariableValues', {
         localId,
         excerptId,
@@ -745,11 +729,7 @@ const useSaveVariableValues = () => {
         throw new Error(result.error || 'Failed to save variable values');
       }
 
-      console.log('[REACT-QUERY-MUTATION] Save successful!');
       return result;
-    },
-    onSuccess: (data) => {
-      console.log('[REACT-QUERY-MUTATION] onSuccess callback - data saved to backend');
     },
     onError: (error) => {
       console.error('[REACT-QUERY-MUTATION] Save failed:', error);
@@ -762,17 +742,11 @@ const useAvailableExcerpts = (enabled) => {
   return useQuery({
     queryKey: ['excerpts', 'list'],
     queryFn: async () => {
-      console.log('[REACT-QUERY] Fetching available excerpts list');
       const result = await invoke('getExcerpts');
 
       if (!result.success) {
         throw new Error('Failed to load excerpts');
       }
-
-      console.log('[REACT-QUERY] Available excerpts loaded:', {
-        count: (result.excerpts || []).length,
-        cached: false
-      });
 
       return result.excerpts || [];
     },
@@ -787,20 +761,11 @@ const useVariableValues = (localId, enabled) => {
   return useQuery({
     queryKey: ['variableValues', localId],
     queryFn: async () => {
-      console.log('[REACT-QUERY] Fetching variable values for localId:', localId);
       const result = await invoke('getVariableValues', { localId });
 
       if (!result.success) {
         throw new Error('Failed to load variable values');
       }
-
-      console.log('[REACT-QUERY] Variable values loaded:', {
-        excerptId: result.excerptId || null,
-        variableCount: Object.keys(result.variableValues || {}).length,
-        toggleCount: Object.keys(result.toggleStates || {}).length,
-        insertionCount: (result.customInsertions || []).length,
-        noteCount: (result.internalNotes || []).length
-      });
 
       return result;
     },
@@ -815,18 +780,14 @@ const useCachedContent = (localId, excerptId, enabled, context, setVariableValue
   return useQuery({
     queryKey: ['cachedContent', localId],
     queryFn: async () => {
-      console.log('[REACT-QUERY] Fetching cached content for localId:', localId);
-
       // First, try to get cached content
       const cachedResult = await invoke('getCachedContent', { localId });
 
       if (cachedResult && cachedResult.content) {
-        console.log('[REACT-QUERY] Cached content found');
         return { content: cachedResult.content, fromCache: true };
       }
 
       // No cached content - fetch fresh and process
-      console.log('[REACT-QUERY] No cached content found, fetching fresh content to populate cache');
 
       const excerptResult = await invoke('getExcerpt', { excerptId });
       if (!excerptResult.success || !excerptResult.excerpt) {
@@ -836,9 +797,7 @@ const useCachedContent = (localId, excerptId, enabled, context, setVariableValue
       setExcerptForViewMode(excerptResult.excerpt);
 
       // Load variable values and check for orphaned data
-      console.log(`[REACT-QUERY] Loading vars for localId: ${localId}`);
       let varsResult = await invoke('getVariableValues', { localId });
-      console.log(`[REACT-QUERY] getVariableValues result:`, varsResult);
 
       // CRITICAL: Check if data is missing - attempt recovery from drag-to-move
       const hasNoData = !varsResult.lastSynced &&
@@ -847,10 +806,7 @@ const useCachedContent = (localId, excerptId, enabled, context, setVariableValue
                         (varsResult.customInsertions || []).length === 0 &&
                         (varsResult.internalNotes || []).length === 0;
 
-      console.log(`[REACT-QUERY] hasNoData: ${hasNoData}, excerptId: ${excerptId}`);
-
       if (varsResult.success && hasNoData && excerptId) {
-        console.log('[REACT-QUERY] Attempting recovery in view mode...');
         const pageId = context?.contentId || context?.extension?.content?.id;
 
         const recoveryResult = await invoke('recoverOrphanedData', {
@@ -859,13 +815,9 @@ const useCachedContent = (localId, excerptId, enabled, context, setVariableValue
           currentLocalId: context.localId
         });
 
-        console.log('[REACT-QUERY] Recovery result:', recoveryResult);
-
         if (recoveryResult.success && recoveryResult.recovered) {
-          console.log(`[REACT-QUERY] Data recovered from ${recoveryResult.migratedFrom}!`);
           // Reload the data
           varsResult = await invoke('getVariableValues', { localId });
-          console.log('[REACT-QUERY] Reloaded data after recovery:', varsResult);
         }
       }
 
@@ -916,7 +868,6 @@ const useCachedContent = (localId, excerptId, enabled, context, setVariableValue
         renderedContent: freshContent
       });
 
-      console.log('[REACT-QUERY] Fresh content generated and cached');
       return { content: freshContent, fromCache: false };
     },
     enabled: enabled && !!localId && !!excerptId,
@@ -1023,9 +974,6 @@ const App = () => {
   // Set content from React Query cached content data (view mode)
   useEffect(() => {
     if (!isEditing && cachedContentData) {
-      console.log('[REACT-QUERY] Setting content from cached data:', {
-        fromCache: cachedContentData.fromCache
-      });
       setContent(cachedContentData.content);
     }
   }, [isEditing, cachedContentData]);
@@ -1039,25 +987,14 @@ const App = () => {
     const loadContent = async () => {
       // Wait for React Query to load the excerpt
       if (!excerptFromQuery) {
-        console.log('[REACT-QUERY] Waiting for excerpt data...');
         return;
       }
 
       setIsRefreshing(true);
 
       try {
-        console.log('[REACT-QUERY] Processing loaded excerpt:', {
-          id: excerptFromQuery.id,
-          name: excerptFromQuery.name,
-          sourcePageId: excerptFromQuery.sourcePageId,
-          sourceSpaceKey: excerptFromQuery.sourceSpaceKey,
-          fromCache: !isFetchingExcerpt
-        });
-
         // Load saved variable values, toggle states, custom insertions, and internal notes from storage
-        console.log(`[DRAG-DEBUG] Loading data for localId: ${context.localId}`);
         let varsResultForLoading = await invoke('getVariableValues', { localId: effectiveLocalId });
-        console.log(`[DRAG-DEBUG] getVariableValues result:`, varsResultForLoading);
 
         // CRITICAL: Check if data is missing - if so, attempt recovery from drag-to-move scenario
         // When a macro is dragged in Confluence, it may get a new localId, orphaning the data
@@ -1067,12 +1004,8 @@ const App = () => {
                           (varsResultForLoading.customInsertions || []).length === 0 &&
                           (varsResultForLoading.internalNotes || []).length === 0;
 
-        console.log(`[DRAG-DEBUG] hasNoData: ${hasNoData}, excerptId: ${selectedExcerptId}`);
-
         if (varsResultForLoading.success && hasNoData && selectedExcerptId) {
-          console.log('[DRAG-DEBUG] No data found for localId, attempting recovery...');
           const pageId = context?.contentId || context?.extension?.content?.id;
-          console.log(`[DRAG-DEBUG] Recovery params - pageId: ${pageId}, excerptId: ${selectedExcerptId}, currentLocalId: ${context.localId}`);
 
           const recoveryResult = await invoke('recoverOrphanedData', {
             pageId: pageId,
@@ -1080,18 +1013,9 @@ const App = () => {
             currentLocalId: context.localId
           });
 
-          console.log('[DRAG-DEBUG] Recovery result:', recoveryResult);
-
           if (recoveryResult.success && recoveryResult.recovered) {
-            console.log(`[DRAG-DEBUG] Data recovered from ${recoveryResult.migratedFrom}!`);
             // Reload the data now that it's been migrated
             varsResultForLoading = await invoke('getVariableValues', { localId: effectiveLocalId });
-            console.log('[DRAG-DEBUG] Reloaded data after recovery:', varsResultForLoading);
-          } else if (recoveryResult.success) {
-            console.log(`[DRAG-DEBUG] Recovery attempted but no data found: ${recoveryResult.reason}`);
-            if (recoveryResult.candidateCount) {
-              console.log(`[DRAG-DEBUG] Found ${recoveryResult.candidateCount} candidates (ambiguous)`);
-            }
           }
         }
 
@@ -1126,12 +1050,6 @@ const App = () => {
             loadedVariableValues['client'] = afterBlueprint;
           }
         }
-
-        console.log('[DRAG-DEBUG] Setting state with recovered values:');
-        console.log('[DRAG-DEBUG] - variableValues:', loadedVariableValues);
-        console.log('[DRAG-DEBUG] - toggleStates:', loadedToggleStates);
-        console.log('[DRAG-DEBUG] - customInsertions:', loadedCustomInsertions);
-        console.log('[DRAG-DEBUG] - internalNotes:', loadedInternalNotes);
 
         setVariableValues(loadedVariableValues);
         setToggleStates(loadedToggleStates);
@@ -1211,7 +1129,6 @@ const App = () => {
             });
 
             setSaveStatus('saved');
-            console.log('[REACT-QUERY-MUTATION] Auto-save complete with cache update');
           },
           onError: (error) => {
             console.error('[REACT-QUERY-MUTATION] Auto-save failed:', error);
@@ -1265,12 +1182,6 @@ const App = () => {
             // Store raw content without any processing
             setLatestRenderedContent(excerptResult.excerpt.content);
           }
-
-          console.log('Staleness check:', {
-            sourceUpdatedAt,
-            lastSynced,
-            isStale: stale
-          });
         }
       } catch (err) {
         console.error('Error checking staleness:', err);
@@ -1286,7 +1197,6 @@ const App = () => {
 
     // Select component passes the entire option object
     const newExcerptId = selectedOption.value;
-    console.log('[REACT-QUERY] Excerpt selection changed to:', newExcerptId);
 
     setSelectedExcerptId(newExcerptId);
     setIsRefreshing(true);
@@ -1314,7 +1224,6 @@ const App = () => {
     }
 
     // Invalidate relevant caches to force refetch
-    console.log('[REACT-QUERY] Invalidating caches after excerpt selection');
     await queryClient.invalidateQueries({ queryKey: ['excerpt', newExcerptId] });
     await queryClient.invalidateQueries({ queryKey: ['variableValues', effectiveLocalId] });
   };
@@ -1554,24 +1463,17 @@ const App = () => {
                   // Use excerpt's space key, or fallback to current space key
                   const spaceKey = excerpt.sourceSpaceKey || context?.extension?.space?.key || productContext?.spaceKey;
 
-                  console.log('[VIEW-SOURCE] Navigating to page:', { pageId, spaceKey, excerptSpaceKey: excerpt.sourceSpaceKey, currentSpaceKey: context?.extension?.space?.key });
-
                   if (pageId && spaceKey) {
                     // Build the URL manually since we have both pageId and spaceKey
                     const url = `/wiki/spaces/${spaceKey}/pages/${pageId}`;
-                    console.log('[VIEW-SOURCE] Opening URL:', url);
                     await router.open(url);
                   } else if (pageId) {
                     // Fallback: Try using view.createContentLink if we only have pageId
-                    console.log('[VIEW-SOURCE] Trying createContentLink fallback');
                     const contentLink = await view.createContentLink({
                       contentType: 'page',
                       contentId: pageId
                     });
-                    console.log('[VIEW-SOURCE] Generated content link:', contentLink);
                     await router.open(contentLink);
-                  } else {
-                    console.warn('[VIEW-SOURCE] No pageId found for excerpt');
                   }
                 } catch (err) {
                   console.error('[VIEW-SOURCE] Navigation error:', err);
@@ -1758,10 +1660,6 @@ const App = () => {
         {/* Custom Tab - Custom paragraph insertions and internal notes */}
         <TabPanel>
           {(() => {
-            console.log('[DRAG-DEBUG-RENDER] Custom tab rendering with state:');
-            console.log('[DRAG-DEBUG-RENDER] - customInsertions:', customInsertions);
-            console.log('[DRAG-DEBUG-RENDER] - internalNotes:', internalNotes);
-
             // Extract paragraphs from ORIGINAL excerpt content only (not preview with custom insertions)
             // This ensures users can only position custom content relative to source content
             let originalContent = excerpt?.content;
@@ -2158,11 +2056,18 @@ const App = () => {
           )}
         </Fragment>
       )}
-      {content && typeof content === 'object' && content.type === 'doc' ? (
-        <AdfRenderer document={content} />
-      ) : (
-        <Text>{content}</Text>
-      )}
+      <div style={{
+        width: '100%',
+        maxWidth: '100%',
+        overflow: 'hidden',
+        boxSizing: 'border-box'
+      }}>
+        {content && typeof content === 'object' && content.type === 'doc' ? (
+          <AdfRenderer document={content} />
+        ) : (
+          <Text>{content}</Text>
+        )}
+      </div>
     </Fragment>
   );
 };

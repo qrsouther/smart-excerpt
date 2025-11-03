@@ -1,10 +1,12 @@
 {
   "name": "smart-excerpt",
-  "version": "7.5.0",
+  "version": "7.6.1",
   "description": "A high-performance replacement for MultiExcerpt for Confluence",
   "main": "src/index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "deploy": "forge deploy --environment production --no-verify",
+    "deploy:prod": "forge deploy --environment production --no-verify"
   },
   "keywords": [
     "confluence",

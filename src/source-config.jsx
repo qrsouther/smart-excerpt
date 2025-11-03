@@ -23,6 +23,79 @@ import ForgeReconciler, {
   useProductContext
 } from '@forge/react';
 import { invoke, view, router } from '@forge/bridge';
+import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+
+// Create a client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      gcTime: 1000 * 60 * 30, // 30 minutes (renamed from cacheTime in v5)
+    },
+  },
+});
+
+// Custom hook for fetching excerpt data with React Query
+const useExcerptQuery = (excerptId, enabled) => {
+  return useQuery({
+    queryKey: ['excerpt', excerptId],
+    queryFn: async () => {
+      const result = await invoke('getExcerpt', { excerptId });
+
+      if (!result.success || !result.excerpt) {
+        throw new Error('Failed to load excerpt');
+      }
+
+      return result.excerpt;
+    },
+    enabled: enabled && !!excerptId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 1000 * 60 * 30, // 30 minutes
+  });
+};
+
+// Custom hook for saving excerpt with React Query mutation
+const useSaveExcerptMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ excerptName, category, content, excerptId, variableMetadata, toggleMetadata, sourcePageId, sourcePageTitle, sourceSpaceKey, sourceLocalId }) => {
+      try {
+        const result = await invoke('saveExcerpt', {
+          excerptName,
+          category,
+          content,
+          excerptId,
+          variableMetadata,
+          toggleMetadata,
+          sourcePageId,
+          sourcePageTitle,
+          sourceSpaceKey,
+          sourceLocalId
+        });
+
+        // Backend returns excerpt data directly (no success wrapper)
+        if (!result || !result.excerptId) {
+          throw new Error('Failed to save excerpt - invalid response');
+        }
+
+        return result;
+      } catch (error) {
+        console.error('[REACT-QUERY-SOURCE] Save error:', error);
+        throw error;
+      }
+    },
+    onSuccess: (data) => {
+      // Invalidate the excerpt cache so it refetches with updated data
+      queryClient.invalidateQueries({ queryKey: ['excerpt', data.excerptId] });
+      // Also invalidate the excerpts list (for Include macro dropdowns)
+      queryClient.invalidateQueries({ queryKey: ['excerpts', 'list'] });
+    },
+    onError: (error) => {
+      console.error('[REACT-QUERY-SOURCE] Save failed:', error);
+    }
+  });
+};
 
 const App = () => {
   const config = useConfig() || {};
@@ -40,64 +113,76 @@ const App = () => {
   const [variableMetadata, setVariableMetadata] = useState({});
   const [detectedToggles, setDetectedToggles] = useState([]);
   const [toggleMetadata, setToggleMetadata] = useState({});
-  const [isLoadingExcerpt, setIsLoadingExcerpt] = useState(false);
 
-  // Config loaded
+  // Track if we've loaded data to prevent infinite loops
+  const hasLoadedDataRef = React.useRef(false);
+  const lastExcerptIdRef = React.useRef(null);
 
-  // Load excerpt data from storage if we have an excerptId
-  // Storage is the source of truth for all excerpt data including name/category
+  // Use React Query to fetch excerpt data
+  const {
+    data: excerptData,
+    isLoading: isLoadingExcerpt,
+    error: excerptError
+  } = useExcerptQuery(excerptId, !!excerptId);
+
+  // Use React Query mutation for saving
+  const {
+    mutate: saveExcerptMutation,
+    isPending: isSavingExcerpt,
+    isSuccess: isSaveSuccess,
+    isError: isSaveError
+  } = useSaveExcerptMutation();
+
+  // Load excerpt data from React Query (only once per excerptId)
   useEffect(() => {
+    // Reset flag if excerptId changed
+    if (lastExcerptIdRef.current !== excerptId) {
+      hasLoadedDataRef.current = false;
+      lastExcerptIdRef.current = excerptId;
+    }
+
     if (!excerptId) {
-      // No excerpt ID, load from config if available
-      setExcerptName(config.excerptName || '');
-      setCategory(config.category || 'General');
-      setIsLoadingExcerpt(false);
+      // No excerpt ID, load from config if available (only once)
+      if (!hasLoadedDataRef.current) {
+        setExcerptName(config.excerptName || '');
+        setCategory(config.category || 'General');
+        hasLoadedDataRef.current = true;
+      }
       return;
     }
 
-    const loadExcerpt = async () => {
-      setIsLoadingExcerpt(true);
-      try {
-        const result = await invoke('getExcerpt', { excerptId });
+    if (excerptData && !hasLoadedDataRef.current) {
+      // Load name and category from React Query data
+      setExcerptName(excerptData.name || '');
+      setCategory(excerptData.category || 'General');
 
-        if (result.success && result.excerpt) {
-          // Load name and category from storage (source of truth)
-          setExcerptName(result.excerpt.name || '');
-          setCategory(result.excerpt.category || 'General');
-
-          // Load variable metadata
-          if (result.excerpt.variables && Array.isArray(result.excerpt.variables)) {
-            const metadata = {};
-            result.excerpt.variables.forEach(v => {
-              metadata[v.name] = {
-                description: v.description || '',
-                example: v.example || '',
-                required: v.required || false
-              };
-            });
-            setVariableMetadata(metadata);
-          }
-
-          // Load toggle metadata
-          if (result.excerpt.toggles && Array.isArray(result.excerpt.toggles)) {
-            const metadata = {};
-            result.excerpt.toggles.forEach(t => {
-              metadata[t.name] = {
-                description: t.description || ''
-              };
-            });
-            setToggleMetadata(metadata);
-          }
-        }
-      } catch (err) {
-        console.error('Error loading excerpt:', err);
-      } finally {
-        setIsLoadingExcerpt(false);
+      // Load variable metadata
+      if (excerptData.variables && Array.isArray(excerptData.variables)) {
+        const metadata = {};
+        excerptData.variables.forEach(v => {
+          metadata[v.name] = {
+            description: v.description || '',
+            example: v.example || '',
+            required: v.required || false
+          };
+        });
+        setVariableMetadata(metadata);
       }
-    };
 
-    loadExcerpt();
-  }, [excerptId]);
+      // Load toggle metadata
+      if (excerptData.toggles && Array.isArray(excerptData.toggles)) {
+        const metadata = {};
+        excerptData.toggles.forEach(t => {
+          metadata[t.name] = {
+            description: t.description || ''
+          };
+        });
+        setToggleMetadata(metadata);
+      }
+
+      hasLoadedDataRef.current = true;
+    }
+  }, [excerptId, excerptData, config.excerptName, config.category]);
 
   // Detect variables whenever macro body changes
   useEffect(() => {
@@ -152,14 +237,6 @@ const App = () => {
   ];
 
   const onSubmit = async (formData) => {
-    // Try to get context from router
-    let pageContext;
-    try {
-      pageContext = await router.getContext();
-    } catch (err) {
-      console.error('Error getting router context:', err);
-    }
-
     // Merge detected variables with their metadata
     const variablesWithMetadata = detectedVariables.map(v => ({
       name: v.name,
@@ -174,38 +251,44 @@ const App = () => {
       description: toggleMetadata[t.name]?.description || ''
     }));
 
-    // Extract page info from pageContext (router) if available
-    const sourcePageId = pageContext?.extension?.content?.id || context?.contentId;
-    const sourcePageTitle = pageContext?.extension?.content?.title || context?.contentTitle;
-    const sourceSpaceKey = pageContext?.extension?.space?.key || context?.spaceKey;
+    // Extract page info from context (router.getContext() not available in config context)
+    const sourcePageId = context?.contentId || context?.extension?.content?.id;
+    const sourcePageTitle = context?.contentTitle || context?.extension?.content?.title;
+    const sourceSpaceKey = context?.spaceKey || context?.extension?.space?.key;
 
-    const result = await invoke('saveExcerpt', {
-      excerptName,
-      category,
-      content: macroBody,  // Send the ADF body as content
-      excerptId,
-      variableMetadata: variablesWithMetadata,
-      toggleMetadata: togglesWithMetadata,
-      sourcePageId,
-      sourcePageTitle,
-      sourceSpaceKey,
-      sourceLocalId: context?.localId  // Track the Source macro's localId
+    // Use React Query mutation to save
+    return new Promise((resolve, reject) => {
+      saveExcerptMutation({
+        excerptName,
+        category,
+        content: macroBody,
+        excerptId,
+        variableMetadata: variablesWithMetadata,
+        toggleMetadata: togglesWithMetadata,
+        sourcePageId,
+        sourcePageTitle,
+        sourceSpaceKey,
+        sourceLocalId: context?.localId
+      }, {
+        onSuccess: (result) => {
+          // Only submit the config fields (not the content, which is in the body)
+          const configToSubmit = {
+            excerptId: result.excerptId,
+            excerptName: excerptName,
+            category: category,
+            variables: result.variables,
+            toggles: result.toggles
+          };
+
+          // Save the configuration to the macro using view.submit()
+          view.submit({ config: configToSubmit }).then(resolve).catch(reject);
+        },
+        onError: (error) => {
+          console.error('[REACT-QUERY-SOURCE] Failed to save excerpt:', error);
+          reject(error);
+        }
+      });
     });
-
-    // Only submit the config fields (not the content, which is in the body)
-    // Use the current state values to ensure we save what the user typed
-    const configToSubmit = {
-      excerptId: result.excerptId,
-      excerptName: excerptName,  // Use state value, not result
-      category: category,          // Use state value, not result
-      variables: result.variables,
-      toggles: result.toggles
-      // NOTE: Do NOT include content in config - it's stored in the macro body
-    };
-
-    // Save the configuration to the macro using view.submit()
-    // This will close the modal after the promise resolves
-    return view.submit({ config: configToSubmit });
   };
 
   return (
@@ -392,7 +475,9 @@ const App = () => {
 };
 
 ForgeReconciler.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
+  <QueryClientProvider client={queryClient}>
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  </QueryClientProvider>
 );

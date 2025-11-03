@@ -1,0 +1,11 @@
+{
+  "deployment": {
+    "environment": "production",
+    "command": "forge deploy --environment production --no-verify"
+  },
+  "critical_rules": [
+    "ALL forge deploys MUST use --environment production",
+    "NEVER deploy to development environment",
+    "Always verify environment in deployment commands"
+  ]
+}
