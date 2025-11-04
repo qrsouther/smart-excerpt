@@ -578,3 +578,46 @@ export async function getOrphanedUsage(req) {
     };
   }
 }
+
+/**
+ * Get last verification timestamp
+ * Used by auto-verification on Admin page mount to check if data is stale
+ */
+export async function getLastVerificationTime(req) {
+  try {
+    const timestamp = await storage.get('last-verification-time');
+    return {
+      success: true,
+      lastVerificationTime: timestamp || null
+    };
+  } catch (error) {
+    console.error('Error getting last verification time:', error);
+    return {
+      success: false,
+      error: error.message,
+      lastVerificationTime: null
+    };
+  }
+}
+
+/**
+ * Set last verification timestamp
+ * Called after Check All Includes completes to mark data as fresh
+ */
+export async function setLastVerificationTime(req) {
+  const { timestamp } = req.payload;
+  try {
+    await storage.set('last-verification-time', timestamp);
+    console.log('Last verification time updated:', timestamp);
+    return {
+      success: true,
+      timestamp
+    };
+  } catch (error) {
+    console.error('Error setting last verification time:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}

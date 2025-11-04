@@ -27,7 +27,9 @@ import {
   getMigrationStatus as getMigrationStatusResolver,
   getMultiExcerptScanProgress as getMultiExcerptScanProgressResolver,
   checkVersionStaleness as checkVersionStalenessResolver,
-  getOrphanedUsage as getOrphanedUsageResolver
+  getOrphanedUsage as getOrphanedUsageResolver,
+  getLastVerificationTime as getLastVerificationTimeResolver,
+  setLastVerificationTime as setLastVerificationTimeResolver
 } from './resolvers/simple-resolvers.js';
 
 // Import excerpt CRUD resolver functions (Phase 3 modularization)
@@ -44,7 +46,8 @@ import {
 import {
   sourceHeartbeat as sourceHeartbeatResolver,
   checkAllSources as checkAllSourcesResolver,
-  checkAllIncludes as checkAllIncludesResolver
+  checkAllIncludes as checkAllIncludesResolver,
+  startCheckAllIncludes as startCheckAllIncludesResolver
 } from './resolvers/verification-resolvers.js';
 
 // Import usage tracking and update resolver functions (Phase 6 modularization)
@@ -52,6 +55,7 @@ import {
   trackExcerptUsage as trackExcerptUsageResolver,
   removeExcerptUsage as removeExcerptUsageResolver,
   getExcerptUsage as getExcerptUsageResolver,
+  getAllUsageCounts as getAllUsageCountsResolver,
   pushUpdatesToAll as pushUpdatesToAllResolver,
   pushUpdatesToPage as pushUpdatesToPageResolver
 } from './resolvers/usage-resolvers.js';
@@ -148,6 +152,9 @@ resolver.define('removeExcerptUsage', removeExcerptUsageResolver);
 // Get excerpt usage (which Include macros reference this excerpt)
 resolver.define('getExcerptUsage', getExcerptUsageResolver);
 
+// Get usage counts for all excerpts (lightweight for sorting in admin page)
+resolver.define('getAllUsageCounts', getAllUsageCountsResolver);
+
 // Source heartbeat: Update lastSeenAt timestamp when Source macro is rendered
 resolver.define('sourceHeartbeat', sourceHeartbeatResolver);
 
@@ -158,8 +165,12 @@ resolver.define('checkAllSources', checkAllSourcesResolver);
 // Get all orphaned usage entries (usage data for excerpts that no longer exist)
 resolver.define('getOrphanedUsage', getOrphanedUsageResolver);
 
-// Check all Include instances (verify they exist, clean up orphans, generate export data)
+// Check all Include instances (async via Forge Events API - uses checkIncludesWorker.js)
+// Note: checkAllIncludes now redirects to startCheckAllIncludes (async queue-based)
 resolver.define('checkAllIncludes', checkAllIncludesResolver);
+
+// Start Check All Includes (async trigger - immediately returns jobId + progressId)
+resolver.define('startCheckAllIncludes', startCheckAllIncludesResolver);
 
 // Get progress for checkAllIncludes operation
 resolver.define('getCheckProgress', getCheckProgressResolver);
@@ -208,5 +219,11 @@ resolver.define('saveCategories', saveCategoriesResolver);
 
 // Get categories from storage
 resolver.define('getCategories', getCategoriesResolver);
+
+// Get last verification timestamp (for auto-verification on Admin page mount)
+resolver.define('getLastVerificationTime', getLastVerificationTimeResolver);
+
+// Set last verification timestamp (called after Check All Includes completes)
+resolver.define('setLastVerificationTime', setLastVerificationTimeResolver);
 
 export const handler = resolver.getDefinitions();

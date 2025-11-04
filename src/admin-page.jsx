@@ -31,6 +31,276 @@ import ForgeReconciler, {
   xcss
 } from '@forge/react';
 import { invoke, router } from '@forge/bridge';
+import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+
+// Create a client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes - data is considered fresh for this long
+      gcTime: 1000 * 60 * 30, // 30 minutes - cached data is kept in memory for this long
+      retry: 1, // Only retry failed requests once
+      refetchOnWindowFocus: false, // Disabled to prevent console flooding (Phase 2 fix)
+      refetchOnReconnect: true, // Refetch when user reconnects after being offline
+      refetchOnMount: true, // Refetch when component mounts if data is stale
+    },
+  },
+});
+
+// ============================================================================
+// REACT QUERY HOOKS
+// ============================================================================
+
+// Hook for fetching all excerpts with orphaned data
+const useExcerptsQuery = () => {
+  return useQuery({
+    queryKey: ['excerpts', 'list'],
+    queryFn: async () => {
+      const timestamp = new Date().toISOString();
+      console.log(`[REACT-QUERY-ADMIN] 🔄 EXECUTING excerpts query at ${timestamp}`);
+      const result = await invoke('getAllExcerpts');
+
+      if (!result || !result.success) {
+        throw new Error('Failed to load excerpts');
+      }
+
+      // Sanitize excerpts
+      const sanitized = (result.excerpts || []).map(excerpt => {
+        const cleanVariables = Array.isArray(excerpt.variables)
+          ? excerpt.variables.filter(v => v && typeof v === 'object' && v.name)
+          : [];
+        const cleanToggles = Array.isArray(excerpt.toggles)
+          ? excerpt.toggles.filter(t => t && typeof t === 'object' && t.name)
+          : [];
+
+        return {
+          ...excerpt,
+          variables: cleanVariables,
+          toggles: cleanToggles,
+          category: String(excerpt.category || 'General'),
+          updatedAt: excerpt.updatedAt ? String(excerpt.updatedAt) : null
+        };
+      });
+
+      // Load orphaned usage data
+      let orphanedUsage = [];
+      try {
+        const orphanedResult = await invoke('getOrphanedUsage');
+        if (orphanedResult && orphanedResult.success) {
+          orphanedUsage = orphanedResult.orphanedUsage;
+        }
+      } catch (err) {
+        console.error('[REACT-QUERY-ADMIN] Failed to load orphaned usage:', err);
+      }
+
+      return { excerpts: sanitized, orphanedUsage };
+    },
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 1000 * 60 * 30, // 30 minutes
+  });
+};
+
+// Hook for fetching categories
+const useCategoriesQuery = () => {
+  return useQuery({
+    queryKey: ['categories'],
+    queryFn: async () => {
+      const result = await invoke('getCategories');
+      if (result.success && result.categories) {
+        return result.categories;
+      }
+      // Default categories if none stored
+      return ['General', 'Pricing', 'Technical', 'Legal', 'Marketing'];
+    },
+    staleTime: 1000 * 60 * 10, // 10 minutes - categories change rarely
+    gcTime: 1000 * 60 * 60, // 1 hour
+  });
+};
+
+// Hook for saving categories
+const useSaveCategoriesMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (categories) => {
+      await invoke('saveCategories', { categories });
+      return categories;
+    },
+    onSuccess: (categories) => {
+      // Update cache immediately
+      queryClient.setQueryData(['categories'], categories);
+    },
+    onError: (error) => {
+      console.error('[REACT-QUERY-ADMIN] Failed to save categories:', error);
+    }
+  });
+};
+
+// Hook for lazy-loading usage data for a specific excerpt
+const useExcerptUsageQuery = (excerptId, enabled = true) => {
+  return useQuery({
+    queryKey: ['excerpt', excerptId, 'usage'],
+    queryFn: async () => {
+      const result = await invoke('getExcerptUsage', { excerptId });
+      if (result && result.success) {
+        return result.usage || [];
+      }
+      throw new Error('Failed to load usage data');
+    },
+    enabled: enabled && !!excerptId,
+    staleTime: 1000 * 60 * 2, // 2 minutes for usage data
+    gcTime: 1000 * 60 * 10, // 10 minutes
+  });
+};
+
+// Hook for deleting an excerpt
+const useDeleteExcerptMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (excerptId) => {
+      const result = await invoke('deleteExcerpt', { excerptId });
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to delete excerpt');
+      }
+      return excerptId;
+    },
+    // Optimistic update: remove excerpt from UI immediately
+    onMutate: async (excerptId) => {
+      // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
+      await queryClient.cancelQueries({ queryKey: ['excerpts', 'list'] });
+
+      // Snapshot the previous value
+      const previousExcerpts = queryClient.getQueryData(['excerpts', 'list']);
+
+      // Optimistically update to the new value
+      queryClient.setQueryData(['excerpts', 'list'], (old) => {
+        if (!old) return old;
+        return old.filter(excerpt => excerpt.id !== excerptId);
+      });
+
+      // Return context with previous value for rollback
+      return { previousExcerpts };
+    },
+    onSuccess: (excerptId) => {
+      // Remove usage data for this excerpt
+      queryClient.removeQueries({ queryKey: ['excerpt', excerptId, 'usage'] });
+    },
+    onError: (error, excerptId, context) => {
+      console.error('[REACT-QUERY-ADMIN] Delete failed:', error);
+      // Rollback optimistic update on error
+      if (context?.previousExcerpts) {
+        queryClient.setQueryData(['excerpts', 'list'], context.previousExcerpts);
+      }
+    },
+    // Always refetch after error or success to ensure data consistency
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['excerpts', 'list'] });
+    }
+  });
+};
+
+// Hook for Check All Sources (maintenance operation)
+const useCheckAllSourcesMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      console.log('[REACT-QUERY-ADMIN] Starting Check All Sources...');
+      const result = await invoke('checkAllSources');
+      if (!result.success) {
+        throw new Error(result.error || 'Check failed');
+      }
+      return result;
+    },
+    onSuccess: (result) => {
+      // Invalidate excerpts to show updated orphan status
+      queryClient.invalidateQueries({ queryKey: ['excerpts', 'list'] });
+    },
+    onError: (error) => {
+      console.error('[REACT-QUERY-ADMIN] Check All Sources failed:', error);
+    }
+  });
+};
+
+// Hook for Check All Includes (maintenance operation)
+const useCheckAllIncludesMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      console.log('[REACT-QUERY-ADMIN] Starting Check All Includes...');
+      const result = await invoke('checkAllIncludes');
+      if (!result.success) {
+        throw new Error(result.error || 'Check failed');
+      }
+      return result;
+    },
+    onSuccess: () => {
+      // Invalidate all usage queries as they may have changed
+      queryClient.invalidateQueries({ queryKey: ['excerpt'] });
+    },
+    onError: (error) => {
+      console.error('[REACT-QUERY-ADMIN] Check All Includes failed:', error);
+    }
+  });
+};
+
+// Hook for pushing updates to a page
+const usePushUpdatesToPageMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ excerptId, pageId }) => {
+      const result = await invoke('pushUpdatesToPage', { excerptId, pageId });
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to push updates');
+      }
+      return { excerptId, result };
+    },
+    onSuccess: ({ excerptId }) => {
+      // Invalidate usage data for this excerpt
+      queryClient.invalidateQueries({ queryKey: ['excerpt', excerptId, 'usage'] });
+    }
+  });
+};
+
+// Hook for pushing updates to all pages
+const usePushUpdatesToAllMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (excerptId) => {
+      const result = await invoke('pushUpdatesToAll', { excerptId });
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to push updates');
+      }
+      return { excerptId, result };
+    },
+    onSuccess: ({ excerptId }) => {
+      // Invalidate usage data for this excerpt
+      queryClient.invalidateQueries({ queryKey: ['excerpt', excerptId, 'usage'] });
+    }
+  });
+};
+
+// Hook for fetching usage counts for all excerpts (lightweight for sorting)
+const useAllUsageCountsQuery = () => {
+  return useQuery({
+    queryKey: ['usageCounts', 'all'],
+    queryFn: async () => {
+      const result = await invoke('getAllUsageCounts');
+      if (result && result.success) {
+        // Returns object like { excerptId1: 5, excerptId2: 12, ... }
+        return result.usageCounts || {};
+      }
+      throw new Error('Failed to load usage counts');
+    },
+    staleTime: 1000 * 60 * 2, // 2 minutes
+    gcTime: 1000 * 60 * 10, // 10 minutes
+  });
+};
 
 // Card styling
 const cardStyles = xcss({
@@ -109,13 +379,44 @@ const rightContentStyles = xcss({
 // 4. Delete migration handler functions (search for "handleScanMultiExcerpt", "handleBulkImport", etc.)
 const SHOW_MIGRATION_TOOLS = false;
 
+// App version (from package.json)
+const APP_VERSION = '7.6.1';
+
 const App = () => {
-  const [excerpts, setExcerpts] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [usageData, setUsageData] = useState({});
-  const [orphanedUsage, setOrphanedUsage] = useState([]);
-  const [orphanedSources, setOrphanedSources] = useState([]);
+  // ============================================================================
+  // REACT QUERY HOOKS
+  // ============================================================================
+
+  // Fetch excerpts and orphaned data
+  const {
+    data: excerptsQueryData,
+    isLoading,
+    error: excerptsError
+  } = useExcerptsQuery();
+
+  const excerpts = excerptsQueryData?.excerpts || [];
+  const orphanedUsage = excerptsQueryData?.orphanedUsage || [];
+
+  // Fetch categories
+  const {
+    data: categories = ['General', 'Pricing', 'Technical', 'Legal', 'Marketing']
+  } = useCategoriesQuery();
+
+  // Mutations
+  const saveCategoriesMutation = useSaveCategoriesMutation();
+  const deleteExcerptMutation = useDeleteExcerptMutation();
+  const checkAllSourcesMutation = useCheckAllSourcesMutation();
+  const checkAllIncludesMutation = useCheckAllIncludesMutation();
+  const pushToPageMutation = usePushUpdatesToPageMutation();
+  const pushToAllMutation = usePushUpdatesToAllMutation();
+
+  // Fetch all usage counts (for sorting)
+  const { data: usageCounts = {} } = useAllUsageCountsQuery();
+
+  // ============================================================================
+  // LOCAL UI STATE (not data fetching)
+  // ============================================================================
+
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [sortBy, setSortBy] = useState('name-asc');
@@ -123,15 +424,22 @@ const App = () => {
   const [showPreviewModal, setShowPreviewModal] = useState(null);
   const [selectedExcerptForDetails, setSelectedExcerptForDetails] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isCheckingSources, setIsCheckingSources] = useState(false);
-  // Check All Includes state
-  const [isCheckingIncludes, setIsCheckingIncludes] = useState(false);
+  const [orphanedSources, setOrphanedSources] = useState([]);
+
+  // Lazy load full usage data using React Query when excerpt selected
+  const { data: selectedExcerptUsage } = useExcerptUsageQuery(
+    selectedExcerptForDetails?.id,
+    !!selectedExcerptForDetails
+  );
+
+  // Check All Includes progress state
   const [includesCheckResult, setIncludesCheckResult] = useState(null);
   const [includesProgress, setIncludesProgress] = useState(null);
   const [progressId, setProgressId] = useState(null);
+  const [lastVerificationTime, setLastVerificationTime] = useState(null);
+  const [isAutoVerifying, setIsAutoVerifying] = useState(false);
+
   // ⚠️ ONE-TIME USE MIGRATION STATE - DELETE AFTER PRODUCTION MIGRATION ⚠️
-  // Migration tools state (kept for handler functions, hidden via SHOW_MIGRATION_TOOLS flag)
-  // Delete this entire block after production migration is complete
   const [isScanningMultiExcerpt, setIsScanningMultiExcerpt] = useState(false);
   const [multiExcerptScanResult, setMultiExcerptScanResult] = useState(null);
   const [multiExcerptProgress, setMultiExcerptProgress] = useState(null);
@@ -144,121 +452,72 @@ const App = () => {
   const [isConverting, setIsConverting] = useState(false);
   const [conversionResult, setConversionResult] = useState(null);
   const [isInitializing, setIsInitializing] = useState(false);
-  // Category management
+
+  // Category management UI
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
-  const [categories, setCategories] = useState(['General', 'Pricing', 'Technical', 'Legal', 'Marketing']);
   const [editingCategory, setEditingCategory] = useState(null);
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [categoriesLoaded, setCategoriesLoaded] = useState(false);
 
-  // Load categories from storage on mount
+  // Convert excerptsError to string for display
+  const error = excerptsError ? String(excerptsError.message || 'Unknown error') : null;
+
+  // Auto-discover categories from excerpts (when new ones added via import)
   useEffect(() => {
-    const loadCategories = async () => {
-      try {
-        const result = await invoke('getCategories');
-        if (result.success && result.categories) {
-          setCategories(result.categories);
-        }
-      } catch (err) {
-        console.error('Failed to load categories:', err);
-      } finally {
-        setCategoriesLoaded(true);
-      }
-    };
+    if (!excerpts.length) return;
 
-    loadCategories();
-  }, []);
+    const categoriesFromExcerpts = [...new Set(excerpts.map(e => e.category || 'General'))];
+    const newCategories = categoriesFromExcerpts.filter(cat => !categories.includes(cat));
 
-  // Save categories to storage whenever they change (after initial load)
+    if (newCategories.length > 0) {
+      console.log('[REACT-QUERY-ADMIN] Auto-discovered new categories:', newCategories);
+      const updated = [...categories, ...newCategories];
+      saveCategoriesMutation.mutate(updated);
+    }
+  }, [excerpts]); // Only run when excerpts change
+
+  // Auto-verify usage data on mount if needed
   useEffect(() => {
-    if (!categoriesLoaded) return; // Skip initial load
-
-    const saveCategories = async () => {
+    const checkAndAutoVerify = async () => {
       try {
-        await invoke('saveCategories', { categories });
-      } catch (err) {
-        console.error('Failed to save categories:', err);
-      }
-    };
+        // Get last verification timestamp from backend
+        const result = await invoke('getLastVerificationTime');
 
-    saveCategories();
-  }, [categories, categoriesLoaded]);
+        if (result.success && result.lastVerificationTime) {
+          setLastVerificationTime(result.lastVerificationTime);
 
-  // Load excerpts and their usage data
-  useEffect(() => {
-    const loadExcerpts = async () => {
-      try {
-        console.log('Admin page: Starting to load excerpts...');
-        const result = await invoke('getAllExcerpts');
-        console.log('Admin page: Result received:', result);
+          // Check if verification is stale (older than 24 hours)
+          const lastVerified = new Date(result.lastVerificationTime);
+          const now = new Date();
+          const hoursSinceVerification = (now - lastVerified) / (1000 * 60 * 60);
 
-        if (result && result.success) {
-          console.log('Admin page: Setting excerpts:', result.excerpts.length);
+          console.log(`[AUTO-VERIFY] Last verification: ${hoursSinceVerification.toFixed(1)} hours ago`);
 
-          // Sanitize excerpts to ensure no objects with {value, label} keys
-          const sanitized = (result.excerpts || []).map(excerpt => {
-            // Ensure variables is a proper array of objects
-            const cleanVariables = Array.isArray(excerpt.variables)
-              ? excerpt.variables.filter(v => v && typeof v === 'object' && v.name)
-              : [];
-
-            // Ensure toggles is a proper array of objects
-            const cleanToggles = Array.isArray(excerpt.toggles)
-              ? excerpt.toggles.filter(t => t && typeof t === 'object' && t.name)
-              : [];
-
-            return {
-              ...excerpt,
-              variables: cleanVariables,
-              toggles: cleanToggles,
-              category: String(excerpt.category || 'General'),
-              updatedAt: excerpt.updatedAt ? String(excerpt.updatedAt) : null
-            };
-          });
-
-          setExcerpts(sanitized);
-
-          // Auto-discover categories from excerpts (in case new categories were added via import)
-          const categoriesFromExcerpts = [...new Set(sanitized.map(e => e.category || 'General'))];
-          const newCategories = categoriesFromExcerpts.filter(cat => !categories.includes(cat));
-          if (newCategories.length > 0) {
-            console.log('Auto-discovered new categories:', newCategories);
-            setCategories(prev => [...prev, ...newCategories]);
+          // Auto-verify if older than 24 hours
+          if (hoursSinceVerification > 24) {
+            console.log('[AUTO-VERIFY] Data is stale, running Check All Includes automatically...');
+            setIsAutoVerifying(true);
+            await handleCheckAllIncludes();
+            setIsAutoVerifying(false);
+          } else {
+            console.log('[AUTO-VERIFY] Data is fresh, skipping auto-verification');
           }
-
-          // Usage data will be loaded on-demand when clicking an excerpt (lazy loading)
-
-          // Load orphaned usage data
-          try {
-            const orphanedResult = await invoke('getOrphanedUsage');
-            if (orphanedResult && orphanedResult.success) {
-              console.log('Orphaned usage found:', orphanedResult.orphanedUsage.length);
-              setOrphanedUsage(orphanedResult.orphanedUsage);
-            }
-          } catch (orphanErr) {
-            console.error('Failed to load orphaned usage:', orphanErr);
-            setOrphanedUsage([]);
-          }
-
-          // Orphaned Sources will be loaded on-demand via "Check All Sources" button
-          setOrphanedSources([]);
         } else {
-          console.error('Admin page: Failed to load');
-          setError('Failed to load excerpts');
+          // No previous verification, run it now
+          console.log('[AUTO-VERIFY] No previous verification found, running Check All Includes...');
+          setIsAutoVerifying(true);
+          await handleCheckAllIncludes();
+          setIsAutoVerifying(false);
         }
-      } catch (err) {
-        console.error('Admin page: Exception:', err);
-        setError(String(err.message || 'Unknown error'));
-      } finally {
-        console.log('Admin page: Setting loading to false');
-        setIsLoading(false);
+      } catch (error) {
+        console.error('[AUTO-VERIFY] Error during auto-verification:', error);
+        setIsAutoVerifying(false);
       }
     };
 
-    loadExcerpts();
-  }, []);
+    checkAndAutoVerify();
+  }, []); // Only run once on mount
 
-  // Category management handlers
+  // Category management handlers (using React Query mutation)
   const handleDeleteCategory = (categoryName) => {
     // Check if any excerpts use this category
     const excerptsUsingCategory = excerpts.filter(e => (e.category || 'General') === categoryName);
@@ -270,7 +529,8 @@ const App = () => {
     }
 
     if (confirm(`Are you sure you want to delete the category "${categoryName}"?`)) {
-      setCategories(prev => prev.filter(c => c !== categoryName));
+      const updated = categories.filter(c => c !== categoryName);
+      saveCategoriesMutation.mutate(updated);
       alert(`Category "${categoryName}" deleted successfully`);
     }
   };
@@ -287,7 +547,8 @@ const App = () => {
       }
 
       // Update category in the list
-      setCategories(prev => prev.map(c => c === oldName ? trimmedName : c));
+      const updated = categories.map(c => c === oldName ? trimmedName : c);
+      saveCategoriesMutation.mutate(updated);
 
       // Note: In a full implementation, you'd also update all excerpts using this category
       alert(`Category renamed from "${oldName}" to "${trimmedName}". Note: Existing excerpts still use the old category name.`);
@@ -307,7 +568,8 @@ const App = () => {
       return;
     }
 
-    setCategories(prev => [...prev, trimmedName]);
+    const updated = [...categories, trimmedName];
+    saveCategoriesMutation.mutate(updated);
     setNewCategoryName('');
     alert(`Category "${trimmedName}" added successfully`);
   };
@@ -318,7 +580,7 @@ const App = () => {
 
     const newCategories = [...categories];
     [newCategories[index - 1], newCategories[index]] = [newCategories[index], newCategories[index - 1]];
-    setCategories(newCategories);
+    saveCategoriesMutation.mutate(newCategories);
   };
 
   const handleMoveCategoryDown = (categoryName) => {
@@ -327,42 +589,33 @@ const App = () => {
 
     const newCategories = [...categories];
     [newCategories[index], newCategories[index + 1]] = [newCategories[index + 1], newCategories[index]];
-    setCategories(newCategories);
+    saveCategoriesMutation.mutate(newCategories);
   };
 
   const handleCheckAllSources = async () => {
-    setIsCheckingSources(true);
     try {
-      console.log('🔍 Starting active check of all Sources...');
-      const result = await invoke('checkAllSources');
-      console.log('Check result:', result);
+      console.log('[REACT-QUERY-ADMIN] 🔍 Starting Check All Sources...');
+      const result = await checkAllSourcesMutation.mutateAsync();
 
-      if (result.success) {
-        setOrphanedSources(Array.isArray(result.orphanedSources) ? result.orphanedSources : []);
+      setOrphanedSources(Array.isArray(result.orphanedSources) ? result.orphanedSources : []);
 
-        // Build summary message
-        let message = `✅ Check complete:\n`;
-        message += `• ${result.activeCount} active Source(s)\n`;
-        message += `• ${result.orphanedSources.length} orphaned Source(s)`;
+      // Build summary message
+      let message = `✅ Check complete:\n`;
+      message += `• ${result.activeCount} active Source(s)\n`;
+      message += `• ${result.orphanedSources.length} orphaned Source(s)`;
 
-        if (result.staleEntriesRemoved > 0) {
-          message += `\n\n🧹 Cleanup complete:\n`;
-          message += `• ${result.staleEntriesRemoved} stale Include entry/entries removed`;
-        } else {
-          message += `\n\n✨ No stale Include entries found`;
-        }
-
-        console.log(message);
-        alert(message);
+      if (result.staleEntriesRemoved > 0) {
+        message += `\n\n🧹 Cleanup complete:\n`;
+        message += `• ${result.staleEntriesRemoved} stale Include entry/entries removed`;
       } else {
-        console.error('Check failed:', result.error);
-        alert('Check failed: ' + result.error);
+        message += `\n\n✨ No stale Include entries found`;
       }
+
+      console.log(message);
+      alert(message);
     } catch (err) {
-      console.error('Error checking sources:', err);
+      console.error('[REACT-QUERY-ADMIN] Check Sources error:', err);
       alert('Error checking sources: ' + err.message);
-    } finally {
-      setIsCheckingSources(false);
     }
   };
 
@@ -454,7 +707,7 @@ const App = () => {
 
   // Poll for progress updates
   useEffect(() => {
-    if (!progressId || !isCheckingIncludes) return;
+    if (!progressId || !checkAllIncludesMutation.isPending) return;
 
     const pollInterval = setInterval(async () => {
       try {
@@ -473,7 +726,7 @@ const App = () => {
     }, 1000); // Poll every second
 
     return () => clearInterval(pollInterval);
-  }, [progressId, isCheckingIncludes]);
+  }, [progressId, checkAllIncludesMutation.isPending]);
 
   // Calculate ETA
   const calculateETA = (progress) => {
@@ -495,80 +748,133 @@ const App = () => {
     }
   };
 
-  // Handle Check All Includes button click
+  // Handle Check All Includes button click (Async Events API version)
   const handleCheckAllIncludes = async () => {
-    setIsCheckingIncludes(true);
+    // Show initial progress
     setIncludesProgress({
-      phase: 'starting',
+      phase: 'queuing',
       total: 0,
       processed: 0,
       percent: 0,
-      status: 'Initializing...'
+      status: 'Queuing job...'
     });
 
+    let isComplete = false;
+    let progressId = null;
+
     try {
-      console.log('🔍 Starting active check of all Include instances...');
+      // Call async trigger - returns immediately with jobId + progressId
+      console.log('[ADMIN] Starting async Check All Includes...');
+      const triggerResult = await invoke('checkAllIncludes', {});
 
-      // Start the backend check (this will block until complete)
-      const result = await invoke('checkAllIncludes');
-      console.log('Check result:', result);
-
-      if (result.success) {
-        console.log('Got progressId:', result.progressId);
-
-        // Fetch final progress state and show 100% completion briefly
-        if (result.progressId) {
-          const progressResult = await invoke('getCheckProgress', { progressId: result.progressId });
-          if (progressResult.success && progressResult.progress) {
-            setIncludesProgress(progressResult.progress);
-            // Give user time to see 100% completion
-            await new Promise(resolve => setTimeout(resolve, 800));
-          }
-        }
-
-        setIncludesCheckResult(result);
-
-        // Build summary message
-        let message = `✅ Check complete:\n`;
-        message += `• ${result.summary.activeCount} active Include(s)\n`;
-        message += `• ${result.summary.orphanedCount} orphaned Include(s)\n`;
-        message += `• ${result.summary.brokenReferenceCount} broken reference(s)\n`;
-        message += `• ${result.summary.staleCount} stale Include(s)`;
-
-        if (result.summary.orphanedEntriesRemoved > 0) {
-          message += `\n\n🧹 Cleanup complete:\n`;
-          message += `• ${result.summary.orphanedEntriesRemoved} orphaned entry/entries removed`;
-        } else {
-          message += `\n\n✨ No orphaned entries found`;
-        }
-
-        console.log(message);
-        alert(message);
-
-        // Offer to download CSV
-        if (result.activeIncludes && result.activeIncludes.length > 0) {
-          if (confirm(`\nWould you like to download a CSV report of all ${result.summary.activeCount} Include instances?`)) {
-            const csv = generateIncludesCSV(result.activeIncludes);
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
-            const url = URL.createObjectURL(blob);
-            link.setAttribute('href', url);
-            link.setAttribute('download', `smartexcerpt-includes-report-${new Date().toISOString().split('T')[0]}.csv`);
-            link.style.visibility = 'hidden';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-          }
-        }
-      } else {
-        console.error('Check failed:', result.error);
-        alert('Check failed: ' + result.error);
+      if (!triggerResult.success) {
+        throw new Error(triggerResult.error || 'Failed to start check');
       }
+
+      progressId = triggerResult.progressId;
+      const jobId = triggerResult.jobId;
+
+      console.log(`[ADMIN] Job queued: jobId=${jobId}, progressId=${progressId}`);
+
+      // Start polling for progress
+      const pollForProgress = async () => {
+        // Give worker a moment to start
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        while (!isComplete) {
+          try {
+            const progressResult = await invoke('getCheckProgress', { progressId });
+            if (progressResult.success && progressResult.progress) {
+              const progress = progressResult.progress;
+              setIncludesProgress(progress);
+              console.log(`[ADMIN] Progress: ${progress.percent}% - ${progress.status}`);
+
+              // Check if complete
+              if (progress.phase === 'complete') {
+                isComplete = true;
+                break;
+              }
+
+              // Check if error
+              if (progress.phase === 'error') {
+                throw new Error(progress.error || 'Check failed');
+              }
+            }
+          } catch (err) {
+            console.error('[ADMIN] Polling error:', err);
+            // Continue polling unless complete
+          }
+
+          // Poll every 500ms
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      };
+
+      // Start polling
+      await pollForProgress();
+
+      // Fetch final results from progress data
+      const finalProgressResult = await invoke('getCheckProgress', { progressId });
+      if (!finalProgressResult.success || !finalProgressResult.progress.results) {
+        throw new Error('Failed to retrieve final results');
+      }
+
+      const results = finalProgressResult.progress.results;
+      const summary = results.summary;
+
+      console.log('[ADMIN] Check complete:', summary);
+
+      // Store results for potential CSV download
+      setIncludesCheckResult(results);
+
+      // Build summary message
+      let message = `✅ Check complete:\n`;
+      message += `• ${summary.activeCount} active Include(s)\n`;
+      message += `• ${summary.orphanedCount} orphaned Include(s)\n`;
+      message += `• ${summary.brokenReferenceCount} broken reference(s)\n`;
+      message += `• ${summary.staleCount} stale Include(s)`;
+
+      if (summary.orphanedEntriesRemoved > 0) {
+        message += `\n\n🧹 Cleanup complete:\n`;
+        message += `• ${summary.orphanedEntriesRemoved} orphaned entry/entries removed`;
+      } else {
+        message += `\n\n✨ No orphaned entries found`;
+      }
+
+      console.log(message);
+      alert(message);
+
+      // Offer to download CSV
+      if (results.activeIncludes && results.activeIncludes.length > 0) {
+        if (confirm(`\nWould you like to download a CSV report of all ${summary.activeCount} Include instances?`)) {
+          const csv = generateIncludesCSV(results.activeIncludes);
+          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+          const link = document.createElement('a');
+          const url = URL.createObjectURL(blob);
+          link.setAttribute('href', url);
+          link.setAttribute('download', `smartexcerpt-includes-report-${new Date().toISOString().split('T')[0]}.csv`);
+          link.style.visibility = 'hidden';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      }
+
+      // Update last verification timestamp
+      const now = new Date().toISOString();
+      await invoke('setLastVerificationTime', { timestamp: now });
+      setLastVerificationTime(now);
+      console.log('[ADMIN] Verification timestamp updated:', now);
+
+      // Show 100% briefly before clearing
+      await new Promise(resolve => setTimeout(resolve, 800));
+
     } catch (err) {
-      console.error('Error checking includes:', err);
+      console.error('[ADMIN] Error checking includes:', err);
       alert('Error checking includes: ' + err.message);
+      isComplete = true; // Stop polling on error
     } finally {
-      setIsCheckingIncludes(false);
+      isComplete = true; // Ensure polling stops
       setProgressId(null);
       setIncludesProgress(null);
     }
@@ -945,25 +1251,9 @@ const App = () => {
   };
 
   // Lazy load usage data for a specific excerpt
-  const loadUsageForExcerpt = async (excerptId) => {
-    // Check if already loaded
-    if (usageData[excerptId]) {
-      return; // Already loaded
-    }
-
-    try {
-      console.log('Loading usage data for excerpt:', excerptId);
-      const usageResult = await invoke('getExcerptUsage', { excerptId });
-      if (usageResult && usageResult.success) {
-        setUsageData(prev => ({
-          ...prev,
-          [excerptId]: usageResult.usage || []
-        }));
-      }
-    } catch (error) {
-      console.error('Error loading usage data:', error);
-    }
-  };
+  // NOTE: loadUsageForExcerpt is now handled by useExcerptUsageQuery hook
+  // Each component that needs usage data calls the hook with the excerptId
+  // The hook only fetches when enabled=true, providing lazy loading
 
   const handleDelete = async (excerptId) => {
     if (!confirm('Delete this source? This cannot be undone.')) {
@@ -971,13 +1261,9 @@ const App = () => {
     }
 
     try {
-      const result = await invoke('deleteExcerpt', { excerptId });
-      if (result.success) {
-        // Reload excerpts
-        setExcerpts(excerpts.filter(e => e.id !== excerptId));
-      } else {
-        alert('Failed to delete: ' + result.error);
-      }
+      await deleteExcerptMutation.mutateAsync(excerptId);
+      // React Query automatically refetches excerpts list after successful deletion
+      alert('Excerpt deleted successfully');
     } catch (err) {
       alert('Error: ' + err.message);
     }
@@ -986,7 +1272,7 @@ const App = () => {
   if (isLoading) {
     return (
       <Fragment>
-        <Text><Strong>SmartExcerpt Admin</Strong></Text>
+        <Text><Strong>SmartExcerpt Admin v{APP_VERSION}</Strong></Text>
         <Text>Loading...</Text>
       </Fragment>
     );
@@ -995,7 +1281,7 @@ const App = () => {
   if (error) {
     return (
       <Fragment>
-        <Text><Strong>SmartExcerpt Admin</Strong></Text>
+        <Text><Strong>SmartExcerpt Admin v{APP_VERSION}</Strong></Text>
         <Text>Error: {error}</Text>
       </Fragment>
     );
@@ -1016,12 +1302,12 @@ const App = () => {
       case 'name-desc':
         return b.name.localeCompare(a.name);
       case 'usage-high':
-        const usageA = (usageData[a.id] || []).length;
-        const usageB = (usageData[b.id] || []).length;
+        const usageA = usageCounts[a.id] || 0;
+        const usageB = usageCounts[b.id] || 0;
         return usageB - usageA;
       case 'usage-low':
-        const usageALow = (usageData[a.id] || []).length;
-        const usageBLow = (usageData[b.id] || []).length;
+        const usageALow = usageCounts[a.id] || 0;
+        const usageBLow = usageCounts[b.id] || 0;
         return usageALow - usageBLow;
       case 'category':
         return (a.category || 'General').localeCompare(b.category || 'General');
@@ -1032,6 +1318,19 @@ const App = () => {
 
   return (
     <Fragment>
+      {/* Page Header */}
+      <Box xcss={xcss({ marginBlockEnd: 'space.300', paddingBlockEnd: 'space.200', borderBlockEndColor: 'color.border', borderBlockEndStyle: 'solid', borderBlockEndWidth: 'border.width' })}>
+        <Inline space="space.200" alignBlock="center" spread="space-between">
+          <Text><Strong>SmartExcerpt Admin v{APP_VERSION}</Strong></Text>
+          <Button
+            appearance="primary"
+            onClick={() => setIsCategoryModalOpen(true)}
+          >
+            Manage Categories
+          </Button>
+        </Inline>
+      </Box>
+
       {/* Top Toolbar - Filters and Actions */}
       <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
         <Inline space="space.200" alignBlock="center" spread="space-between">
@@ -1110,18 +1409,20 @@ const App = () => {
             <Button
               appearance="primary"
               onClick={handleCheckAllSources}
-              isDisabled={isCheckingSources}
+              isDisabled={checkAllSourcesMutation.isPending}
             >
-              {isCheckingSources ? 'Checking...' : '🔍 Check All Sources'}
+              {checkAllSourcesMutation.isPending ? 'Checking...' : '🔍 Check All Sources'}
             </Button>
 
-            <Button
-              appearance="primary"
-              onClick={handleCheckAllIncludes}
-              isDisabled={isCheckingIncludes}
-            >
-              {isCheckingIncludes ? 'Checking...' : '🔍 Check All Includes'}
-            </Button>
+            <Tooltip content="Verifies all Include macros: checks if they exist on their pages, references valid excerpts, and have up-to-date content. Automatically cleans up orphaned entries and generates a complete CSV-exportable report with usage data, variable values, and rendered content.">
+              <Button
+                appearance="primary"
+                onClick={handleCheckAllIncludes}
+                isDisabled={includesProgress !== null}
+              >
+                {includesProgress !== null ? 'Checking...' : '🔍 Check All Includes'}
+              </Button>
+            </Tooltip>
 
             {SHOW_MIGRATION_TOOLS && (
               <Button
@@ -1132,13 +1433,6 @@ const App = () => {
                 {isScanningMultiExcerpt ? 'Scanning...' : '📦 Scan MultiExcerpt Includes'}
               </Button>
             )}
-
-            <Button
-              appearance="primary"
-              onClick={() => setIsCategoryModalOpen(true)}
-            >
-              Manage Categories
-            </Button>
           </Inline>
         </Inline>
       </Box>
@@ -1237,7 +1531,7 @@ const App = () => {
       )}
 
       {/* Progress Bar for Check All Includes */}
-      {isCheckingIncludes && (
+      {includesProgress && (
         <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
           <SectionMessage appearance="information">
             <Stack space="space.200">
@@ -1392,7 +1686,7 @@ const App = () => {
             }
 
             try {
-              const usage = usageData[selectedExcerptForDetails.id] || [];
+              const usage = selectedExcerptUsage || [];
               console.log('Usage data for excerpt:', usage.length, 'entries');
 
               const hasVariables = Array.isArray(selectedExcerptForDetails.variables) && selectedExcerptForDetails.variables.length > 0;
@@ -1470,7 +1764,14 @@ const App = () => {
                           appearance="default"
                           onClick={async () => {
                             try {
-                              await router.open(`/wiki/pages/viewpage.action?pageId=${selectedExcerptForDetails.sourcePageId}`);
+                              let url = `/wiki/pages/viewpage.action?pageId=${selectedExcerptForDetails.sourcePageId}`;
+                              // Use Confluence's built-in anchor for bodied macros (format: #id-{localId})
+                              if (selectedExcerptForDetails.sourceLocalId) {
+                                url += `#id-${selectedExcerptForDetails.sourceLocalId}`;
+                              }
+
+                              // Use open() to open in new tab
+                              await router.open(url);
                             } catch (err) {
                               console.error('Navigation error:', err);
                               alert('Error navigating to source page: ' + err.message);
@@ -1940,7 +2241,7 @@ const App = () => {
                   <Box xcss={fullWidthTableStyle}>
                       <Stack space="space.200">
                       {(() => {
-                        const usage = usageData[selectedExcerpt.id] || [];
+                        const usage = selectedExcerptUsage || [];
                         // Count unique pages, not total references
                         const uniquePageIds = Array.isArray(usage)
                           ? new Set(usage.map(ref => ref.pageId)).size
@@ -2340,7 +2641,10 @@ const App = () => {
 };
 
 ForgeReconciler.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
+  <QueryClientProvider client={queryClient}>
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+    <ReactQueryDevtools initialIsOpen={false} />
+  </QueryClientProvider>
 );
