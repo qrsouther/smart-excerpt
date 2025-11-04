@@ -748,6 +748,31 @@ const App = () => {
     }
   };
 
+  // Format timestamp for display
+  const formatTimestamp = (isoString) => {
+    if (!isoString) return 'Never';
+
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    // Show relative time for recent timestamps
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays < 7) return `${diffDays}d ago`;
+
+    // Show absolute date for older timestamps
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
+    });
+  };
+
   // Handle Check All Includes button click (Async Events API version)
   const handleCheckAllIncludes = async () => {
     // Show initial progress
@@ -1414,15 +1439,22 @@ const App = () => {
               {checkAllSourcesMutation.isPending ? 'Checking...' : '🔍 Check All Sources'}
             </Button>
 
-            <Tooltip content="Verifies all Include macros: checks if they exist on their pages, references valid excerpts, and have up-to-date content. Automatically cleans up orphaned entries and generates a complete CSV-exportable report with usage data, variable values, and rendered content.">
-              <Button
-                appearance="primary"
-                onClick={handleCheckAllIncludes}
-                isDisabled={includesProgress !== null}
-              >
-                {includesProgress !== null ? 'Checking...' : '🔍 Check All Includes'}
-              </Button>
-            </Tooltip>
+            <Box xcss={xcss({ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 'space.050' })}>
+              <Tooltip content="Verifies all Include macros: checks if they exist on their pages, references valid excerpts, and have up-to-date content. Automatically cleans up orphaned entries and generates a complete CSV-exportable report with usage data, variable values, and rendered content.">
+                <Button
+                  appearance="primary"
+                  onClick={handleCheckAllIncludes}
+                  isDisabled={includesProgress !== null}
+                >
+                  {includesProgress !== null ? 'Checking...' : '🔍 Check All Includes'}
+                </Button>
+              </Tooltip>
+              {lastVerificationTime && (
+                <Text size="small" color="color.text.subtlest">
+                  Last verified: {formatTimestamp(lastVerificationTime)}
+                </Text>
+              )}
+            </Box>
 
             {SHOW_MIGRATION_TOOLS && (
               <Button
