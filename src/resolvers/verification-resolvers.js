@@ -15,6 +15,7 @@
 
 import { storage, startsWith } from '@forge/api';
 import api, { route } from '@forge/api';
+import { Queue } from '@forge/events';
 import { generateUUID } from '../utils.js';
 import { extractTextFromAdf } from '../utils/adf-utils.js';
 
@@ -221,15 +222,20 @@ export async function checkAllSources(req) {
   }
 }
 
-/**
- * Check all Includes - comprehensive verification with progress tracking
- * This is the production "Check All Includes" feature used regularly
- */
-export async function checkAllIncludes(req) {
+// ============================================================================
+// OLD SYNCHRONOUS CHECK ALL INCLUDES - COMMENTED OUT
+// ============================================================================
+// This function is being replaced by startCheckAllIncludes + async worker
+// Keeping it here temporarily for reference until async version is proven stable
+// TODO: Delete this entire commented section after async version is confirmed working
+
+/*
+export async function checkAllIncludes_OLD_SYNC_VERSION(req) {
   try {
     console.log('🔍 ACTIVE CHECK: Checking all Include instances...');
 
-    const progressId = generateUUID();
+    // Accept progressId from frontend, or generate if not provided
+    const progressId = req.payload?.progressId || generateUUID();
     const startTime = Date.now();
 
     // Get all macro-vars entries (each represents an Include instance)
@@ -519,6 +525,38 @@ export async function checkAllIncludes(req) {
       }
     }
 
+    // Clean up stale usage tracking references
+    console.log('🧹 CLEANUP: Removing stale usage tracking references...');
+    let staleUsageReferencesRemoved = 0;
+
+    for (const orphaned of [...orphanedIncludes, ...brokenReferences]) {
+      try {
+        const usageKey = `usage:${orphaned.excerptId}`;
+        const usageData = await storage.get(usageKey);
+
+        if (usageData && Array.isArray(usageData.references)) {
+          const originalLength = usageData.references.length;
+          usageData.references = usageData.references.filter(ref => ref.localId !== orphaned.localId);
+
+          if (usageData.references.length < originalLength) {
+            staleUsageReferencesRemoved += (originalLength - usageData.references.length);
+
+            if (usageData.references.length > 0) {
+              await storage.set(usageKey, usageData);
+              console.log(`🗑️ Removed stale usage reference for localId ${orphaned.localId} from excerpt ${orphaned.excerptId}`);
+            } else {
+              await storage.delete(usageKey);
+              console.log(`🗑️ Deleted empty usage key for excerpt ${orphaned.excerptId}`);
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Error cleaning usage data for ${orphaned.excerptId}:`, err);
+      }
+    }
+
+    console.log(`✅ Cleanup complete: removed ${staleUsageReferencesRemoved} stale usage references`);
+
     // Final progress update
     await storage.set(`progress:${progressId}`, {
       phase: 'complete',
@@ -577,4 +615,76 @@ export async function checkAllIncludes(req) {
       staleIncludes: []
     };
   }
+}
+*/
+
+// ============================================================================
+// NEW ASYNC CHECK ALL INCLUDES - USES FORGE ASYNC EVENTS API
+// ============================================================================
+
+/**
+ * Start Check All Includes - Trigger resolver for async processing
+ *
+ * This replaces the old synchronous checkAllIncludes function with an async
+ * queue-based approach that can handle large scale operations (3,000+ Includes)
+ * with real-time progress tracking.
+ *
+ * Architecture:
+ * 1. This trigger pushes event to queue and returns immediately with jobId + progressId
+ * 2. Consumer worker (src/workers/checkIncludesWorker.js) processes asynchronously
+ * 3. Frontend polls getCheckProgress for real-time updates
+ *
+ * Returns immediately with:
+ * - success: boolean
+ * - jobId: string (for Async Events API job tracking)
+ * - progressId: string (for progress polling via getCheckProgress)
+ */
+export async function startCheckAllIncludes(req) {
+  try {
+    console.log('[TRIGGER] Starting Check All Includes async operation...');
+
+    // Generate progressId for frontend polling
+    const progressId = generateUUID();
+
+    // Initialize progress state (queued)
+    await storage.set(`progress:${progressId}`, {
+      phase: 'queued',
+      percent: 0,
+      status: 'Job queued...',
+      total: 0,
+      processed: 0,
+      queuedAt: new Date().toISOString()
+    });
+
+    // Create queue and push event
+    const queue = new Queue({ key: 'check-includes-queue' });
+    const { jobId } = await queue.push({
+      body: { progressId }
+    });
+
+    console.log(`[TRIGGER] Job queued: jobId=${jobId}, progressId=${progressId}`);
+
+    // Return immediately - consumer will process in background
+    return {
+      success: true,
+      jobId,
+      progressId,
+      message: 'Check All Includes job queued successfully'
+    };
+
+  } catch (error) {
+    console.error('[TRIGGER] Error starting Check All Includes:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Check All Includes - wrapper for backwards compatibility
+ * Redirects to startCheckAllIncludes
+ */
+export async function checkAllIncludes(req) {
+  return startCheckAllIncludes(req);
 }

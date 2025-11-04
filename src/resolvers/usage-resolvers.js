@@ -197,6 +197,44 @@ export async function getExcerptUsage(req) {
 }
 
 /**
+ * Get usage counts for all excerpts (lightweight for sorting)
+ * Returns object mapping excerptId -> count of references
+ */
+export async function getAllUsageCounts() {
+  try {
+    // Get all excerpt IDs from the index
+    const index = await storage.get('excerpt-index') || { excerpts: [] };
+    const usageCounts = {};
+
+    // For each excerpt, get just the count of references
+    await Promise.all(index.excerpts.map(async (indexEntry) => {
+      const usageKey = `usage:${indexEntry.id}`;
+      const usageData = await storage.get(usageKey);
+
+      // Count unique pages (not total references)
+      if (usageData && Array.isArray(usageData.references)) {
+        const uniquePageIds = new Set(usageData.references.map(ref => ref.pageId));
+        usageCounts[indexEntry.id] = uniquePageIds.size;
+      } else {
+        usageCounts[indexEntry.id] = 0;
+      }
+    }));
+
+    return {
+      success: true,
+      usageCounts
+    };
+  } catch (error) {
+    console.error('Error getting all usage counts:', error);
+    return {
+      success: false,
+      error: error.message,
+      usageCounts: {}
+    };
+  }
+}
+
+/**
  * Push updates to all Include instances of a specific excerpt
  * Admin function to force-refresh all instances
  */

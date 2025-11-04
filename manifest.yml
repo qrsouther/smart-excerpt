@@ -2,7 +2,7 @@ modules:
   macro:
     - key: smart-excerpt-source
       title: SmartExcerpt
-      description: Create a reusable content block that can be included on other pages (v7.6.1)
+      description: Create a reusable content block that can be included on other pages (v7.7.0)
       layout: bodied
       resource: source-display-resource
       render: native
@@ -15,7 +15,7 @@ modules:
 
     - key: smart-excerpt-include
       title: SmartExcerpt Include
-      description: Include a SmartExcerpt from another page (v7.6.1)
+      description: Include a SmartExcerpt from another page (v7.7.0)
       resource: include-display
       render: native
       resolver:
@@ -29,9 +29,18 @@ modules:
       resolver:
         function: resolver
 
+  consumer:
+    - key: check-includes-consumer
+      queue: check-includes-queue
+      function: check-includes-worker
+
   function:
     - key: resolver
       handler: index.handler
+
+    - key: check-includes-worker
+      handler: workers/checkIncludesWorker.handler
+      timeoutSeconds: 900
 
 resources:
   - key: source-display-resource
