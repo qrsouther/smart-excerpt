@@ -42,6 +42,40 @@ Align internal code (variable names, comments, JSDoc) with the new Blueprint Sta
 
 ## Future Enhancements
 
+### Redlining System (Status Management & Review Workflow)
+**Status:** Requirements gathering
+**Priority:** TBD
+**Estimated Effort:** Large (multiple components)
+
+**Overview:**
+A review and status management tool for tracking the completeness/readiness of individual Embed instances across all Blueprint pages.
+
+**Key Features:**
+- **Granular status tracking:** Operates at the individual Embed level (not just Blueprint Standards as a whole)
+- **Multiple assignment methods:** Both automatic (triggered by logic/conditions) and manual (team members marking statuses)
+- **Status types:** Completeness/readiness indicators (specific statuses TBD)
+- **Team collaboration:** Multiple people can review and update statuses
+- **Aggregation view:** While individual Embeds are tracked, roll up to show overall Blueprint page readiness
+- **Admin UI integration:** Dedicated space/view within the Admin page
+
+**Use Cases:**
+- Track which Embeds still need review (legal, technical, etc.)
+- Monitor completion status of Blueprint documents
+- Flag Embeds with outdated or missing variable values
+- Systematic review workflow for quality assurance
+
+**Technical Considerations:**
+- Will need to query Embed instances via `macro-vars:*` storage keys
+- Use existing resolvers like `getVariableValues()`, `getExcerptUsage()`
+- May need new storage keys for status data per Embed instance
+- UI component will live in `src/admin-page.jsx`
+
+**Next Steps:**
+- Define specific status types and their meanings
+- Define automatic trigger conditions for status assignment
+- Design UI mockup for status management view
+- Determine storage schema for status data
+
 ### Content Versioning and History
 - Track changes to Blueprint Standards over time
 - Allow rollback to previous versions
