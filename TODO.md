@@ -6,7 +6,24 @@ This file tracks ongoing tasks, future enhancements, and technical debt for the 
 
 ## Current Sprint / Active Work
 
-None currently active.
+### Reincorporate Documentation Tab into Source Config Modal
+**Status:** Planned for tomorrow
+**Priority:** High
+**Estimated Effort:** Small (feature already built, needs porting)
+
+**Background:**
+The Documentation tab was built in an experimental branch but never merged into main. Need to add it back to the Source macro's configuration modal.
+
+**Implementation:**
+- Locate Documentation tab code from experimental branch (if still available)
+- Add new tab to Source config modal (source-config.jsx)
+- Tab should display alongside existing Source configuration tabs
+- Preserve any documentation/help text functionality that was built
+
+**Next Steps:**
+- Review experimental branch code for Documentation tab implementation
+- Port to current main branch codebase
+- Test in Source macro config modal
 
 ---
 
