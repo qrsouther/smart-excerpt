@@ -6,6 +6,111 @@ A high-performance Forge app for Confluence that enables reusable content blocks
 
 ---
 
+## 📐 Architecture Overview
+
+### System Type
+Content management system with reusable content blocks and variable substitution, built as an Atlassian Forge app for Confluence Cloud (serverless, runs in Atlassian's infrastructure).
+
+### Core Components
+
+**1. Source Macro (Content Authoring)**
+- Bodied Confluence macro for creating reusable content templates
+- Content editor with variable/toggle detection
+- Stores to Forge key-value storage (`excerpt:{id}`)
+- SHA-256 content hashing for semantic change detection
+
+**2. Embed Macro (Content Instantiation)**
+- Inline Confluence macro that renders a Source with configured values
+- Template renderer with per-instance configuration
+- Instance config stored in `macro-vars:{localId}` (variables, toggles, custom insertions)
+- Hash-based staleness detection (knows when Source has changed)
+
+**3. Admin Interface (Management UI)**
+- Confluence global settings page
+- CRUD interface for all Sources and usage tracking dashboard
+- Shows where each Source is embedded, can push updates to instances
+
+### Technical Stack
+
+**Frontend:**
+- React 18 with Forge UI Kit components (@forge/react)
+- React Query (TanStack) for state management and caching
+- ADF (Atlassian Document Format) for rich text content
+
+**Backend:**
+- Node.js serverless functions (Forge resolvers)
+- Forge key-value storage (encrypted, per-app)
+- Forge Events API v2 for async background jobs
+- Confluence REST API for page operations
+
+**Architecture Pattern:**
+- **UI Layer:** React components in Forge iframes (sandboxed, cannot directly access Confluence)
+- **Bridge Layer:** `invoke()` calls from frontend to backend resolvers
+- **Storage Layer:** Key-value store with structured JSON documents
+- **API Layer:** Resolvers call Confluence REST API when needed (page reads/writes)
+
+### Data Flow
+
+**Content Creation:**
+1. User edits Source macro body in Confluence editor (ADF)
+2. On save → Resolver calculates `contentHash`, stores to `excerpt:{id}`
+3. Auto-detects `{{variables}}` and `{{toggle:name}}` syntax
+
+**Content Instantiation:**
+1. User configures Embed macro → Selects Source + fills variables
+2. On save → Resolver stores config to `macro-vars:{localId}`, renders content
+3. Cached rendered ADF stored for fast view-mode display
+
+**Staleness Detection:**
+1. Embed stores `syncedContentHash` (hash of Source at time of sync)
+2. On render → Compare Source's current `contentHash` vs Embed's `syncedContentHash`
+3. If different → Show "Update Available" banner
+
+**Usage Tracking:**
+1. Embed save → Registers usage entry in `excerpt-usage:{excerptId}`
+2. Admin UI → Queries all usage entries to show "where is this used?"
+3. Push updates → Iterates usage entries, fetches/updates each Embed instance
+
+### Key Technical Characteristics
+
+**Template System:**
+- Variable substitution in ADF documents (structured, not string replacement)
+- Toggle-based conditional content (hide/show sections)
+- Custom paragraph insertions (ad-hoc content injection)
+- Internal notes (annotations stripped for external views)
+
+**Async Architecture:**
+- Long-running operations (verify all Embeds) use Forge Events queue
+- Job triggers return immediately with `progressId`
+- Background worker processes queue, updates progress storage
+- Frontend polls progress via resolver
+
+**Hash-Based Change Detection:**
+- Content changes tracked semantically (not by timestamp)
+- Avoids false positives from page republishing
+- Deterministic hashing (same content = same hash)
+
+**Multi-tenancy:**
+- Each Confluence instance gets isolated storage
+- App ID scopes all storage operations
+- No cross-tenant data access
+
+### System Analogies
+
+**If you know these systems, this is similar to:**
+- **Confluence:** Like native "Excerpt" and "Excerpt Include" macros, but with variables, change detection, and centralized management
+- **WordPress:** Sources are like "Reusable Blocks," Embeds are instances, Admin is the block library
+- **React:** Sources are component definitions, Embeds are component instances with props
+- **Mail merge:** Sources are templates, Embeds are merged documents with variable values
+
+**Not like:**
+- Not a page builder (doesn't control full page layout)
+- Not a static site generator (renders dynamically in Confluence)
+- Not a headless CMS (tightly coupled to Confluence)
+- Not real-time collaborative (follows Confluence's edit/publish model)
+
+---
+
 ## 🔧 Refactoring Progress (main branch)
 
 **Current Version:** 7.12.0
