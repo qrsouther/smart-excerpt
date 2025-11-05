@@ -280,10 +280,16 @@ Several files have grown into monoliths (>500 lines) with mixed responsibilities
 - ADF manipulation utilities should be extracted
 
 **Refactoring Plan:**
+- **Evaluate simple-adf-formatter library** (https://github.com/dixahq/simple-adf-formatter):
+  - Lightweight (~2kB, zero dependencies) callback-based ADF traversal framework
+  - Could replace custom tree-walking code with composable pattern
+  - May simplify 8+ ADF manipulation functions by providing standard traversal pattern
+  - Test integration before committing to full replacement
 - Extract ADF processing utilities to `src/utils/adf-rendering-utils.js`:
   - `cleanAdfForRenderer()`, `cleanupEmptyNodes()`, `filterContentByToggles()`
   - `stripToggleMarkers()`, `substituteVariablesInAdf()`, `insertCustomParagraphsInAdf()`
   - `insertInternalNotesInAdf()`, `extractParagraphsFromAdf()`
+  - Consider refactoring these using simple-adf-formatter pattern if beneficial
 - Extract React Query hooks to `src/hooks/embed-hooks.js`:
   - `useExcerptData()`, `useSaveVariableValues()`, `useAvailableExcerpts()`
   - `useVariableValues()`, `useCachedContent()`
