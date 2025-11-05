@@ -70,11 +70,43 @@ A review and status management tool for tracking the completeness/readiness of i
 - May need new storage keys for status data per Embed instance
 - UI component will live in `src/admin-page.jsx`
 
+**Automatic Status Transitions (Content Change Detection):**
+
+The contentHash system built for staleness detection will power automatic status transitions:
+
+**Workflow Example:**
+1. User manually marks Embed as "Complete" (approved/good-to-go)
+2. System captures Embed's `approvedContentHash` at approval moment
+3. User later modifies Embed (variables, toggles, custom insertions, or changes Blueprint Standard reference)
+4. New `contentHash` is generated for modified Embed
+5. System detects: `approvedContentHash ≠ currentContentHash`
+6. **Automatic trigger:** Status changes "Complete" → "Needs Review"
+7. Reviewer is alerted that previously-approved content requires re-review
+
+**Key Technical Distinction:**
+- `approvedContentHash`: Hash of FULL Embed content (variables filled in, toggles set, custom insertions, internal notes) - the complete rendered state that was approved
+- `syncedContentHash`: Hash of raw Blueprint Standard Source content (used for "Update Available" detection)
+- These serve different purposes: syncedContentHash tracks Source changes, approvedContentHash tracks post-approval Embed modifications
+
+**Value:**
+Automatic quality control - any change to approved content automatically requires re-approval. No manual tracking needed.
+
+**Implementation Notes:**
+- Add `approvedContentHash` to Embed storage schema (`macro-vars:{localId}`)
+- Add `redlineStatus` field to same storage (values TBD: "Complete", "Needs Review", etc.)
+- Add `approvedBy` and `approvedAt` fields for audit trail
+- Comparison logic runs on Embed save and during Admin page queries
+- Similar implementation pattern to "Update Available" detection but focused on post-approval modifications
+- May need resolver function: `checkRedlineStatus(localId)` that compares hashes and returns status
+- Admin UI will need to display status indicators and allow manual status updates
+- Consider adding status change history/log for compliance tracking
+
 **Next Steps:**
-- Define specific status types and their meanings
-- Define automatic trigger conditions for status assignment
-- Design UI mockup for status management view
-- Determine storage schema for status data
+- Define complete list of status types and their meanings (Complete, Needs Review, Draft, etc.)
+- Define other automatic trigger conditions beyond content changes
+- Design UI mockup for status management view in Admin page
+- Determine complete storage schema for status data
+- Define user permissions/roles for status updates (who can mark Complete?)
 
 ### Content Versioning and History
 - Track changes to Blueprint Standards over time
