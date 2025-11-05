@@ -185,6 +185,61 @@ A dedicated review UI that presents Embeds as a sequential stack for systematic 
 - Integration with external tools (Grammarly API, etc.)
 - Highlight potential issues in admin preview
 
+### Expandable Debug View Component
+**Status:** Planning
+**Priority:** Medium (developer productivity)
+**Estimated Effort:** Small (reusable component)
+
+**Overview:**
+Add an expandable debug panel to various UI contexts that reveals detailed technical information for troubleshooting and development.
+
+**Implementation Locations:**
+
+1. **Embed Macro Configuration Panel (top panel in edit mode):**
+   - Show Embed's `contentHash` (current full rendered state)
+   - Show Embed's `syncedContentHash` (Blueprint Standard Source hash)
+   - Show full `macro-vars:{localId}` storage JSON blob
+   - Copy buttons for contentHash and JSON blob
+
+2. **Admin UI (when viewing Embed usage):**
+   - Same information as Embed config panel
+   - Useful for debugging from centralized admin view
+
+3. **Source Macro Configuration Modal:**
+   - Show Source's `contentHash` (raw content hash)
+   - Show full `excerpt:{id}` storage JSON blob
+   - Show detected variables and toggles
+   - Copy buttons for contentHash and JSON blob
+
+**UI Design:**
+- Collapsible/expandable component (closed by default)
+- Label: "🔧 Debug Info" or "Developer Tools"
+- Monospace font for JSON display
+- Syntax highlighting for JSON (optional, nice-to-have)
+- Individual copy buttons for each data field
+- "Copy All" button for full JSON
+
+**Technical Notes:**
+- Leverage existing `debugExcerpt` resolver (already returns full JSON)
+- May need new resolver: `debugEmbed(localId)` for Embed-specific debug info
+- Use `@atlaskit/code` component for formatted code display
+- Use `@atlaskit/button` with copy icon
+- Collapsible section: `@atlaskit/section-message` or custom accordion
+
+**Use Cases:**
+- Quick inspection of contentHash values during staleness debugging
+- Verify variable values are stored correctly
+- Inspect full storage structure without checking Forge logs
+- Copy exact JSON for bug reports or support requests
+- Compare hashes between Source and Embed to diagnose sync issues
+
+**Next Steps:**
+- Design expandable component UI mockup
+- Implement `debugEmbed` resolver if needed
+- Add debug panel to Embed config (embed-display.jsx)
+- Add debug panel to Source config (source-config.jsx)
+- Add debug panel to Admin UI usage view (admin-page.jsx)
+
 ---
 
 ## Technical Debt
