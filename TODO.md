@@ -101,12 +101,74 @@ Automatic quality control - any change to approved content automatically require
 - Admin UI will need to display status indicators and allow manual status updates
 - Consider adding status change history/log for compliance tracking
 
+**Redline Statuses:**
+
+The following statuses will be supported:
+1. **Reviewable** - Ready for initial review
+2. **Content Complete** - Content is finalized but not yet fully approved
+3. **Needs Revision** - Requires changes/corrections
+4. **Complete** - Fully approved and good-to-go
+
+(Additional statuses may be added later)
+
+**Queue-Based Review Interface:**
+
+A dedicated review UI that presents Embeds as a sequential stack for systematic review:
+
+**Core UI Features:**
+- **Stack/Queue view:** Display final rendered Previews of each Embed (leveraging existing modal preview functionality from Admin UI)
+- **Sequential navigation:** Step through Embeds one at a time in queue fashion
+- **Status actions:** Buttons/controls to update Redline Status for current Embed
+- **Preview display:** Show full rendered Embed content exactly as it appears on the page
+
+**Filtering:**
+- Filter queue by Redline Status (show only "Needs Revision", etc.)
+- Multiple status selection (show "Reviewable" + "Needs Revision")
+- "Show all" option
+
+**Sorting/Grouping Options:**
+
+1. **By Redline Status:**
+   - Group all Embeds by their current status
+   - Review all "Needs Revision" items together, then move to "Reviewable", etc.
+   - Natural workflow: tackle problems first, then review new content
+
+2. **By Page:**
+   - Review all Embeds within a specific Blueprint page in sequence
+   - Useful for page-level quality assurance
+   - Context: see how Embeds work together on the same page
+   - Identifies page-level inconsistencies or gaps
+
+3. **By Source (Blueprint Standard):**
+   - Review ALL Embeds that reference the same Blueprint Standard Source
+   - Ensure consistency of quality across different usage contexts
+   - Uncover patterns: recurring mistakes, common misconfigurations
+   - Identify if Source content itself needs improvement (if many Embeds using it have issues)
+
+**Technical Implementation Notes:**
+- Queue data structure: Array of Embed instances with metadata (localId, pageId, excerptId, status, preview content)
+- Leverage existing `getExcerptUsage()` resolver to gather all Embeds
+- Leverage existing `getVariableValues()` to get full Embed config for rendering
+- May need new resolver: `getRedlineQueue(filters, groupBy)` that returns sorted/filtered Embed list
+- Preview rendering can reuse existing ADF rendering logic from Admin page modals
+- Consider pagination/lazy loading for large queues (100+ Embeds)
+- Keyboard shortcuts for navigation (Next, Previous, Mark Complete, etc.)
+
+**User Workflow Example:**
+1. Admin opens Redlining Queue UI
+2. Filters to show only "Needs Revision" status
+3. Groups by Page to review one Blueprint at a time
+4. Steps through each Embed, reading preview
+5. Makes corrections (opens Embed in new tab to edit)
+6. Returns to queue, marks as "Content Complete"
+7. Moves to next Embed in queue
+
 **Next Steps:**
-- Define complete list of status types and their meanings (Complete, Needs Review, Draft, etc.)
-- Define other automatic trigger conditions beyond content changes
-- Design UI mockup for status management view in Admin page
+- Define other automatic trigger conditions beyond content changes (initial status assignment rules)
+- Design detailed UI mockup for queue interface (wireframe)
 - Determine complete storage schema for status data
 - Define user permissions/roles for status updates (who can mark Complete?)
+- Consider status change notifications/alerts
 
 ### Content Versioning and History
 - Track changes to Blueprint Standards over time
