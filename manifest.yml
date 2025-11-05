@@ -16,7 +16,7 @@ modules:
     - key: blueprint-standard-embed
       title: Blueprint Standard - Embed
       description: Embed a Blueprint Standard from another page (v7.13.0)
-      resource: include-display
+      resource: embed-display
       render: native
       resolver:
         function: resolver
@@ -49,8 +49,8 @@ resources:
   - key: source-config-resource
     path: src/source-config.jsx
 
-  - key: include-display
-    path: src/include-display.jsx
+  - key: embed-display
+    path: src/embed-display.jsx
 
   - key: admin-page
     path: src/admin-page.jsx

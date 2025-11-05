@@ -55,7 +55,7 @@ export async function injectContentPOC(req) {
     console.log(`[POC-INJECT] Got page version ${currentVersion}, body length: ${currentBody.length}`);
 
     // Step 2: Debug - Find ALL POC macros in the page
-    const allPocMacrosPattern = /<ac:structured-macro[^>]*ac:name="smart-excerpt-include-poc"[^>]*>/g;
+    const allPocMacrosPattern = /<ac:structured-macro[^>]*ac:name="blueprint-standard-embed-poc"[^>]*>/g;
     const allMatches = currentBody.match(allPocMacrosPattern);
     console.log(`[POC-INJECT] Found ${allMatches ? allMatches.length : 0} POC macro(s) in page storage`);
     if (allMatches) {
@@ -64,11 +64,11 @@ export async function injectContentPOC(req) {
       });
     }
 
-    // Step 2: Find the Include macro in storage format
-    // Look for: <ac:structured-macro ac:name="smart-excerpt-include-poc" ac:macro-id="MACRO_ID">
+    // Step 2: Find the Embed macro in storage format
+    // Look for: <ac:structured-macro ac:name="blueprint-standard-embed-poc" ac:macro-id="MACRO_ID">
     // Note: Order of attributes might vary, so we need flexible matching
     const macroPattern = new RegExp(
-      `(<ac:structured-macro[^>]*ac:name="smart-excerpt-include-poc"[^>]*ac:macro-id="${macroId}"[^>]*>.*?</ac:structured-macro>)`,
+      `(<ac:structured-macro[^>]*ac:name="blueprint-standard-embed-poc"[^>]*ac:macro-id="${macroId}"[^>]*>.*?</ac:structured-macro>)`,
       'gs'
     );
 
@@ -79,7 +79,7 @@ export async function injectContentPOC(req) {
 
       // Try to find if macro exists with different attribute order
       const reversedPattern = new RegExp(
-        `(<ac:structured-macro[^>]*ac:macro-id="${macroId}"[^>]*ac:name="smart-excerpt-include-poc"[^>]*>.*?</ac:structured-macro>)`,
+        `(<ac:structured-macro[^>]*ac:macro-id="${macroId}"[^>]*ac:name="blueprint-standard-embed-poc"[^>]*>.*?</ac:structured-macro>)`,
         'gs'
       );
       const reversedMatch = reversedPattern.exec(currentBody);
