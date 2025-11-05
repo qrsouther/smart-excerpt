@@ -202,6 +202,202 @@ A dedicated review UI that presents Embeds as a sequential stack for systematic 
 - Integration with external tools (Grammarly API, etc.)
 - Highlight potential issues in admin preview
 
+### Hypercritical Codebase Review (Post-Refactor)
+**Status:** Planned for after embed-display.jsx refactoring
+**Priority:** High (code quality audit)
+**Estimated Effort:** Large (comprehensive review, multiple sessions)
+
+**Philosophy:**
+"If a crusty old software engineer with 30 years of experience can't understand your code from reading ONLY the code, comments, and README - without any conversation context - then your code is not optimized."
+
+**Agent Role:**
+A specialized "greybeard software engineering master" agent that approaches the codebase with completely fresh eyes, hypercritical standards, and zero context from development conversations.
+
+**Constraints (What Agent Can Access):**
+✅ **Allowed:**
+- README.md and all documentation files
+- Source code files (.js, .jsx, .yml)
+- Code comments and JSDoc
+- File/folder structure
+- Import/export statements
+- Git commit messages (for understanding evolution)
+
+❌ **Not Allowed:**
+- This conversation history
+- Development decisions discussed verbally
+- Intent or rationale not documented in code
+- External context about "why we built it this way"
+
+**Core Principle:**
+If the agent cannot understand:
+- What a function does
+- Why a pattern was chosen
+- How components interact
+- What the data flow is
+- When a function should be called
+
+...then that is a FINDING. The code/comments are insufficient.
+
+**Review Methodology:**
+
+**Phase 1: Cold Start Comprehension Test**
+1. Start with README.md only
+2. Attempt to build mental model of system architecture
+3. Document: "What I understand" vs "What is unclear"
+4. Flag any architectural concepts not explained in README
+
+**Phase 2: File-by-File Deep Dive**
+For each file, answer:
+- **Purpose:** Can I determine what this file does from its name, location, and opening comments?
+- **Entry points:** Are the main functions clearly identified?
+- **Data flow:** Can I trace data through functions without getting lost?
+- **Side effects:** Are mutations, API calls, and state changes obvious?
+- **Error handling:** Are failure modes handled and documented?
+- **Edge cases:** Are boundary conditions handled and tested?
+
+**Phase 3: Cross-File Analysis**
+- **Dependencies:** Are import chains reasonable? Any circular dependencies?
+- **Coupling:** How tightly are components/modules coupled?
+- **Duplication:** Is code repeated when it should be shared?
+- **Consistency:** Do similar operations use similar patterns?
+
+**Phase 4: Pattern Recognition**
+- **React patterns:** Hooks usage, component composition, prop drilling
+- **State management:** React Query cache management, mutation patterns
+- **ADF manipulation:** Tree traversal patterns, node transformation logic
+- **Error boundaries:** How errors bubble up to users
+- **Performance:** Unnecessary re-renders, expensive operations, memo opportunities
+
+**Specific Review Targets:**
+
+**1. Code Clarity Issues:**
+- Functions >50 lines without internal comments explaining sections
+- Magic numbers/strings without explanation
+- Complex conditionals without explanation of business logic
+- Deeply nested code (>3 levels) without structural comments
+- Variable names that don't reveal intent
+- Functions that do multiple things (SRP violations)
+
+**2. Missing Documentation:**
+- Exported functions without JSDoc
+- Complex algorithms without explanation
+- Non-obvious data structures without schema documentation
+- API contracts not defined (resolver function signatures)
+- Component props not documented
+- Return values not explained
+
+**3. Code Smells:**
+- **Shotgun surgery:** Change requires touching many files
+- **Feature envy:** Function uses another module's data more than its own
+- **Data clumps:** Same 3+ parameters passed together repeatedly
+- **Long parameter lists:** Functions with 5+ parameters
+- **Divergent change:** File changes for multiple unrelated reasons
+- **Primitive obsession:** Using primitives instead of small objects
+
+**4. Anti-Patterns:**
+- useEffect dependency arrays that lie
+- Unhandled promise rejections
+- Silent error swallowing (empty catch blocks)
+- Mutation of props or state
+- Stale closures in event handlers
+- Missing loading/error states in UI
+- Prop drilling >3 levels deep
+
+**5. Architecture Issues:**
+- Responsibilities not clearly separated
+- Modules that know too much about others
+- God objects (classes/modules doing everything)
+- Hidden dependencies (globals, implicit state)
+- Unclear data ownership (who owns this state?)
+
+**6. Testing Gaps:**
+- Functions that would be hard to unit test (too many dependencies)
+- Business logic mixed with UI logic (untestable)
+- No obvious test strategy for complex logic
+- Side effects that can't be isolated
+
+**7. Performance Concerns:**
+- Expensive operations in render loops
+- Missing memoization on expensive calculations
+- N+1 query patterns
+- Large bundle size contributors
+- Inefficient algorithms (O(n²) where O(n) possible)
+
+**8. Security/Safety:**
+- User input not sanitized
+- Secrets in code
+- Unsafe ADF manipulation (XSS vectors)
+- Missing input validation
+- Error messages leaking implementation details
+
+**Output Format:**
+
+**Priority Ranking:**
+- **Critical:** Bugs, security issues, data loss risks
+- **High:** Major code smells, unclear architecture, hard-to-maintain code
+- **Medium:** Minor smells, missing documentation, minor inconsistencies
+- **Low:** Style issues, minor optimizations, nice-to-haves
+
+**For Each Finding:**
+```
+Priority: [Critical/High/Medium/Low]
+Category: [Clarity/Documentation/Smell/Anti-Pattern/Architecture/Testing/Performance/Security]
+File: src/path/to/file.js:123-145
+Issue: [One-sentence description]
+
+Current Code:
+[Relevant snippet]
+
+Problem:
+[Detailed explanation of what's wrong and why it matters]
+
+Suggested Fix:
+[Specific, actionable recommendation]
+
+Rationale:
+[Why this change improves the codebase]
+```
+
+**Success Criteria:**
+
+The review is successful if it produces:
+1. **Comprehensive findings:** Every file reviewed with specific feedback
+2. **Actionable recommendations:** Clear "before/after" suggestions
+3. **Prioritized work list:** Critical → High → Medium → Low
+4. **Self-documenting score:** % of code that was immediately understandable vs required deep analysis
+5. **Refactoring roadmap:** Ordered list of improvements with effort estimates
+
+**Metrics to Track:**
+- **Files reviewed:** Total count
+- **Findings per file:** Distribution (which files are worst?)
+- **Critical findings:** Count (should be 0 in production code)
+- **Documentation gaps:** Functions without adequate comments/JSDoc
+- **Cognitive complexity:** Files/functions that are "hard to understand"
+- **Test coverage gaps:** Functions that would be hard to test
+
+**Expected Duration:**
+- **Phase 1-2:** 2-3 hours (architecture + initial file review)
+- **Phase 3-4:** 3-4 hours (cross-cutting analysis + pattern recognition)
+- **Report compilation:** 1-2 hours
+- **Total:** 6-9 hours of agent work across multiple sessions
+
+**Post-Review Action:**
+Agent delivers comprehensive report. We then:
+1. Triage findings (agree/disagree with each)
+2. Create prioritized TODO items from findings
+3. Schedule fixes based on priority
+4. Re-run review after major fixes to measure improvement
+
+**Key Insight:**
+This review will be MORE VALUABLE after refactoring because:
+- Cleaner baseline means real issues stand out
+- Can validate refactoring decisions
+- Findings more actionable on already-modular code
+- Establishes quality bar for future code
+
+**When to Run:**
+After embed-display.jsx refactoring is complete and stable.
+
 ### Expandable Debug View Component
 **Status:** Planning
 **Priority:** Medium (developer productivity)
