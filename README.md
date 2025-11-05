@@ -2,6 +2,8 @@
 
 A high-performance Forge app for Confluence that enables reusable content blocks with variable substitution and automatic updates.
 
+**Project TODO:** See [TODO.md](TODO.md) for ongoing tasks and future enhancements.
+
 ---
 
 ## 🔧 Refactoring Progress (main branch)
