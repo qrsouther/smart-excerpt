@@ -1297,7 +1297,7 @@ const App = () => {
   if (isLoading) {
     return (
       <Fragment>
-        <Text><Strong>SmartExcerpt Admin v{APP_VERSION}</Strong></Text>
+        <Text><Strong>Blueprint Standards Admin v{APP_VERSION}</Strong></Text>
         <Text>Loading...</Text>
       </Fragment>
     );
@@ -1306,7 +1306,7 @@ const App = () => {
   if (error) {
     return (
       <Fragment>
-        <Text><Strong>SmartExcerpt Admin v{APP_VERSION}</Strong></Text>
+        <Text><Strong>Blueprint Standards Admin v{APP_VERSION}</Strong></Text>
         <Text>Error: {error}</Text>
       </Fragment>
     );
@@ -1346,7 +1346,7 @@ const App = () => {
       {/* Page Header */}
       <Box xcss={xcss({ marginBlockEnd: 'space.300', paddingBlockEnd: 'space.200', borderBlockEndColor: 'color.border', borderBlockEndStyle: 'solid', borderBlockEndWidth: 'border.width' })}>
         <Inline space="space.200" alignBlock="center" spread="space-between">
-          <Text><Strong>SmartExcerpt Admin v{APP_VERSION}</Strong></Text>
+          <Text><Strong>Blueprint Standards Admin v{APP_VERSION}</Strong></Text>
           <Button
             appearance="primary"
             onClick={() => setIsCategoryModalOpen(true)}
@@ -1386,7 +1386,7 @@ const App = () => {
                   }
                 }}
               >
-                Bulk Initialize All Excerpts
+                Bulk Initialize All Standards
               </Button>
             </Box>
           )}
@@ -1436,17 +1436,17 @@ const App = () => {
               onClick={handleCheckAllSources}
               isDisabled={checkAllSourcesMutation.isPending}
             >
-              {checkAllSourcesMutation.isPending ? 'Checking...' : '🔍 Check All Sources'}
+              {checkAllSourcesMutation.isPending ? 'Checking...' : '🔍 Check All Standards'}
             </Button>
 
             <Box xcss={xcss({ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 'space.050' })}>
-              <Tooltip content="Verifies all Include macros: checks if they exist on their pages, references valid excerpts, and have up-to-date content. Automatically cleans up orphaned entries and generates a complete CSV-exportable report with usage data, variable values, and rendered content.">
+              <Tooltip content="Verifies all Embed macros: checks if they exist on their pages, references valid standards, and have up-to-date content. Automatically cleans up orphaned entries and generates a complete CSV-exportable report with usage data, variable values, and rendered content.">
                 <Button
                   appearance="primary"
                   onClick={handleCheckAllIncludes}
                   isDisabled={includesProgress !== null}
                 >
-                  {includesProgress !== null ? 'Checking...' : '🔍 Check All Includes'}
+                  {includesProgress !== null ? 'Checking...' : '🔍 Check All Embeds'}
                 </Button>
               </Tooltip>
               {lastVerificationTime && (
@@ -1462,7 +1462,7 @@ const App = () => {
                 onClick={handleScanMultiExcerptIncludes}
                 isDisabled={isScanningMultiExcerpt}
               >
-                {isScanningMultiExcerpt ? 'Scanning...' : '📦 Scan MultiExcerpt Includes'}
+                {isScanningMultiExcerpt ? 'Scanning...' : '📦 Scan MultiExcerpt Embeds'}
               </Button>
             )}
           </Inline>

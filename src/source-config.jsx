@@ -303,7 +303,7 @@ const App = () => {
         <TabPanel>
           <FormSection>
             <Label labelFor={getFieldId('excerptName')}>
-              SmartExcerpt Source Name
+              Blueprint Standard Source Name
             </Label>
             <Textfield
               id={getFieldId('excerptName')}
@@ -314,7 +314,7 @@ const App = () => {
             />
 
             <Label labelFor={getFieldId('category')}>
-              SmartExcerpt Category
+              Blueprint Standard Category
             </Label>
             <Select
               id={getFieldId('category')}

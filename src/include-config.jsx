@@ -195,7 +195,7 @@ const App = () => {
   };
 
   if (isLoading) {
-    return <Text>Loading excerpts...</Text>;
+    return <Text>Loading standards...</Text>;
   }
 
   // Build excerpt options
@@ -228,7 +228,7 @@ const App = () => {
     <Form onSubmit={handleSubmit(onSubmit)}>
       <FormSection>
         <Label labelFor={getFieldId('excerptSelect')}>
-          Select Excerpt
+          Select Standard
         </Label>
         <Select
           id={getFieldId('excerptSelect')}
@@ -277,7 +277,7 @@ const App = () => {
 
       <FormFooter>
         <Button appearance="primary" type="submit">
-          Save Include
+          Save Embed
         </Button>
       </FormFooter>
     </Form>

@@ -85,7 +85,7 @@ const App = () => {
   if (!config || !config.excerptName) {
     return (
       <Fragment>
-        <Text>SmartExcerpt not configured. Click Edit to set up this excerpt.</Text>
+        <Text>Blueprint Standard not configured. Click Edit to set up this standard.</Text>
       </Fragment>
     );
   }

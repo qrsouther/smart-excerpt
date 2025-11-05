@@ -1247,10 +1247,10 @@ const App = () => {
       // In edit mode: Show the excerpt selector immediately
       return (
         <Stack space="space.200">
-          <Heading size="medium">Select an Excerpt to Include</Heading>
-          <Text>Choose a SmartExcerpt to display on this page:</Text>
+          <Heading size="medium">Select a Standard to Embed</Heading>
+          <Text>Choose a Blueprint Standard to display on this page:</Text>
           {isLoadingExcerpts ? (
-            <Spinner size="medium" label="Loading excerpts..." />
+            <Spinner size="medium" label="Loading standards..." />
           ) : (
             <Select
               options={availableExcerpts.map(ex => ({
@@ -1258,14 +1258,14 @@ const App = () => {
                 value: ex.id
               }))}
               onChange={handleExcerptSelection}
-              placeholder="Choose an excerpt..."
+              placeholder="Choose a standard..."
             />
           )}
         </Stack>
       );
     } else {
       // In view mode: Show simple message
-      return <Text>No excerpt selected. Edit this macro to choose one.</Text>;
+      return <Text>No standard selected. Edit this macro to choose one.</Text>;
     }
   }
 
@@ -1459,7 +1459,7 @@ const App = () => {
                 value: ex.id
               })).find(opt => opt.value === selectedExcerptId)}
               onChange={handleExcerptSelection}
-              placeholder="Choose an excerpt..."
+              placeholder="Choose a standard..."
             />
           )}
         </Box>
@@ -1608,7 +1608,7 @@ const App = () => {
           )}
 
           {(!excerpt.variables || excerpt.variables.length === 0) && (
-            <Text>No variables defined for this excerpt.</Text>
+            <Text>No variables defined for this standard.</Text>
           )}
         </TabPanel>
 
@@ -1666,7 +1666,7 @@ const App = () => {
               />
             </Box>
           ) : (
-            <Text>No toggles defined for this excerpt.</Text>
+            <Text>No toggles defined for this standard.</Text>
           )}
         </TabPanel>
 
@@ -1948,7 +1948,7 @@ const App = () => {
                 <Inline spread="space-between" alignBlock="start">
                   <Stack space="space.100">
                     <Heading size="medium">Update Available</Heading>
-                    <Text>The source content has been updated since this Include was last edited.</Text>
+                    <Text>The source content has been updated since this Embed was last edited.</Text>
                   </Stack>
                   <Stack space="space.100">
                     <Button
