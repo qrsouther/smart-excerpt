@@ -1152,39 +1152,52 @@ const App = () => {
 
     const checkStaleness = async () => {
       try {
-        // Get excerpt metadata to check updatedAt
+        // Get excerpt metadata to check contentHash
         const excerptResult = await invoke('getExcerpt', { excerptId: selectedExcerptId });
         if (!excerptResult.success || !excerptResult.excerpt) {
           return;
         }
 
-        // Get variable values to check lastSynced
+        // Get variable values to check syncedContentHash
         const varsResult = await invoke('getVariableValues', { localId: effectiveLocalId });
         if (!varsResult.success) {
           return;
         }
 
-        const sourceUpdatedAt = excerptResult.excerpt.updatedAt;
-        const lastSynced = varsResult.lastSynced;
+        const sourceContentHash = excerptResult.excerpt.contentHash;
+        const syncedContentHash = varsResult.syncedContentHash;
 
-        if (sourceUpdatedAt && lastSynced) {
-          const sourceDate = new Date(sourceUpdatedAt);
-          const syncedDate = new Date(lastSynced);
-          const stale = sourceDate > syncedDate;
+        // Hash-based staleness detection (primary method)
+        let stale = false;
+        if (sourceContentHash && syncedContentHash) {
+          // Compare content hashes - if different, content has actually changed
+          stale = sourceContentHash !== syncedContentHash;
+        } else {
+          // Fallback to timestamp comparison for backward compatibility
+          // (for Include instances created before hash implementation)
+          const sourceUpdatedAt = excerptResult.excerpt.updatedAt;
+          const lastSynced = varsResult.lastSynced;
 
-          setIsStale(stale);
-          setSourceLastModified(sourceUpdatedAt);
-          setIncludeLastSynced(lastSynced);
-
-          // If stale, store the raw latest content for diff view
-          // Show raw content with all toggle tags and variable placeholders visible
-          if (stale) {
-            // Store raw content without any processing
-            setLatestRenderedContent(excerptResult.excerpt.content);
+          if (sourceUpdatedAt && lastSynced) {
+            const sourceDate = new Date(sourceUpdatedAt);
+            const syncedDate = new Date(lastSynced);
+            stale = sourceDate > syncedDate;
           }
         }
+
+        setIsStale(stale);
+        setSourceLastModified(excerptResult.excerpt.updatedAt);
+        setIncludeLastSynced(varsResult.lastSynced);
+
+        // If stale, store the raw latest content for diff view and log it
+        if (stale) {
+          setLatestRenderedContent(excerptResult.excerpt.content);
+          console.log('[Include] Update available for:', excerptResult.excerpt.name);
+          console.log('[Include] Source hash:', sourceContentHash);
+          console.log('[Include] Synced hash:', syncedContentHash);
+        }
       } catch (err) {
-        console.error('Error checking staleness:', err);
+        console.error('[Include] Staleness check error:', err);
       }
     };
 

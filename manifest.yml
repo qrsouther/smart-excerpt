@@ -2,7 +2,7 @@ modules:
   macro:
     - key: smart-excerpt-source
       title: SmartExcerpt
-      description: Create a reusable content block that can be included on other pages (v7.7.0)
+      description: Create a reusable content block that can be included on other pages (v7.12.0)
       layout: bodied
       resource: source-display-resource
       render: native
@@ -15,7 +15,7 @@ modules:
 
     - key: smart-excerpt-include
       title: SmartExcerpt Include
-      description: Include a SmartExcerpt from another page (v7.7.0)
+      description: Include a SmartExcerpt from another page (v7.11.0)
       resource: include-display
       render: native
       resolver:

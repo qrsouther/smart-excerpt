@@ -6,7 +6,7 @@ A high-performance Forge app for Confluence that enables reusable content blocks
 
 ## 🔧 Refactoring Progress (main branch)
 
-**Current Version:** 6.54.0
+**Current Version:** 7.12.0
 **Status:** ALL PHASES COMPLETE ✅ (Phases 1-7) - Merged to main
 
 This branch contains a major refactoring effort to modularize the monolithic `index.js` file into maintainable, organized resolver modules.
@@ -106,7 +106,7 @@ All one-time migration code is clearly marked with `⚠️ ONE-TIME USE` warning
 
 ## 🎯 Current Implementation
 
-**Version:** 6.54.0
+**Version:** 7.12.0
 **Architecture:** Option 4 - Optimistic Rendering with Background Refresh
 
 ### How It Works
@@ -354,7 +354,7 @@ Each row contains:
 
 ## ✨ Features
 
-### Current Features (v6.54.0)
+### Current Features (v7.12.0)
 
 ✅ **ID-Based References** - UUID-based excerpt identification for rename-safe references
 
@@ -672,11 +672,25 @@ When viewing a published page with Include macros, the app automatically detects
 - Shows descriptive text about the update
 - Two action buttons: "Update" (primary) and "View Diff" (secondary)
 
-**How It Works:**
-1. Compares Source `updatedAt` timestamp with Include `lastSynced` timestamp
-2. If Source is newer, displays the update notification banner
-3. Click "View Diff" to see side-by-side comparison
-4. Click "Update" to refresh cached content immediately
+**How It Works (Hash-Based Detection):**
+1. **Content Hashing:** Each excerpt stores a SHA256 `contentHash` representing its semantic content (content, name, category, variables, toggles)
+2. **Synced Hash:** Each Include stores the `syncedContentHash` it last synced with
+3. **Comparison:** Compares Source `contentHash` with Include's `syncedContentHash`
+4. **Detection:** If hashes differ, content has actually changed (not just timestamps)
+5. **Fallback:** Uses timestamp comparison for backward compatibility with pre-hash Includes
+
+**Technical Details:**
+- **Hash includes:** Content (ADF), name, category, variables (with descriptions), toggles (with descriptions)
+- **Hash excludes:** ID, timestamps, source metadata (sourcePageId, sourceSpaceKey, sourceLocalId)
+- **Normalization:** Recursive JSON key sorting ensures consistent hashing regardless of ADF key ordering
+- **Algorithm:** SHA256 for cryptographic-strength comparison
+- **False Positive Prevention:** Publishing pages without changes doesn't trigger updates (see `src/utils/hash-utils.js`)
+
+**Why Hash-Based Detection:**
+- **Eliminates false positives:** Prevents "Update Available" when content hasn't actually changed
+- **ADF key ordering immunity:** Confluence may reorder JSON keys during publish - hash normalization handles this
+- **Semantic comparison:** Only meaningful changes trigger updates (not just page views or republishing)
+- **Performance:** Fast hash comparison without deep content inspection
 
 **Diff View Features:**
 - **Left side (gray border):** Your current rendered version with current toggle/variable settings
@@ -689,6 +703,7 @@ When viewing a published page with Include macros, the app automatically detects
 - Review changes before accepting updates
 - See raw Source syntax including all toggle tags and variable placeholders
 - Understand which content sections are controlled by which toggles
+- Debug staleness detection issues by comparing content hashes
 
 ---
 

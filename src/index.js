@@ -15,6 +15,7 @@ import {
   detectTogglesFromContent as detectTogglesResolver,
   getExcerpts as getExcerptsResolver,
   getExcerpt as getExcerptResolver,
+  debugExcerpt as debugExcerptResolver,
   getPageTitle as getPageTitleResolver,
   getVariableValues as getVariableValuesResolver,
   getCanonicalLocalId as getCanonicalLocalIdResolver,
@@ -96,6 +97,9 @@ resolver.define('getExcerpts', getExcerptsResolver);
 
 // Get specific excerpt
 resolver.define('getExcerpt', getExcerptResolver);
+
+// DEBUG: Get raw excerpt JSON for debugging (TEMPORARY)
+resolver.define('debugExcerpt', debugExcerptResolver);
 
 // Update excerpt content only (called automatically when Source macro body changes)
 resolver.define('updateExcerptContent', updateExcerptContentResolver);

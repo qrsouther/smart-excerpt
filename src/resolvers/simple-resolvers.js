@@ -90,6 +90,15 @@ export async function getExcerpt(req) {
       console.log('getExcerpt - excerpt category:', excerpt.category);
       console.log('getExcerpt - excerpt has content:', !!excerpt.content);
 
+      // DEBUG: Log complete JSON for specific excerpt
+      if (excerptId === 'f19f9c95-eb59-484f-bb48-6bf5a88ab7be' || excerptId === '5e7f419c-e862-478a-a368-8ac9a78e4640') {
+        console.log('========================================');
+        console.log('COMPLETE EXCERPT JSON:');
+        console.log('========================================');
+        console.log(JSON.stringify(excerpt, null, 2));
+        console.log('========================================');
+      }
+
       // Log panel types to debug custom panel rendering
       if (excerpt.content && excerpt.content.content) {
         excerpt.content.content.forEach((node, i) => {
@@ -106,6 +115,34 @@ export async function getExcerpt(req) {
     };
   } catch (error) {
     console.error('Error getting excerpt:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * DEBUG: Get raw excerpt JSON for debugging (TEMPORARY)
+ */
+export async function debugExcerpt(req) {
+  try {
+    const excerptId = req.payload.excerptId;
+    const excerpt = await storage.get(`excerpt:${excerptId}`);
+
+    console.log('========================================');
+    console.log('DEBUG EXCERPT JSON FOR:', excerptId);
+    console.log('========================================');
+    console.log(JSON.stringify(excerpt, null, 2));
+    console.log('========================================');
+
+    return {
+      success: true,
+      excerpt: excerpt,
+      json: JSON.stringify(excerpt, null, 2)
+    };
+  } catch (error) {
+    console.error('Error in debugExcerpt:', error);
     return {
       success: false,
       error: error.message

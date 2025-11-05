@@ -1,4 +1,4 @@
-import React, { Fragment, useEffect, useMemo } from 'react';
+import React, { Fragment, useEffect, useMemo, useRef } from 'react';
 import ForgeReconciler, { Text, useConfig, useProductContext, AdfRenderer } from '@forge/react';
 import { invoke } from '@forge/bridge';
 
@@ -14,9 +14,14 @@ const App = () => {
   // Access the macro body (rich text content)
   const macroBody = context?.extension?.macro?.body;
 
-  // Capture macroBody on first render and NEVER update it (to prevent re-render loops)
+  // Capture macroBody on first render and NEVER update it (to prevent re-render loops in view mode)
   const [frozenMacroBody, setFrozenMacroBody] = React.useState(null);
-  const hasInitialized = React.useRef(false);
+  const hasInitialized = useRef(false);
+
+  // Track last content hash to detect actual changes
+  const lastContentHashRef = useRef(null);
+  // Track if update is in progress to prevent duplicates
+  const updateInProgressRef = useRef(false);
 
   React.useEffect(() => {
     if (macroBody && !hasInitialized.current) {
@@ -26,18 +31,55 @@ const App = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Run only once on mount
 
-  // DISABLED: Staleness check was causing performance issues with dozens of macros
-  // TODO: Re-implement with proper deduplication, debouncing, and React Query caching
-  // useEffect(() => {
-  //   if (!config?.excerptId || !macroBody || context?.extension?.isEditing) {
-  //     return;
-  //   }
-  //   const checkAndUpdateContent = async () => {
-  //     const result = await invoke('getExcerpt', { excerptId: config.excerptId });
-  //     // ... comparison and update logic
-  //   };
-  //   checkAndUpdateContent();
-  // }, [config?.excerptId, macroBody, context?.extension?.isEditing]);
+  // Re-enabled body change detection with proper safeguards for staleness tracking
+  // This updates the excerpt timestamp when body content changes (after page publish/save)
+  useEffect(() => {
+    // Don't check during editing or if config not ready
+    if (!config?.excerptId || !macroBody || context?.extension?.isEditing || updateInProgressRef.current) {
+      return;
+    }
+
+    const checkAndUpdateContent = async () => {
+      try {
+        // Calculate content hash to detect actual changes (not just re-renders)
+        const contentStr = JSON.stringify(macroBody);
+        const currentHash = contentStr.length + '-' + contentStr.slice(0, 50); // Simple hash
+
+        // Skip if content hasn't changed
+        if (lastContentHashRef.current === currentHash) {
+          return;
+        }
+
+        // Mark update in progress to prevent duplicates
+        updateInProgressRef.current = true;
+
+        // Call updateExcerptContent to update timestamp if content changed
+        const result = await invoke('updateExcerptContent', {
+          excerptId: config.excerptId,
+          content: macroBody
+        });
+
+        if (result.success) {
+          // Update our hash tracker
+          lastContentHashRef.current = currentHash;
+          // Only log when actual update happened (not when hash matched in backend)
+          if (!result.unchanged) {
+            console.log('[Source] Updated:', config.excerptName);
+          }
+        } else {
+          console.error('[Source] Update failed:', result.error);
+        }
+      } catch (err) {
+        console.error('[Source] Error:', err);
+      } finally {
+        updateInProgressRef.current = false;
+      }
+    };
+
+    // Debounce: wait 1 second after content settles before checking
+    const timeoutId = setTimeout(checkAndUpdateContent, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [config?.excerptId, macroBody, context?.extension?.isEditing]);
 
   // If no configuration yet, show placeholder
   if (!config || !config.excerptName) {

@@ -11,6 +11,7 @@ import { storage } from '@forge/api';
 import { generateUUID } from '../utils.js';
 import { detectVariables, detectToggles } from '../utils/detection-utils.js';
 import { updateExcerptIndex } from '../utils/storage-utils.js';
+import { calculateContentHash } from '../utils/hash-utils.js';
 
 /**
  * Save excerpt (create or update)
@@ -56,7 +57,7 @@ export async function saveExcerpt(req) {
   // Get existing excerpt to preserve createdAt and existing source page if not provided
   const existingExcerpt = excerptId ? await storage.get(`excerpt:${id}`) : null;
 
-  // Store excerpt
+  // Create excerpt object (without hash first)
   const excerpt = {
     id: id,
     name: excerptName,
@@ -70,6 +71,9 @@ export async function saveExcerpt(req) {
     createdAt: existingExcerpt?.createdAt || new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
+
+  // Calculate and add content hash
+  excerpt.contentHash = calculateContentHash(excerpt);
 
   await storage.set(`excerpt:${id}`, excerpt);
 
@@ -94,10 +98,6 @@ export async function saveExcerpt(req) {
 export async function updateExcerptContent(req) {
   try {
     const { excerptId, content } = req.payload;
-
-    // Log the content being saved to help debug custom attributes
-    console.log('updateExcerptContent - excerptId:', excerptId);
-    console.log('updateExcerptContent - content ADF:', JSON.stringify(content, null, 2));
 
     // Load existing excerpt
     const excerpt = await storage.get(`excerpt:${excerptId}`);
@@ -130,14 +130,26 @@ export async function updateExcerptContent(req) {
       };
     });
 
-    // Update excerpt with new content
+    // Build updated excerpt object (without updatedAt yet)
     const updatedExcerpt = {
       ...excerpt,
       content: content,
       variables: variables,
-      toggles: toggles,
-      updatedAt: new Date().toISOString()
+      toggles: toggles
     };
+
+    // Calculate what the new content hash would be
+    const newContentHash = calculateContentHash(updatedExcerpt);
+
+    // Compare to existing hash - if unchanged, skip the update
+    if (excerpt.contentHash === newContentHash) {
+      console.log('updateExcerptContent - no changes detected for:', excerptId);
+      return { success: true, unchanged: true };
+    }
+
+    // Content actually changed - update the excerpt
+    updatedExcerpt.contentHash = newContentHash;
+    updatedExcerpt.updatedAt = new Date().toISOString();
 
     await storage.set(`excerpt:${excerptId}`, updatedExcerpt);
 
@@ -145,7 +157,7 @@ export async function updateExcerptContent(req) {
     await updateExcerptIndex(updatedExcerpt);
 
     console.log('Excerpt content auto-updated:', excerptId);
-    return { success: true };
+    return { success: true, unchanged: false };
   } catch (error) {
     console.error('Error updating excerpt content:', error);
     return {
