@@ -261,15 +261,141 @@ Add an expandable debug panel to various UI contexts that reveals detailed techn
 
 ## Technical Debt
 
+### Code Refactoring & Modularization (High Priority)
+**Status:** Overdue - needs immediate attention
+**Priority:** High
+**Estimated Effort:** Large (multi-day refactoring effort)
+
+**Background:**
+Several files have grown into monoliths (>500 lines) with mixed responsibilities. We successfully modularized index.js (was 3000+ lines), and now need to apply the same treatment to other bloated files.
+
+**Files Requiring Refactoring:**
+
+#### 1. embed-display.jsx (2,093 lines) - CRITICAL
+**Current Issues:**
+- Massive monolith with multiple concerns mixed together
+- 20+ helper functions for ADF processing
+- Complex state management with many useState/useEffect hooks
+- React Query hooks mixed with rendering logic
+- ADF manipulation utilities should be extracted
+
+**Refactoring Plan:**
+- Extract ADF processing utilities to `src/utils/adf-rendering-utils.js`:
+  - `cleanAdfForRenderer()`, `cleanupEmptyNodes()`, `filterContentByToggles()`
+  - `stripToggleMarkers()`, `substituteVariablesInAdf()`, `insertCustomParagraphsInAdf()`
+  - `insertInternalNotesInAdf()`, `extractParagraphsFromAdf()`
+- Extract React Query hooks to `src/hooks/embed-hooks.js`:
+  - `useExcerptData()`, `useSaveVariableValues()`, `useAvailableExcerpts()`
+  - `useVariableValues()`, `useCachedContent()`
+- Extract complex UI sections to separate components:
+  - `<VariableConfigPanel />` - Variable input section
+  - `<ToggleConfigPanel />` - Toggle selection section
+  - `<CustomInsertionsPanel />` - Free Write section
+  - `<InternalNotesPanel />` - Internal notes section
+  - `<UpdateAvailableBanner />` - Update notification
+  - `<DiffView />` - Side-by-side diff display
+- Move styles to `src/styles/embed-styles.js`
+
+**Target:** Break into 4-6 files, each <400 lines
+
+#### 2. admin-page.jsx (2,682 lines) - CRITICAL
+**Current Issues:**
+- Largest file in codebase
+- Multiple admin functions in single component
+- Many React Query hooks (excerpts, categories, usage, mutations)
+- Multiple distinct UI sections (excerpt list, usage details, migration tools)
+- Complex state management
+
+**Refactoring Plan:**
+- Extract React Query hooks to `src/hooks/admin-hooks.js`:
+  - All query and mutation hooks (useExcerptsQuery, useCategoriesQuery, etc.)
+- Split into feature-based components:
+  - `<ExcerptListSidebar />` - Left sidebar with excerpt list
+  - `<UsageDetailsPanel />` - Middle section showing usage for selected excerpt
+  - `<ExcerptPreviewModal />` - Right side preview
+  - `<CategoryManager />` - Category CRUD operations
+  - `<MigrationTools />` - Migration section (if kept)
+  - `<OrphanedItemsView />` - Orphaned sources/embeds display
+- Extract business logic to `src/utils/admin-utils.js`:
+  - CSV generation, filtering, sorting logic
+  - Category management helpers
+- Move styles to `src/styles/admin-styles.js`
+
+**Target:** Break into 8-10 files, main file <500 lines
+
+#### 3. verification-resolvers.js (690 lines)
+**Current Issues:**
+- Multiple verification functions in single file
+- `checkAllIncludes` is very long (~400 lines)
+- Mixed concerns: heartbeat tracking, staleness checking, async job management
+
+**Refactoring Plan:**
+- Split into focused files:
+  - `src/resolvers/heartbeat-resolvers.js` - Source heartbeat tracking
+  - `src/resolvers/staleness-resolvers.js` - Staleness detection logic
+  - `src/resolvers/verification-queue-resolvers.js` - Async queue job triggers
+- Extract common verification utilities to `src/utils/verification-utils.js`
+
+**Target:** 3 files, each <300 lines
+
+#### 4. simple-resolvers.js (660 lines)
+**Current Issues:**
+- Poorly named file (not actually "simple")
+- Mix of unrelated resolver functions
+- Should be split by feature domain
+
+**Refactoring Plan:**
+- Rename and split by domain:
+  - `src/resolvers/content-detection-resolvers.js` - Variable/toggle detection
+  - `src/resolvers/metadata-resolvers.js` - Page title, categories, etc.
+  - `src/resolvers/cache-resolvers.js` - Cached content operations
+- Keep only truly simple/utility resolvers in simple-resolvers.js
+
+**Target:** 3-4 files, each <250 lines
+
+#### 5. source-config.jsx (490 lines) - Medium Priority
+**Current Status:** Close to threshold but manageable
+**Watch for:** Adding more features will push it over 500 lines
+
+**Potential Refactoring:**
+- Extract detection logic to separate file if it grows
+- Split variable/toggle metadata editors into separate components
+
+**Refactoring Principles (Learned from index.js):**
+1. **Single Responsibility:** Each file should have one clear purpose
+2. **Feature Cohesion:** Group related functions together
+3. **Size Target:** Files should be <400 lines (max 500)
+4. **Clear Naming:** File names should clearly indicate their purpose
+5. **Minimize Dependencies:** Reduce circular dependencies between modules
+6. **Test Incrementally:** Refactor one section at a time, test thoroughly
+
+**Execution Strategy:**
+1. Start with embed-display.jsx (highest impact, most bloated)
+2. Extract utilities first (safest, easiest to test)
+3. Extract hooks second (contained side effects)
+4. Split components last (most complex, affects UI)
+5. Deploy and test after each major extraction
+6. Move to admin-page.jsx once embed-display is stable
+7. Tackle resolver files as time permits
+
+**Success Metrics:**
+- No file >600 lines
+- Average file size <300 lines
+- Improved test coverage for extracted utilities
+- Faster development velocity (easier to find and modify code)
+- Reduced merge conflicts (smaller, focused files)
+
 ### Migration Code Cleanup (ONE-TIME USE)
 **Status:** Marked for deletion after production migration complete
 
 Files to delete after production setup:
-- `src/resolvers/migration-resolvers.js` (entire file)
+- `src/resolvers/migration-resolvers.js` (entire file - 1,628 lines)
 - Migration-related code in `src/index.js` (lines 69-219)
 - Migration UI sections in `src/admin-page.jsx`
 
 See `src/resolvers/migration-resolvers.js:10-16` for complete deletion checklist.
+
+**Note:** Removing migration code will reduce codebase by ~2,000 lines.
 
 ---
 
