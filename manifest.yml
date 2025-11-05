@@ -1,8 +1,8 @@
 modules:
   macro:
     - key: smart-excerpt-source
-      title: SmartExcerpt
-      description: Create a reusable content block that can be included on other pages (v7.12.0)
+      title: Blueprint Standard - Source
+      description: Create a reusable Blueprint Standard that can be embedded on other pages (v7.13.0)
       layout: bodied
       resource: source-display-resource
       render: native
@@ -14,8 +14,8 @@ modules:
         viewportSize: max
 
     - key: smart-excerpt-include
-      title: SmartExcerpt Include
-      description: Include a SmartExcerpt from another page (v7.11.0)
+      title: Blueprint Standard - Embed
+      description: Embed a Blueprint Standard from another page (v7.13.0)
       resource: include-display
       render: native
       resolver:
@@ -23,7 +23,7 @@ modules:
 
   confluence:globalSettings:
     - key: smartexcerpt-admin
-      title: SmartExcerpt Admin
+      title: Blueprint Standards Admin
       resource: admin-page
       render: native
       resolver:

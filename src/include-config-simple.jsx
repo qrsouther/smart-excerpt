@@ -44,7 +44,7 @@ const App = () => {
 
   const onSubmit = async (formData) => {
     if (!selectedExcerptId) {
-      alert('Please select an excerpt');
+      alert('Please select a Blueprint Standard');
       return;
     }
 
@@ -85,11 +85,11 @@ const App = () => {
   };
 
   if (isLoading) {
-    return <Text>Loading excerpts...</Text>;
+    return <Text>Loading Blueprint Standards...</Text>;
   }
 
   // Build excerpt options
-  const excerptOptions = [{ label: '-- Select an excerpt --', value: '' }];
+  const excerptOptions = [{ label: '-- Select a Blueprint Standard --', value: '' }];
   const categorizedExcerpts = {};
 
   excerpts.forEach(excerpt => {

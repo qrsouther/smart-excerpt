@@ -199,7 +199,7 @@ const App = () => {
   }
 
   // Build excerpt options
-  const excerptOptions = [{ label: '-- Select an excerpt --', value: '' }];
+  const excerptOptions = [{ label: '-- Select a Blueprint Standard --', value: '' }];
   const categorizedExcerpts = {};
 
   excerpts.forEach(excerpt => {

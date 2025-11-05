@@ -111,18 +111,18 @@ const App = () => {
   if (!config || !config.excerptId) {
     return (
       <Fragment>
-        <Text>SmartExcerpt Include not configured.</Text>
-        <Text>Click the "..." menu and select "Edit" to choose a source excerpt.</Text>
+        <Text>Blueprint Standard - Embed not configured.</Text>
+        <Text>Click the "..." menu and select "Edit" to choose a Blueprint Standard.</Text>
       </Fragment>
     );
   }
 
   if (isLoading) {
-    return <Text>Loading excerpt...</Text>;
+    return <Text>Loading Blueprint Standard...</Text>;
   }
 
   if (!excerpt) {
-    return <Text>Error: Could not load excerpt</Text>;
+    return <Text>Error: Could not load Blueprint Standard</Text>;
   }
 
   // Get preview content with current variable values
@@ -193,7 +193,7 @@ const App = () => {
             </Fragment>
           ) : (
             <Fragment>
-              <Text>No variables defined for this excerpt.</Text>
+              <Text>No variables defined for this Blueprint Standard.</Text>
               <Text>{' '}</Text>
             </Fragment>
           )}
@@ -228,7 +228,7 @@ const App = () => {
               <Text><Em>Toggle functionality coming soon!</Em></Text>
             </Fragment>
           ) : (
-            <Text>No toggles defined for this excerpt.</Text>
+            <Text>No toggles defined for this Blueprint Standard.</Text>
           )}
         </TabPanel>
       </Tabs>

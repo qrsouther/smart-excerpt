@@ -1355,7 +1355,7 @@ const App = () => {
       // Fetch fresh excerpt
       const excerptResult = await invoke('getExcerpt', { excerptId: selectedExcerptId });
       if (!excerptResult.success || !excerptResult.excerpt) {
-        alert('Failed to fetch latest excerpt content');
+        alert('Failed to fetch latest Blueprint Standard content');
         return;
       }
 
@@ -2020,7 +2020,7 @@ const App = () => {
               <Inline spread="space-between" alignBlock="start">
                 <Stack space="space.100">
                   <Heading size="medium">Update Available</Heading>
-                  <Text>The source content has been updated since this Include was last edited.</Text>
+                  <Text>The source content has been updated since this Embed was last edited.</Text>
                 </Stack>
                 <Stack space="space.100">
                   <Button

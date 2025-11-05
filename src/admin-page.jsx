@@ -524,7 +524,7 @@ const App = () => {
 
     if (excerptsUsingCategory.length > 0) {
       const excerptNames = excerptsUsingCategory.map(e => e.name).join(', ');
-      alert(`Cannot delete category "${categoryName}". Please reassign the following excerpts first: ${excerptNames}`);
+      alert(`Cannot delete category "${categoryName}". Please reassign the following Blueprint Standards first: ${excerptNames}`);
       return;
     }
 
@@ -551,7 +551,7 @@ const App = () => {
       saveCategoriesMutation.mutate(updated);
 
       // Note: In a full implementation, you'd also update all excerpts using this category
-      alert(`Category renamed from "${oldName}" to "${trimmedName}". Note: Existing excerpts still use the old category name.`);
+      alert(`Category renamed from "${oldName}" to "${trimmedName}". Note: Existing Blueprint Standards still use the old category name.`);
     }
   };
 
@@ -601,14 +601,14 @@ const App = () => {
 
       // Build summary message
       let message = `✅ Check complete:\n`;
-      message += `• ${result.activeCount} active Source(s)\n`;
-      message += `• ${result.orphanedSources.length} orphaned Source(s)`;
+      message += `• ${result.activeCount} active Standard(s)\n`;
+      message += `• ${result.orphanedSources.length} orphaned Standard(s)`;
 
       if (result.staleEntriesRemoved > 0) {
         message += `\n\n🧹 Cleanup complete:\n`;
-        message += `• ${result.staleEntriesRemoved} stale Include entry/entries removed`;
+        message += `• ${result.staleEntriesRemoved} stale Embed entry/entries removed`;
       } else {
-        message += `\n\n✨ No stale Include entries found`;
+        message += `\n\n✨ No stale Embed entries found`;
       }
 
       console.log(message);
@@ -646,11 +646,11 @@ const App = () => {
       'Page URL',
       'Page Title',
       'Heading Anchor',
-      'Excerpt Name',
-      'Excerpt Category',
+      'Standard Name',
+      'Standard Category',
       'Status',
       'Last Synced',
-      'Excerpt Last Modified',
+      'Standard Last Modified',
       ...variableColumns.map(v => `Variable: ${v}`),
       ...toggleColumns.map(t => `Toggle: ${t}`),
       'Custom Insertions Count',
@@ -854,10 +854,10 @@ const App = () => {
 
       // Build summary message
       let message = `✅ Check complete:\n`;
-      message += `• ${summary.activeCount} active Include(s)\n`;
-      message += `• ${summary.orphanedCount} orphaned Include(s)\n`;
+      message += `• ${summary.activeCount} active Embed(s)\n`;
+      message += `• ${summary.orphanedCount} orphaned Embed(s)\n`;
       message += `• ${summary.brokenReferenceCount} broken reference(s)\n`;
-      message += `• ${summary.staleCount} stale Include(s)`;
+      message += `• ${summary.staleCount} stale Embed(s)`;
 
       if (summary.orphanedEntriesRemoved > 0) {
         message += `\n\n🧹 Cleanup complete:\n`;
@@ -871,13 +871,13 @@ const App = () => {
 
       // Offer to download CSV
       if (results.activeIncludes && results.activeIncludes.length > 0) {
-        if (confirm(`\nWould you like to download a CSV report of all ${summary.activeCount} Include instances?`)) {
+        if (confirm(`\nWould you like to download a CSV report of all ${summary.activeCount} Embed instances?`)) {
           const csv = generateIncludesCSV(results.activeIncludes);
           const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
           const link = document.createElement('a');
           const url = URL.createObjectURL(blob);
           link.setAttribute('href', url);
-          link.setAttribute('download', `smartexcerpt-includes-report-${new Date().toISOString().split('T')[0]}.csv`);
+          link.setAttribute('download', `blueprint-standard-embeds-report-${new Date().toISOString().split('T')[0]}.csv`);
           link.style.visibility = 'hidden';
           document.body.appendChild(link);
           link.click();
@@ -936,7 +936,7 @@ const App = () => {
       'Page ID',
       'Page Title',
       'Page URL',
-      'MultiExcerpt Name',
+      'MultiStandard Name',
       'Source Page Title'
     ];
 
@@ -1012,7 +1012,7 @@ const App = () => {
 
         // Offer to download CSV
         if (result.includeData && result.includeData.length > 0) {
-          if (confirm(`\nWould you like to download a CSV report of all ${result.summary.totalIncludes} MultiExcerpt Include instances?`)) {
+          if (confirm(`\nWould you like to download a CSV report of all ${result.summary.totalIncludes} MultiExcerpt Embed instances?`)) {
             const csv = generateMultiExcerptCSV(result.includeData);
             const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
             const link = document.createElement('a');
@@ -1088,7 +1088,7 @@ const App = () => {
       return;
     }
 
-    if (!confirm(`Import ${importJsonData.sourceCount} MultiExcerpt Sources into SmartExcerpt?`)) {
+    if (!confirm(`Import ${importJsonData.sourceCount} MultiExcerpt Sources into Blueprint Standards?`)) {
       return;
     }
 
@@ -1160,7 +1160,7 @@ const App = () => {
     }
 
     const confirmed = confirm(
-      `Create ${migrated.length} SmartExcerpt Source macros on the "Migrated Content" page?\n\n` +
+      `Create ${migrated.length} Blueprint Standard - Source macros on the "Migrated Content" page?\n\n` +
       `This will:\n` +
       `• Add each Source as a bodied macro with heading\n` +
       `• Organize them alphabetically\n` +
@@ -1221,11 +1221,11 @@ const App = () => {
     const pageId = '80150529'; // Migrated Content page
 
     const confirmed = confirm(
-      `Convert all MultiExcerpt macros on the "Migrated Content" page to SmartExcerpt Source macros?\n\n` +
+      `Convert all MultiExcerpt macros on the "Migrated Content" page to Blueprint Standard - Source macros?\n\n` +
       `This will:\n` +
       `• Find all MultiExcerpt macros on the page\n` +
       `• Extract their content (preserving all formatting)\n` +
-      `• Replace them with SmartExcerpt Source macros\n` +
+      `• Replace them with Blueprint Standard - Source macros\n` +
       `• Link to existing storage entries by name\n\n` +
       `Continue?`
     );
@@ -1252,7 +1252,7 @@ const App = () => {
         }
         message += `• Page ID: ${result.summary.pageId}\n`;
         message += `• Page version: ${result.summary.pageVersion}\n\n`;
-        message += `View the page to see the converted SmartExcerpt macros.`;
+        message += `View the page to see the converted Blueprint Standard macros.`;
 
         if (result.skipped && result.skipped.length > 0) {
           message += `\n\nSkipped:\n`;
@@ -1374,7 +1374,7 @@ const App = () => {
                   try {
                     const result = await invoke('bulkInitializeAllExcerpts', {});
                     console.log('Bulk init result:', result);
-                    alert(`Success! Initialized ${result.successful} out of ${result.total} excerpts.`);
+                    alert(`Success! Initialized ${result.successful} out of ${result.total} Blueprint Standards.`);
 
                     // Refresh the page to show updated names
                     window.location.reload();
@@ -1538,7 +1538,7 @@ const App = () => {
 
                   <Text>{' '}</Text>
                   <Text><Strong>Step 3: Convert MultiExcerpt Macros (Alternative)</Strong></Text>
-                  <Text>If you've pasted MultiExcerpt macros onto the page, convert them to SmartExcerpt macros.</Text>
+                  <Text>If you've pasted MultiExcerpt macros onto the page, convert them to Blueprint Standard macros.</Text>
 
                   <Inline space="space.200" alignBlock="center">
                     <Button
@@ -1567,7 +1567,7 @@ const App = () => {
         <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
           <SectionMessage appearance="information">
             <Stack space="space.200">
-              <Text><Strong>Checking All Includes...</Strong></Text>
+              <Text><Strong>Checking All Embeds...</Strong></Text>
               <Text><Em>⚠️ Please stay on this page until the check completes. Navigating away will cancel the operation.</Em></Text>
               {includesProgress ? (
                 <Fragment>
@@ -1581,7 +1581,7 @@ const App = () => {
                     {includesProgress.total > 0 && (
                       <Fragment>
                         <Text>|</Text>
-                        <Text>{includesProgress.processed} / {includesProgress.total} Includes processed</Text>
+                        <Text>{includesProgress.processed} / {includesProgress.total} Embeds processed</Text>
                       </Fragment>
                     )}
                     {includesProgress.processed > 0 && (
@@ -1608,7 +1608,7 @@ const App = () => {
         <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
           <SectionMessage appearance="information">
             <Stack space="space.200">
-              <Text><Strong>Scanning for MultiExcerpt Includes...</Strong></Text>
+              <Text><Strong>Scanning for MultiExcerpt Embeds...</Strong></Text>
               <Text><Em>⚠️ Please stay on this page until the scan completes. Navigating away will cancel the operation.</Em></Text>
               {multiExcerptProgress ? (
                 <Fragment>
@@ -1649,7 +1649,7 @@ const App = () => {
               <Text><Strong>⚠ {orphanedSources.length} Orphaned Source(s)</Strong></Text>
             )}
             {orphanedUsage.length > 0 && (
-              <Text><Strong>⚠ {orphanedUsage.length} Orphaned Include(s)</Strong></Text>
+              <Text><Strong>⚠ {orphanedUsage.length} Orphaned Embed(s)</Strong></Text>
             )}
             <Text>Scroll down to see orphaned items and remediation options.</Text>
           </SectionMessage>
@@ -1661,11 +1661,11 @@ const App = () => {
         {/* Left Sidebar - Excerpt List Table */}
         <Box xcss={leftSidebarStyles}>
           {sortedExcerpts.length === 0 && (searchTerm || categoryFilter !== 'All') ? (
-            <Text>No excerpts match your filters</Text>
+            <Text>No Blueprint Standards match your filters</Text>
           ) : !excerpts || excerpts.length === 0 ? (
             <Fragment>
-              <Text>No SmartExcerpt Sources found.</Text>
-              <Text>Create a SmartExcerpt Source macro on a page to get started.</Text>
+              <Text>No Blueprint Standard Sources found.</Text>
+              <Text>Create a Blueprint Standard - Source macro on a page to get started.</Text>
             </Fragment>
           ) : (
             <Stack space="space.100">
@@ -1712,7 +1712,7 @@ const App = () => {
             if (!selectedExcerptForDetails) {
               return (
                 <Box>
-                  <Text><Em>Select an excerpt from the list to view its usage details</Em></Text>
+                  <Text><Em>Select a Blueprint Standard from the list to view its usage details</Em></Text>
                 </Box>
               );
             }
@@ -1782,7 +1782,7 @@ const App = () => {
                   <Box>
                     <Inline space="space.100" alignBlock="center" spread="space-between">
                       <Inline space="space.100" alignBlock="center">
-                        <Text size="xlarge"><Strong>Excerpt:</Strong> {selectedExcerptForDetails.name}</Text>
+                        <Text size="xlarge"><Strong>Blueprint Standard:</Strong> {selectedExcerptForDetails.name}</Text>
                         <Lozenge>{selectedExcerptForDetails.category || 'General'}</Lozenge>
                       </Inline>
                       <Inline space="space.100" alignBlock="center">
@@ -1819,7 +1819,7 @@ const App = () => {
                             const excerptName = selectedExcerptForDetails.name;
                             const sourcePageId = selectedExcerptForDetails.sourcePageId;
 
-                            const confirmMessage = `Are you sure you want to PERMANENTLY DELETE the excerpt "${excerptName}" from the library?\n\nNote: This only removes the excerpt from this library. The CONTENT assigned to this excerpt is still stored as text content within the Source macro on its source page.`;
+                            const confirmMessage = `Are you sure you want to PERMANENTLY DELETE the Blueprint Standard "${excerptName}" from the library?\n\nNote: This only removes the Blueprint Standard from this library. The CONTENT assigned to this Blueprint Standard is still stored as text content within the Source macro on its source page.`;
 
                             if (confirm(confirmMessage)) {
                               try {
@@ -1830,16 +1830,16 @@ const App = () => {
                                   setSelectedExcerptForDetails(null);
 
                                   // Show success message with link to source page
-                                  const viewSource = confirm(`Excerpt "${excerptName}" has been permanently deleted from the library.\n\nWould you like to view the source page where the content is still stored?`);
+                                  const viewSource = confirm(`Blueprint Standard "${excerptName}" has been permanently deleted from the library.\n\nWould you like to view the source page where the content is still stored?`);
                                   if (viewSource) {
                                     await router.navigate(`/wiki/pages/viewpage.action?pageId=${sourcePageId}`);
                                   }
                                 } else {
-                                  alert('Failed to delete excerpt: ' + result.error);
+                                  alert('Failed to delete Blueprint Standard: ' + result.error);
                                 }
                               } catch (err) {
                                 console.error('Delete error:', err);
-                                alert('Error deleting excerpt: ' + err.message);
+                                alert('Error deleting Blueprint Standard: ' + err.message);
                               }
                             }
                           }}
@@ -1885,20 +1885,20 @@ const App = () => {
                   <SectionMessage appearance="information">
                     <Stack space="space.100">
                       <Text>
-                        The <Strong>{selectedExcerptForDetails.name}</Strong> excerpt is referenced using the SmartExcerpt Include macro on <Strong>{uniqueUsage.length}</Strong> {uniqueUsage.length === 1 ? 'page' : 'pages'}, with the following variables and/or toggles set within those pages.
+                        The <Strong>{selectedExcerptForDetails.name}</Strong> Blueprint Standard is referenced using the Blueprint Standard - Embed macro on <Strong>{uniqueUsage.length}</Strong> {uniqueUsage.length === 1 ? 'page' : 'pages'}, with the following variables and/or toggles set within those pages.
                       </Text>
                       <Text>
-                        The Status column shows whether each Include instance is up to date with the latest Source content. Use <Strong>Push Update</Strong> to update specific pages, or <Strong>Push to All Pages</Strong> to update all instances at once.
+                        The Status column shows whether each Embed instance is up to date with the latest Source content. Use <Strong>Push Update</Strong> to update specific pages, or <Strong>Push to All Pages</Strong> to update all instances at once.
                       </Text>
                       <Text>
-                        To edit variable values or toggle settings, navigate to the page by clicking its name and edit the Include macro directly.
+                        To edit variable values or toggle settings, navigate to the page by clicking its name and edit the Embed macro directly.
                       </Text>
                     </Stack>
                   </SectionMessage>
 
                   {/* Usage Table */}
                   {uniqueUsage.length === 0 ? (
-                    <Text><Em>This excerpt is not used on any pages yet</Em></Text>
+                    <Text><Em>This Blueprint Standard is not used on any pages yet</Em></Text>
                   ) : (
                     <DynamicTable
                       head={{ cells: headerCells }}
@@ -2063,7 +2063,7 @@ const App = () => {
               console.error('Error rendering middle section:', error);
               return (
                 <Box>
-                  <Text><Strong>Error loading excerpt details</Strong></Text>
+                  <Text><Strong>Error loading Blueprint Standard details</Strong></Text>
                   <Text>{error.message}</Text>
                 </Box>
               );
@@ -2116,8 +2116,8 @@ const App = () => {
             <Fragment>
               <Text>{' '}</Text>
               <Text>{' '}</Text>
-              <Text><Strong>⚠ Orphaned Includes</Strong></Text>
-              <Text>These Include macros reference Sources that no longer exist:</Text>
+              <Text><Strong>⚠ Orphaned Embeds</Strong></Text>
+              <Text>These Embed macros reference Sources that no longer exist:</Text>
               <Text>{' '}</Text>
               <Inline space="space.200" shouldWrap>
                 {orphanedUsage.map((orphaned) => (
@@ -2245,7 +2245,7 @@ const App = () => {
                 <Text>{' '}</Text>
 
                 <SectionMessage appearance="warning">
-                  <Text>This Source has been deleted, but {selectedExcerpt.referenceCount} Include macro(s) still reference it.</Text>
+                  <Text>This Source has been deleted, but {selectedExcerpt.referenceCount} Embed macro(s) still reference it.</Text>
                 </SectionMessage>
 
                 <Text><Strong>Affected Pages:</Strong></Text>
@@ -2256,8 +2256,8 @@ const App = () => {
 
                 <Text>You should either:</Text>
                 <Text>  1. Recreate the Source with the same name</Text>
-                <Text>  2. Update the Include macros to reference a different Source</Text>
-                <Text>  3. Remove the Include macros from the affected pages</Text>
+                <Text>  2. Update the Embed macros to reference a different Source</Text>
+                <Text>  3. Remove the Embed macros from the affected pages</Text>
               </Fragment>
             ) : (
               // Regular excerpt
@@ -2638,10 +2638,10 @@ const App = () => {
                   <SectionMessage appearance="information">
                     <Stack space="space.100">
                       <Text>
-                        The following preview is pulled from the SmartExcerpt Source macro's body content. The variables (in double curly braces) are filled out by users via the SmartExcerpt Include macros.
+                        The following preview is pulled from the Blueprint Standard - Source macro's body content. The variables (in double curly braces) are filled out by users via the Blueprint Standard - Embed macros.
                       </Text>
                       <Text>
-                        The toggle tags allow users to opt into certain settings or options within each excerpted solution, and by enabling a toggle all content that exists in the space between the opening toggle tag and closing toggle tag is revealed within the Include macro. Variables can be defined within toggles as well; as a result, generally a variable that is utilized ONLY within a toggle in a given Source macro will be optional rather than required.
+                        The toggle tags allow users to opt into certain settings or options within each excerpted solution, and by enabling a toggle all content that exists in the space between the opening toggle tag and closing toggle tag is revealed within the Embed macro. Variables can be defined within toggles as well; as a result, generally a variable that is utilized ONLY within a toggle in a given Source macro will be optional rather than required.
                       </Text>
                       <Text>
                         Click on View Source to make changes to the body content of the Source macro.

@@ -85,7 +85,7 @@ const App = () => {
     <Fragment>
       <Box xcss={containerStyle}>
         <Text>
-          🔄 <Strong>SmartExcerpt POC Placeholder</Strong> - Content will be injected when you publish this page
+          🔄 <Strong>Blueprint Standard POC Placeholder</Strong> - Content will be injected when you publish this page
         </Text>
       </Box>
     </Fragment>
