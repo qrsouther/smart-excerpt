@@ -31,6 +31,14 @@ const containerStyle = xcss({
   paddingTop: 'space.050'
 });
 
+// Horizontal separator line
+const separatorStyle = xcss({
+  borderTopWidth: 'border.width',
+  borderTopStyle: 'solid',
+  borderTopColor: 'color.border',
+  marginBlock: 'space.150'
+});
+
 // View switcher button group container (centered, no gap for joined appearance)
 const viewSwitcherStyle = xcss({
   display: 'flex',
@@ -214,6 +222,9 @@ export function EnhancedDiffView({
   return (
     <Box xcss={containerStyle}>
       <Stack space="space.200">
+        {/* Horizontal separator line */}
+        <Box xcss={separatorStyle} />
+
         {/* View switcher: Two wide buttons joined as split button */}
         <Box xcss={viewSwitcherStyle}>
           <Button
