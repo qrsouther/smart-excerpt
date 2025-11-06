@@ -233,13 +233,6 @@ export function EnhancedDiffView({
             <Box xcss={diffContainerStyle}>
               {renderLineDiff(oldText, newText)}
             </Box>
-
-            {/* Legend for line-based diff */}
-            <Box xcss={xcss({ padding: 'space.200', backgroundColor: 'color.background.information', borderRadius: 'border.radius' })}>
-              <Text>
-                <Strong>Note:</Strong> Toggle markers like <Code text="[ENABLED TOGGLE: name]" /> and <Code text="[DISABLED TOGGLE: name]" /> show content that may be hidden in your current configuration.
-              </Text>
-            </Box>
           </Stack>
         ) : (
           /* PREVIEW DIFF (toggled view) */
