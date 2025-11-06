@@ -64,7 +64,8 @@ const diffContainerStyle = xcss({
   borderWidth: 'border.width',
   borderStyle: 'solid',
   borderColor: 'color.border',
-  overflow: 'hidden'
+  overflow: 'hidden',
+  backgroundColor: 'elevation.surface' // White/neutral background for diff content
 });
 
 // Styles for diff lines
