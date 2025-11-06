@@ -17,7 +17,7 @@
  */
 
 import React, { useState } from 'react';
-import { Box, Heading, Text, Strong, Em, Stack, Toggle, AdfRenderer, Code, xcss } from '@forge/react';
+import { Box, Heading, Text, Strong, Em, Stack, Button, ButtonGroup, AdfRenderer, Code, xcss } from '@forge/react';
 import { diffLines } from 'diff';
 import {
   filterContentByToggles,
@@ -29,6 +29,21 @@ import {
 // Container styles (no background - now inside green SectionMessage)
 const containerStyle = xcss({
   paddingTop: 'space.200'
+});
+
+// View switcher button group container (centered)
+const viewSwitcherStyle = xcss({
+  display: 'flex',
+  justifyContent: 'center',
+  gap: 'space.100'
+});
+
+// Wide button style for tab-like appearance (50% width each)
+const wideButtonStyle = xcss({
+  flexGrow: 1,
+  flexShrink: 1,
+  flexBasis: '0%',
+  minWidth: '0'
 });
 
 const sideBoxStyle = xcss({
@@ -182,15 +197,22 @@ export function EnhancedDiffView({
   return (
     <Box xcss={containerStyle}>
       <Stack space="space.200">
-        {/* Large Toggle to switch between line-based diff and preview diff */}
-        <Box>
-          <Toggle
-            id="show-preview-toggle"
-            label="Show Preview Diff"
-            isChecked={showPreview}
-            onChange={() => setShowPreview(!showPreview)}
-            size="large"
-          />
+        {/* View switcher: Two wide buttons acting like tabs */}
+        <Box xcss={viewSwitcherStyle}>
+          <Button
+            xcss={wideButtonStyle}
+            appearance={!showPreview ? 'primary' : 'default'}
+            onClick={() => setShowPreview(false)}
+          >
+            Line Diff
+          </Button>
+          <Button
+            xcss={wideButtonStyle}
+            appearance={showPreview ? 'primary' : 'default'}
+            onClick={() => setShowPreview(true)}
+          >
+            Preview Diff
+          </Button>
         </Box>
 
         {/* Conditional rendering: Line-based diff OR Preview diff */}
