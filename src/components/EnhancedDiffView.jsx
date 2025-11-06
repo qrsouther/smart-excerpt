@@ -247,13 +247,10 @@ export function EnhancedDiffView({
         {!showPreview ? (
           /* LINE-BASED DIFF (default view) */
           <Stack space="space.200">
-            <Box>
-              <Heading size="small">Changes in This Update</Heading>
-              <Text>
-                Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray).
-                Includes all content, even from disabled toggles.
-              </Text>
-            </Box>
+            <Text>
+              Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray).
+              Includes all content, even from disabled toggles.
+            </Text>
 
             <Box xcss={diffContainerStyle}>
               {renderLineDiff(oldText, newText)}
