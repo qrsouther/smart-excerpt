@@ -30,6 +30,19 @@ const containerStyle = xcss({
   paddingTop: 'space.200'
 });
 
+// Two-column layout container
+const twoColumnStyle = xcss({
+  display: 'flex',
+  gap: 'space.300',
+  marginTop: 'space.200'
+});
+
+// Left and right column styles (50% each)
+const columnStyle = xcss({
+  flex: '1',
+  minWidth: '0' // Prevents flex items from overflowing
+});
+
 const sideBoxStyle = xcss({
   flex: '1',
   padding: 'space.200',
@@ -171,80 +184,81 @@ export function EnhancedDiffView({
 
   return (
     <Box xcss={containerStyle}>
-      <Stack space="space.400">
-        {/* Section 1: Line-based diff with color coding */}
-        <Box>
-          <Heading size="small">Changes in This Update</Heading>
-          <Text>
-            Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray).
-            Both enabled and disabled toggle content is shown for complete transparency.
-          </Text>
+      <Stack space="space.200">
+        {/* Two-column layout: Line diff (left) and Visual preview (right) */}
+        <Box xcss={twoColumnStyle}>
+          {/* LEFT COLUMN: Line-based diff with color coding */}
+          <Box xcss={columnStyle}>
+            <Stack space="space.200">
+              <Box>
+                <Heading size="small">Changes in This Update</Heading>
+                <Text>
+                  Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray).
+                </Text>
+              </Box>
 
-          <Box xcss={diffContainerStyle}>
-            {renderLineDiff(oldText, newText)}
+              <Box xcss={diffContainerStyle}>
+                {renderLineDiff(oldText, newText)}
+              </Box>
+            </Stack>
           </Box>
-        </Box>
 
-        {/* Section 2: Side-by-side visual preview */}
-        <Box>
-          <Heading size="small">Visual Preview</Heading>
-          <Text>
-            Side-by-side comparison showing how the content will look when rendered.
-            Gray text indicates content from disabled toggles (not in your current configuration).
-          </Text>
-
-          <Box xcss={previewContainerStyle}>
-            {/* Left side: Old version */}
-            <Box xcss={sideBoxStyle}>
-              <Box xcss={xcss({ marginBottom: 'space.200' })}>
+          {/* RIGHT COLUMN: Visual preview */}
+          <Box xcss={columnStyle}>
+            <Stack space="space.200">
+              <Box>
+                <Heading size="small">Visual Preview</Heading>
                 <Text>
-                  <Strong>Your Current Version</Strong>
-                </Text>
-                <Text size="small" as="p">
-                  (Synced: {oldSourceContent ? 'Available' : 'No previous sync'})
+                  Rendered content with ghost mode. Gray text = disabled toggles.
                 </Text>
               </Box>
 
-              {oldSourceContent ? (
-                <AdfRendererWithGhostToggles
-                  content={oldRenderedFull}
-                  toggleStates={toggleStates}
-                />
-              ) : (
-                <Text>
-                  <Em>No previous version available. This is your first sync.</Em>
-                </Text>
-              )}
-            </Box>
+              <Box xcss={previewContainerStyle}>
+                {/* Old version */}
+                <Box xcss={sideBoxStyle}>
+                  <Stack space="space.100">
+                    <Text>
+                      <Strong>Current</Strong>
+                    </Text>
 
-            {/* Right side: New version */}
-            <Box xcss={sideBoxStyle}>
-              <Box xcss={xcss({ marginBottom: 'space.200' })}>
-                <Text>
-                  <Strong>Updated Version Available</Strong>
-                </Text>
-                <Text size="small" as="p">
-                  (Source content has changed)
-                </Text>
+                    {oldSourceContent ? (
+                      <AdfRendererWithGhostToggles
+                        content={oldRenderedFull}
+                        toggleStates={toggleStates}
+                      />
+                    ) : (
+                      <Text>
+                        <Em>No previous sync</Em>
+                      </Text>
+                    )}
+                  </Stack>
+                </Box>
+
+                {/* New version */}
+                <Box xcss={sideBoxStyle}>
+                  <Stack space="space.100">
+                    <Text>
+                      <Strong>Updated</Strong>
+                    </Text>
+
+                    <AdfRendererWithGhostToggles
+                      content={newRenderedFull}
+                      toggleStates={toggleStates}
+                    />
+                  </Stack>
+                </Box>
               </Box>
-
-              <AdfRendererWithGhostToggles
-                content={newRenderedFull}
-                toggleStates={toggleStates}
-              />
-            </Box>
+            </Stack>
           </Box>
         </Box>
 
         {/* Legend for visual markers */}
-        <Box xcss={xcss({ marginTop: 'space.200', padding: 'space.200', backgroundColor: 'color.background.information', borderRadius: 'border.radius' })}>
+        <Box xcss={xcss({ padding: 'space.200', backgroundColor: 'color.background.information', borderRadius: 'border.radius' })}>
           <Stack space="space.100">
             <Text>
               <Strong>Legend:</Strong>
             </Text>
-            <Text>• ✓ = Enabled toggle (content is active in your Embed)</Text>
-            <Text>• 🔲 = Disabled toggle (content shown but not active in your Embed)</Text>
-            <Text>• Gray italic text = Content from disabled toggles</Text>
+            <Text>• ✓ = Enabled toggle (active in your Embed) • 🔲 = Disabled toggle (shown but not active)</Text>
           </Stack>
         </Box>
       </Stack>
