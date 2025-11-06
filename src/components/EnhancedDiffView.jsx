@@ -31,19 +31,33 @@ const containerStyle = xcss({
   paddingTop: 'space.050'
 });
 
-// View switcher button group container (centered)
+// View switcher button group container (centered, no gap for joined appearance)
 const viewSwitcherStyle = xcss({
   display: 'flex',
   justifyContent: 'center',
-  gap: 'space.100'
+  gap: '0'
 });
 
-// Wide button style for tab-like appearance (50% width each)
-const wideButtonStyle = xcss({
+// Left button style (Line Diff) - no right border, square right corners
+const leftButtonStyle = xcss({
   flexGrow: 1,
   flexShrink: 1,
   flexBasis: '0%',
-  minWidth: '0'
+  minWidth: '0',
+  borderRightWidth: '0',
+  borderTopRightRadius: '0',
+  borderBottomRightRadius: '0'
+});
+
+// Right button style (Preview Diff) - no left border, square left corners
+const rightButtonStyle = xcss({
+  flexGrow: 1,
+  flexShrink: 1,
+  flexBasis: '0%',
+  minWidth: '0',
+  borderLeftWidth: '0',
+  borderTopLeftRadius: '0',
+  borderBottomLeftRadius: '0'
 });
 
 const sideBoxStyle = xcss({
@@ -200,17 +214,17 @@ export function EnhancedDiffView({
   return (
     <Box xcss={containerStyle}>
       <Stack space="space.200">
-        {/* View switcher: Two wide buttons acting like tabs */}
+        {/* View switcher: Two wide buttons joined as split button */}
         <Box xcss={viewSwitcherStyle}>
           <Button
-            xcss={wideButtonStyle}
+            xcss={leftButtonStyle}
             appearance={!showPreview ? 'primary' : 'default'}
             onClick={() => setShowPreview(false)}
           >
             Line Diff
           </Button>
           <Button
-            xcss={wideButtonStyle}
+            xcss={rightButtonStyle}
             appearance={showPreview ? 'primary' : 'default'}
             onClick={() => setShowPreview(true)}
           >
