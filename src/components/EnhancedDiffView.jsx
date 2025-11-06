@@ -16,34 +16,19 @@
  * - Maximum disclosure with clear visual markers
  */
 
-import React from 'react';
-import { Box, Heading, Text, Strong, Em, Stack, xcss } from '@forge/react';
+import React, { useState } from 'react';
+import { Box, Heading, Text, Strong, Em, Stack, Toggle, AdfRenderer, Code, xcss } from '@forge/react';
 import { diffLines } from 'diff';
-import { AdfRendererWithGhostToggles } from './AdfRendererWithGhostToggles.jsx';
 import {
-  renderContentWithGhostToggles,
+  filterContentByToggles,
+  substituteVariablesInAdf,
+  cleanAdfForRenderer,
   extractTextWithToggleMarkers
 } from '../utils/adf-rendering-utils.js';
 
 // Container styles (no background - now inside green SectionMessage)
 const containerStyle = xcss({
   paddingTop: 'space.200'
-});
-
-// Two-column layout container
-const twoColumnStyle = xcss({
-  display: 'flex',
-  flexDirection: 'row',
-  gap: 'space.300',
-  marginTop: 'space.200'
-});
-
-// Left and right column styles (50% each)
-const columnStyle = xcss({
-  flexGrow: 1,
-  flexShrink: 1,
-  flexBasis: '0%',
-  minWidth: '0' // Prevents flex items from overflowing
 });
 
 const sideBoxStyle = xcss({
@@ -168,104 +153,124 @@ export function EnhancedDiffView({
   variableValues = {},
   toggleStates = {}
 }) {
-  // Render BOTH versions with ALL content visible (ghost mode)
-  // This applies variable substitutions and marks disabled toggles
-  const oldRenderedFull = renderContentWithGhostToggles(
-    oldSourceContent,
-    variableValues,
-    toggleStates
-  );
+  // State for toggling between line-based diff and preview diff
+  const [showPreview, setShowPreview] = useState(false);
 
-  const newRenderedFull = renderContentWithGhostToggles(
-    newSourceContent,
-    variableValues,
-    toggleStates
-  );
+  // Render content with variables substituted and only enabled toggles (for preview)
+  const renderForPreview = (content) => {
+    if (!content) return null;
+    let rendered = filterContentByToggles(content, toggleStates);
+    rendered = substituteVariablesInAdf(rendered, variableValues);
+    return cleanAdfForRenderer(rendered);
+  };
 
-  // Convert to text for side-by-side comparison
-  // Includes markers like [DISABLED TOGGLE: name] for visual distinction
-  const oldText = extractTextWithToggleMarkers(oldRenderedFull, toggleStates);
-  const newText = extractTextWithToggleMarkers(newRenderedFull, toggleStates);
+  const oldPreviewContent = renderForPreview(oldSourceContent);
+  const newPreviewContent = renderForPreview(newSourceContent);
+
+  // For line-based diff: apply variables and mark toggles, then extract text
+  const renderForLineDiff = (content) => {
+    if (!content) return '';
+    // Apply variable substitutions
+    let rendered = substituteVariablesInAdf(content, variableValues);
+    // Extract text with toggle markers (shows ALL toggles including disabled)
+    return extractTextWithToggleMarkers(rendered, toggleStates);
+  };
+
+  const oldText = renderForLineDiff(oldSourceContent);
+  const newText = renderForLineDiff(newSourceContent);
 
   return (
     <Box xcss={containerStyle}>
       <Stack space="space.200">
-        {/* Two-column layout: Line diff (left) and Visual preview (right) */}
-        <Box xcss={twoColumnStyle}>
-          {/* LEFT COLUMN: Line-based diff with color coding */}
-          <Box xcss={columnStyle}>
-            <Stack space="space.200">
-              <Box>
-                <Heading size="small">Changes in This Update</Heading>
-                <Text>
-                  Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray).
-                </Text>
-              </Box>
-
-              <Box xcss={diffContainerStyle}>
-                {renderLineDiff(oldText, newText)}
-              </Box>
-            </Stack>
-          </Box>
-
-          {/* RIGHT COLUMN: Visual preview */}
-          <Box xcss={columnStyle}>
-            <Stack space="space.200">
-              <Box>
-                <Heading size="small">Visual Preview</Heading>
-                <Text>
-                  Rendered content with ghost mode. Gray text = disabled toggles.
-                </Text>
-              </Box>
-
-              <Box xcss={previewContainerStyle}>
-                {/* Old version */}
-                <Box xcss={sideBoxStyle}>
-                  <Stack space="space.100">
-                    <Text>
-                      <Strong>Current</Strong>
-                    </Text>
-
-                    {oldSourceContent ? (
-                      <AdfRendererWithGhostToggles
-                        content={oldRenderedFull}
-                        toggleStates={toggleStates}
-                      />
-                    ) : (
-                      <Text>
-                        <Em>No previous sync</Em>
-                      </Text>
-                    )}
-                  </Stack>
-                </Box>
-
-                {/* New version */}
-                <Box xcss={sideBoxStyle}>
-                  <Stack space="space.100">
-                    <Text>
-                      <Strong>Updated</Strong>
-                    </Text>
-
-                    <AdfRendererWithGhostToggles
-                      content={newRenderedFull}
-                      toggleStates={toggleStates}
-                    />
-                  </Stack>
-                </Box>
-              </Box>
-            </Stack>
-          </Box>
+        {/* Large Toggle to switch between line-based diff and preview diff */}
+        <Box>
+          <Toggle
+            id="show-preview-toggle"
+            label="Show Preview Diff"
+            isChecked={showPreview}
+            onChange={() => setShowPreview(!showPreview)}
+            size="large"
+          />
         </Box>
 
-        {/* Legend for visual markers */}
-        <Box xcss={xcss({ padding: 'space.200', backgroundColor: 'color.background.information', borderRadius: 'border.radius' })}>
-          <Stack space="space.100">
-            <Text>
-              <Strong>Legend:</Strong>
-            </Text>
-            <Text>• ✓ = Enabled toggle (active in your Embed) • 🔲 = Disabled toggle (shown but not active)</Text>
+        {/* Conditional rendering: Line-based diff OR Preview diff */}
+        {!showPreview ? (
+          /* LINE-BASED DIFF (default view) */
+          <Stack space="space.200">
+            <Box>
+              <Heading size="small">Changes in This Update</Heading>
+              <Text>
+                Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray).
+                Includes all content, even from disabled toggles.
+              </Text>
+            </Box>
+
+            <Box xcss={diffContainerStyle}>
+              {renderLineDiff(oldText, newText)}
+            </Box>
+
+            {/* Legend for line-based diff */}
+            <Box xcss={xcss({ padding: 'space.200', backgroundColor: 'color.background.information', borderRadius: 'border.radius' })}>
+              <Text>
+                <Strong>Note:</Strong> Toggle markers like <Code text="[ENABLED TOGGLE: name]" /> and <Code text="[DISABLED TOGGLE: name]" /> show content that may be hidden in your current configuration.
+              </Text>
+            </Box>
           </Stack>
-        </Box>
+        ) : (
+          /* PREVIEW DIFF (toggled view) */
+          <Stack space="space.200">
+            <Box>
+              <Heading size="small">Visual Preview</Heading>
+              <Text>
+                Side-by-side comparison of rendered content. Shows only enabled toggles.
+              </Text>
+            </Box>
+
+            {/* Warning about disabled toggles */}
+            <Box xcss={xcss({ padding: 'space.200', backgroundColor: 'color.background.warning', borderRadius: 'border.radius' })}>
+              <Text>
+                <Strong>Note:</Strong> Changes in disabled toggles are not shown in this preview.
+                Toggle back to line-by-line diff to see all changes including disabled toggle content.
+              </Text>
+            </Box>
+
+            <Box xcss={previewContainerStyle}>
+              {/* Left: Current rendered content */}
+              <Box xcss={sideBoxStyle}>
+                <Stack space="space.200">
+                  <Text>
+                    <Strong>Current (What You See Now)</Strong>
+                  </Text>
+
+                  {oldPreviewContent ? (
+                    <AdfRenderer document={oldPreviewContent} />
+                  ) : (
+                    <Text>
+                      <Em>No previous version available</Em>
+                    </Text>
+                  )}
+                </Stack>
+              </Box>
+
+              {/* Right: Updated rendered content */}
+              <Box xcss={sideBoxStyle}>
+                <Stack space="space.200">
+                  <Text>
+                    <Strong>Updated (What You'll See After Update)</Strong>
+                  </Text>
+
+                  {newPreviewContent ? (
+                    <AdfRenderer document={newPreviewContent} />
+                  ) : (
+                    <Text>
+                      <Em>No new content available</Em>
+                    </Text>
+                  )}
+                </Stack>
+              </Box>
+            </Box>
+          </Stack>
+        )}
       </Stack>
     </Box>
   );
