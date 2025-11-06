@@ -246,7 +246,7 @@ export function EnhancedDiffView({
         {/* Conditional rendering: Line-based diff OR Preview diff */}
         {!showPreview ? (
           /* LINE-BASED DIFF (default view) */
-          <Stack space="space.200">
+          <Stack space="space.100">
             <Text>
               Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray).
               Includes all content, even from disabled toggles.
