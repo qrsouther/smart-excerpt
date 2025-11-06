@@ -55,6 +55,55 @@ See `ENHANCED_DIFF_VIEW_TODO.md` for comprehensive 8-phase implementation plan i
 
 ---
 
+### React Hook Form + Zod Migration
+**Status:** Planned - Implementation Plan Ready
+**Priority:** Medium (code quality / developer experience)
+**Estimated Effort:** Large (16-22 hours / 2-3 days)
+
+**Background:**
+Current form state management uses 15+ individual `useState` hooks per form with manual validation scattered throughout. This creates verbose boilerplate, inconsistent validation, and performance issues.
+
+**Goal:**
+Replace manual state management with industry-standard React Hook Form + Zod across all configuration forms for:
+- Automatic form state management
+- Type-safe schema validation
+- Built-in dirty/touched tracking
+- Performance optimization (minimal re-renders)
+- Consistent validation patterns
+
+**Implementation Plan:**
+See `REACT_HOOK_FORM_ZOD_TODO.md` for comprehensive 9-phase implementation plan including:
+- Phase 1: Setup & dependencies (install packages)
+- Phase 2: Create shared Zod schemas (form-schemas.js)
+- Phase 3: Refactor Embed config form (embed-display.jsx)
+- Phase 4: Refactor Source config form (source-config.jsx)
+- Phase 5: Refactor Admin forms (admin-page.jsx)
+- Phase 6: Add advanced validation (cross-field, async, conditional)
+- Phase 7: Performance optimization
+- Phase 8: Testing & validation
+- Phase 9: Documentation & cleanup
+
+**Migration Strategy:** Incremental (one form at a time, lowest to highest risk)
+
+**Dependencies:**
+- react-hook-form (~24KB)
+- zod (~55KB)
+- @hookform/resolvers (~5KB)
+
+**Success Criteria:**
+- ✅ ~200 lines of useState boilerplate removed
+- ✅ Consistent validation across all forms
+- ✅ Better performance (fewer re-renders)
+- ✅ Type-safe form data
+- ✅ Easier to add new fields
+
+**Next Steps:**
+1. Review implementation plan in REACT_HOOK_FORM_ZOD_TODO.md
+2. Complete Enhanced Diff View first (smaller, user-facing)
+3. Begin Phase 1 when ready for refactoring sprint
+
+---
+
 ### Reincorporate Documentation Tab into Source Config Modal
 **Status:** Planned for tomorrow
 **Priority:** High
