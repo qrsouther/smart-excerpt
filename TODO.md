@@ -6,6 +6,55 @@ This file tracks ongoing tasks, future enhancements, and technical debt for the 
 
 ## Current Sprint / Active Work
 
+### Enhanced Diff View with Ghost Mode Rendering
+**Status:** Not Started - Implementation Plan Ready
+**Priority:** High
+**Estimated Effort:** Large (12-15 hours / 1.5-2 days)
+
+**Background:**
+Current diff view compares "apples to oranges" - rendered content on left vs raw source with `{{variable}}` tags on right. Users cannot meaningfully see what changed. Additionally, changes in disabled toggle blocks are invisible, causing false "nothing changed" diffs.
+
+**Goal:**
+Replace with professional diff that:
+- Compares old Source vs new Source (both rendered with same variable values)
+- Shows ALL content including disabled toggles (grayed out)
+- Provides word-level green/red highlighting (like GitHub diffs)
+- Prevents "blind updates" where changes exist only in disabled content
+
+**Key Innovation - Ghost Mode Rendering:**
+Disabled toggle content is visible in BOTH sides of diff (gray italic text) so users see changes even in content they're not currently using. Solves the "Update Available but looks identical" problem.
+
+**Implementation Plan:**
+See `ENHANCED_DIFF_VIEW_TODO.md` for comprehensive 8-phase implementation plan including:
+- Phase 1: Add `syncedContent` to storage (store old Source ADF, not just hash)
+- Phase 2: Install react-diff-viewer dependency
+- Phase 3: Create ghost mode rendering functions (show disabled toggles in gray)
+- Phase 4: Create ADF visual renderer with gray styling
+- Phase 5: Create EnhancedDiffView component (text diff + visual preview)
+- Phase 6: Integrate into embed-display.jsx
+- Phase 7: Testing (6 scenarios including edge cases)
+- Phase 8: Storage migration strategy (lazy migration)
+
+**Dependencies:**
+- `react-diff-viewer` npm package (~30KB)
+- Existing ADF utils (substituteVariablesInAdf, etc.)
+
+**Success Criteria:**
+- ✅ Word-level diff with green/red highlighting
+- ✅ Side-by-side visual preview
+- ✅ Changes in disabled toggles ARE visible (grayed out)
+- ✅ No "false identical" diffs
+- ✅ Clear visual distinction enabled vs disabled content
+- ✅ Performance <500ms render time
+
+**Next Steps:**
+1. Review implementation plan in ENHANCED_DIFF_VIEW_TODO.md
+2. Begin Phase 1 (storage schema update)
+3. Install react-diff-viewer
+4. Implement ghost mode rendering functions
+
+---
+
 ### Reincorporate Documentation Tab into Source Config Modal
 **Status:** Planned for tomorrow
 **Priority:** High
