@@ -17,7 +17,7 @@
  */
 
 import React from 'react';
-import { Box, Heading, Text, Strong, Stack, xcss } from '@forge/react';
+import { Box, Heading, Text, Strong, Em, Stack, xcss } from '@forge/react';
 import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer';
 import { AdfRendererWithGhostToggles } from './AdfRendererWithGhostToggles.jsx';
 import {
@@ -168,7 +168,7 @@ export function EnhancedDiffView({
                 />
               ) : (
                 <Text>
-                  <em>No previous version available. This is your first sync.</em>
+                  <Em>No previous version available. This is your first sync.</Em>
                 </Text>
               )}
             </Box>
@@ -194,16 +194,14 @@ export function EnhancedDiffView({
 
         {/* Legend for visual markers */}
         <Box xcss={xcss({ marginTop: 'space.200', padding: 'space.200', backgroundColor: 'color.background.information', borderRadius: 'border.radius' })}>
-          <Text>
-            <Strong>Legend:</Strong>
-          </Text>
-          <Text as="div">
-            <ul>
-              <li>✓ = Enabled toggle (content is active in your Embed)</li>
-              <li>🔲 = Disabled toggle (content shown but not active in your Embed)</li>
-              <li>Gray italic text = Content from disabled toggles</li>
-            </ul>
-          </Text>
+          <Stack space="space.100">
+            <Text>
+              <Strong>Legend:</Strong>
+            </Text>
+            <Text>• ✓ = Enabled toggle (content is active in your Embed)</Text>
+            <Text>• 🔲 = Disabled toggle (content shown but not active in your Embed)</Text>
+            <Text>• Gray italic text = Content from disabled toggles</Text>
+          </Stack>
         </Box>
       </Stack>
     </Box>

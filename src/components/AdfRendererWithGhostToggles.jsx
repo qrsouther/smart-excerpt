@@ -16,7 +16,7 @@
  */
 
 import React from 'react';
-import { Box, Text, Em, Strong, Lozenge, xcss } from '@forge/react';
+import { Box, Text, Em, Strong, Lozenge, Code, xcss } from '@forge/react';
 
 // Styles for disabled toggle blocks
 const disabledToggleStyle = xcss({
@@ -161,19 +161,13 @@ export function AdfRendererWithGhostToggles({ content, toggleStates }) {
       );
     }
 
-    // Table
+    // Table - show placeholder (complex rendering not supported in ghost mode)
     if (node.type === 'table') {
       return (
-        <Box key={key} xcss={xcss({ marginBlock: 'space.200', borderWidth: 'border.width', borderStyle: 'solid', borderColor: 'color.border' })}>
-          {node.content?.map((row, rowIdx) => (
-            <Box key={rowIdx} xcss={xcss({ display: 'flex', borderBottom: 'border.width solid', borderColor: 'color.border' })}>
-              {row.content?.map((cell, cellIdx) => (
-                <Box key={cellIdx} xcss={xcss({ flex: '1', padding: 'space.100' })}>
-                  {cell.content?.map((child, childIdx) => renderNode(child, childIdx))}
-                </Box>
-              ))}
-            </Box>
-          ))}
+        <Box key={key} xcss={xcss({ marginBlock: 'space.200', padding: 'space.200', backgroundColor: 'color.background.neutral', borderRadius: 'border.radius' })}>
+          <Text>
+            <Em>[Table content - view in visual preview below]</Em>
+          </Text>
         </Box>
       );
     }
@@ -209,16 +203,16 @@ export function AdfRendererWithGhostToggles({ content, toggleStates }) {
             textNode = <Em key={key}>{textNode}</Em>;
           }
           if (mark.type === 'code') {
-            textNode = <code key={key}>{textNode}</code>;
+            textNode = <Code key={key}>{textNode}</Code>;
           }
         });
       }
 
-      return <span key={key}>{textNode}</span>;
+      return <Text key={key}>{textNode}</Text>;
     }
 
     if (node.type === 'hardBreak') {
-      return <br key={key} />;
+      return <Text key={key}>{'\n'}</Text>;
     }
 
     return null;
