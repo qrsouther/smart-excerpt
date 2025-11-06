@@ -849,7 +849,7 @@ const App = () => {
                   <Inline spread="space-between" alignBlock="center">
                     <Stack space="space.050">
                       <Heading size="small">Update Available</Heading>
-                      <Text>The source content has been updated since this Embed was last edited.</Text>
+                      <Text>The Source content has been updated since this Embed was last edited.</Text>
                     </Stack>
                     <ButtonGroup>
                       <Button
@@ -901,7 +901,7 @@ const App = () => {
                 <Inline spread="space-between" alignBlock="center">
                   <Stack space="space.050">
                     <Heading size="small">Update Available</Heading>
-                    <Text>The source content has been updated since this Embed was last edited.</Text>
+                    <Text>The Source content has been updated since this Embed was last edited.</Text>
                   </Stack>
                   <ButtonGroup>
                     <Button
