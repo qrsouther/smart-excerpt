@@ -155,7 +155,9 @@ export async function getVariableValues(req) {
       customInsertions: data.customInsertions || [],
       internalNotes: data.internalNotes || [],
       lastSynced: data.lastSynced,
-      excerptId: data.excerptId
+      excerptId: data.excerptId,
+      syncedContentHash: data.syncedContentHash,  // Hash for staleness detection
+      syncedContent: data.syncedContent  // Old Source ADF for diff comparison
     };
   } catch (error) {
     console.error('Error getting variable values:', error);

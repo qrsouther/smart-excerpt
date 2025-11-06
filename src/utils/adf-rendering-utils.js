@@ -687,3 +687,197 @@ export const extractParagraphsFromAdf = (adfNode) => {
   traverseContent(adfNode);
   return paragraphs;
 };
+
+/**
+ * Render ADF content with ALL toggles visible (ghost mode)
+ *
+ * Unlike filterContentByToggles which removes disabled content entirely,
+ * this function keeps ALL content but marks disabled toggle blocks with metadata
+ * so they can be styled differently (gray text, etc.)
+ *
+ * Used for diff view where users need to see changes in disabled toggles.
+ *
+ * @param {Object} adfContent - ADF content to render
+ * @param {Object} variableValues - Variable values for substitution
+ * @param {Object} toggleStates - Toggle states (enabled/disabled)
+ * @returns {Object} Rendered ADF with all content visible, disabled toggles marked
+ */
+export function renderContentWithGhostToggles(adfContent, variableValues, toggleStates) {
+  if (!adfContent) return adfContent;
+
+  // Step 1: Apply variable substitutions
+  let rendered = substituteVariablesInAdf(adfContent, variableValues);
+
+  // Step 2: Mark disabled toggle blocks (DON'T remove them)
+  rendered = markDisabledToggleBlocks(rendered, toggleStates);
+
+  return rendered;
+}
+
+/**
+ * Mark disabled toggle blocks with metadata
+ *
+ * Walks ADF tree and adds 'data-disabled-toggle' attribute to expand nodes
+ * that represent disabled toggles. This allows visual styling without removing content.
+ *
+ * @param {Object} adfContent - ADF content to process
+ * @param {Object} toggleStates - Toggle states (enabled/disabled)
+ * @returns {Object} ADF with disabled toggle blocks marked
+ */
+function markDisabledToggleBlocks(adfContent, toggleStates) {
+  function processNode(node) {
+    if (!node) return node;
+
+    const processedNode = { ...node };
+
+    // Check if this is a toggle block (expand node with {{toggle:name}} title)
+    if (node.type === 'expand' && node.attrs?.title?.includes('{{toggle:')) {
+      const toggleMatch = node.attrs.title.match(/\{\{toggle:([^}]+)\}\}/);
+      const toggleName = toggleMatch ? toggleMatch[1] : null;
+
+      if (toggleName) {
+        const isDisabled = !toggleStates[toggleName];
+
+        if (isDisabled) {
+          // Add metadata to mark this as a disabled toggle
+          processedNode.attrs = {
+            ...processedNode.attrs,
+            'data-disabled-toggle': true,
+            'data-toggle-name': toggleName
+          };
+        }
+      }
+    }
+
+    // Recursively process children
+    if (processedNode.content && Array.isArray(processedNode.content)) {
+      processedNode.content = processedNode.content.map(processNode);
+    }
+
+    return processedNode;
+  }
+
+  return processNode(adfContent);
+}
+
+/**
+ * Extract plain text from ADF with visual toggle markers
+ *
+ * Converts ADF to plain text but adds visual markers (🔲/✓) to show
+ * which toggle blocks are enabled vs disabled. Used for text-based diff view.
+ *
+ * Output example:
+ * ```
+ * Regular paragraph text here.
+ *
+ * ✓ [ENABLED TOGGLE: premium-features]
+ * Content inside enabled toggle.
+ * ✓ [END ENABLED TOGGLE]
+ *
+ * 🔲 [DISABLED TOGGLE: enterprise-options]
+ * Content inside disabled toggle (shown in gray in UI).
+ * 🔲 [END DISABLED TOGGLE]
+ * ```
+ *
+ * @param {Object} adfContent - ADF content to convert
+ * @param {Object} toggleStates - Toggle states (enabled/disabled)
+ * @returns {string} Plain text with toggle markers
+ */
+export function extractTextWithToggleMarkers(adfContent, toggleStates) {
+  let text = '';
+
+  function processNode(node) {
+    if (!node) return;
+
+    // Extract text from paragraphs
+    if (node.type === 'paragraph') {
+      const paragraphText = node.content
+        ?.map(c => {
+          if (c.type === 'text') return c.text || '';
+          if (c.type === 'hardBreak') return '\n';
+          return '';
+        })
+        .join('');
+      if (paragraphText.trim()) {
+        text += paragraphText + '\n';
+      }
+    }
+
+    // Handle headings
+    if (node.type === 'heading') {
+      const headingText = node.content
+        ?.map(c => c.text || '')
+        .join('');
+      if (headingText.trim()) {
+        text += '\n' + '#'.repeat(node.attrs?.level || 1) + ' ' + headingText + '\n\n';
+      }
+    }
+
+    // Handle toggle blocks (expand nodes)
+    if (node.type === 'expand') {
+      const toggleMatch = node.attrs?.title?.match(/\{\{toggle:([^}]+)\}\}/);
+      const toggleName = toggleMatch ? toggleMatch[1] : node.attrs?.title || 'unknown';
+      const isDisabled = node.attrs?.['data-disabled-toggle'] || !toggleStates[toggleName];
+
+      // Add visual marker for toggle
+      if (isDisabled) {
+        text += `\n🔲 [DISABLED TOGGLE: ${toggleName}]\n`;
+      } else {
+        text += `\n✓ [ENABLED TOGGLE: ${toggleName}]\n`;
+      }
+
+      // Process content inside toggle
+      if (node.content && Array.isArray(node.content)) {
+        node.content.forEach(processNode);
+      }
+
+      // Close marker
+      if (isDisabled) {
+        text += `🔲 [END DISABLED TOGGLE]\n\n`;
+      } else {
+        text += `✓ [END ENABLED TOGGLE]\n\n`;
+      }
+
+      return; // Don't process children again
+    }
+
+    // Handle panels
+    if (node.type === 'panel') {
+      text += '\n[PANEL]\n';
+      if (node.content && Array.isArray(node.content)) {
+        node.content.forEach(processNode);
+      }
+      text += '[END PANEL]\n\n';
+      return;
+    }
+
+    // Handle lists
+    if (node.type === 'bulletList' || node.type === 'orderedList') {
+      text += '\n';
+      if (node.content && Array.isArray(node.content)) {
+        node.content.forEach((listItem, idx) => {
+          const bullet = node.type === 'bulletList' ? '•' : `${idx + 1}.`;
+          text += `${bullet} `;
+          processNode(listItem);
+        });
+      }
+      text += '\n';
+      return;
+    }
+
+    if (node.type === 'listItem') {
+      if (node.content && Array.isArray(node.content)) {
+        node.content.forEach(processNode);
+      }
+      return;
+    }
+
+    // Recursively process children for other node types
+    if (node.content && Array.isArray(node.content)) {
+      node.content.forEach(processNode);
+    }
+  }
+
+  processNode(adfContent);
+  return text.trim();
+}

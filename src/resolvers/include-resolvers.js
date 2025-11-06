@@ -27,9 +27,10 @@ export async function saveVariableValues(req) {
   try {
     const { localId, excerptId, variableValues, toggleStates, customInsertions, internalNotes, pageId: explicitPageId } = req.payload;
 
-    // Get the excerpt to retrieve its current contentHash
+    // Get the excerpt to retrieve its current contentHash and content
     const excerpt = await storage.get(`excerpt:${excerptId}`);
     const syncedContentHash = excerpt?.contentHash || null;
+    const syncedContent = excerpt?.content || null;  // Store actual Source ADF for diff view
 
     const key = `macro-vars:${localId}`;
     const now = new Date().toISOString();
@@ -41,7 +42,8 @@ export async function saveVariableValues(req) {
       internalNotes: internalNotes || [],
       updatedAt: now,
       lastSynced: now,  // Track when this Include instance last synced with Source
-      syncedContentHash  // Store hash of the content at sync time for staleness detection
+      syncedContentHash,  // Store hash of the content at sync time for staleness detection
+      syncedContent  // Store Source ADF at sync time for diff comparison
     });
 
     // Also update usage tracking with the latest toggle states
