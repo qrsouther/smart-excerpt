@@ -28,7 +28,7 @@ import {
 
 // Container styles (no background - now inside green SectionMessage)
 const containerStyle = xcss({
-  paddingTop: 'space.200'
+  paddingTop: 'space.050'
 });
 
 // View switcher button group container (centered)

@@ -844,7 +844,7 @@ const App = () => {
           <Fragment>
             <Box xcss={updateBannerStyle}>
               <SectionMessage appearance="success">
-                <Stack space="space.200">
+                <Stack space="space.100">
                   {/* Compact heading section with inline buttons */}
                   <Inline spread="space-between" alignBlock="center">
                     <Stack space="space.050">
@@ -896,7 +896,7 @@ const App = () => {
         <Fragment>
           <Box xcss={updateBannerStyle}>
             <SectionMessage appearance="success">
-              <Stack space="space.200">
+              <Stack space="space.100">
                 {/* Compact heading section with inline buttons */}
                 <Inline spread="space-between" alignBlock="center">
                   <Stack space="space.050">
