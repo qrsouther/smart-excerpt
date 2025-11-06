@@ -98,8 +98,10 @@ const lineUnchangedStyle = xcss({
   wordBreak: 'break-word'
 });
 
+// Two-column layout for preview diff (side-by-side)
 const previewContainerStyle = xcss({
   display: 'flex',
+  flexDirection: 'row',
   gap: 'space.200',
   marginBlock: 'space.200'
 });
