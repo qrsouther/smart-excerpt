@@ -25,10 +25,9 @@ import {
   extractTextWithToggleMarkers
 } from '../utils/adf-rendering-utils.js';
 
-// Container styles
+// Container styles (no background - now inside green SectionMessage)
 const containerStyle = xcss({
-  padding: 'space.300',
-  backgroundColor: 'color.background.neutral'
+  paddingTop: 'space.200'
 });
 
 const sideBoxStyle = xcss({

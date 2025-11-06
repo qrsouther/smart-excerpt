@@ -843,6 +843,58 @@ const App = () => {
           <Fragment>
             <Box xcss={updateBannerStyle}>
               <SectionMessage appearance="success">
+                <Stack space="space.200">
+                  <Inline spread="space-between" alignBlock="start">
+                    <Stack space="space.100">
+                      <Heading size="medium">Update Available</Heading>
+                      <Text>The source content has been updated since this Embed was last edited.</Text>
+                    </Stack>
+                    <Stack space="space.100">
+                      <Button
+                        appearance="primary"
+                        onClick={handleUpdateToLatest}
+                        isDisabled={isUpdating}
+                      >
+                        {isUpdating ? 'Updating...' : 'Update'}
+                      </Button>
+                      <Button
+                        appearance="default"
+                        onClick={() => setShowDiffView(!showDiffView)}
+                      >
+                        {showDiffView ? 'Hide' : 'View'} Diff
+                      </Button>
+                    </Stack>
+                  </Inline>
+
+                  {/* Enhanced diff view with ghost mode - inside green box */}
+                  {showDiffView && (
+                    <EnhancedDiffView
+                      oldSourceContent={syncedContent}
+                      newSourceContent={latestRenderedContent}
+                      variableValues={variableValues}
+                      toggleStates={toggleStates}
+                    />
+                  )}
+                </Stack>
+              </SectionMessage>
+            </Box>
+          </Fragment>
+        )}
+        <Box xcss={adfContentContainerStyle}>
+          <AdfRenderer document={cleaned} />
+        </Box>
+      </Fragment>
+    );
+  }
+
+  // Plain text content
+  return (
+    <Fragment>
+      {isStale && (
+        <Fragment>
+          <Box xcss={updateBannerStyle}>
+            <SectionMessage appearance="success">
+              <Stack space="space.200">
                 <Inline spread="space-between" alignBlock="start">
                   <Stack space="space.100">
                     <Heading size="medium">Update Available</Heading>
@@ -864,67 +916,19 @@ const App = () => {
                     </Button>
                   </Stack>
                 </Inline>
-              </SectionMessage>
-            </Box>
 
-            {/* Enhanced diff view with ghost mode */}
-            {showDiffView && (
-              <EnhancedDiffView
-                oldSourceContent={syncedContent}
-                newSourceContent={latestRenderedContent}
-                variableValues={variableValues}
-                toggleStates={toggleStates}
-              />
-            )}
-          </Fragment>
-        )}
-        <Box xcss={adfContentContainerStyle}>
-          <AdfRenderer document={cleaned} />
-        </Box>
-      </Fragment>
-    );
-  }
-
-  // Plain text content
-  return (
-    <Fragment>
-      {isStale && (
-        <Fragment>
-          <Box xcss={updateBannerStyle}>
-            <SectionMessage appearance="success">
-              <Inline spread="space-between" alignBlock="start">
-                <Stack space="space.100">
-                  <Heading size="medium">Update Available</Heading>
-                  <Text>The source content has been updated since this Embed was last edited.</Text>
-                </Stack>
-                <Stack space="space.100">
-                  <Button
-                    appearance="primary"
-                    onClick={handleUpdateToLatest}
-                    isDisabled={isUpdating}
-                  >
-                    {isUpdating ? 'Updating...' : 'Update'}
-                  </Button>
-                  <Button
-                    appearance="default"
-                    onClick={() => setShowDiffView(!showDiffView)}
-                  >
-                    {showDiffView ? 'Hide' : 'View'} Diff
-                  </Button>
-                </Stack>
-              </Inline>
+                {/* Enhanced diff view with ghost mode - inside green box */}
+                {showDiffView && (
+                  <EnhancedDiffView
+                    oldSourceContent={syncedContent}
+                    newSourceContent={latestRenderedContent}
+                    variableValues={variableValues}
+                    toggleStates={toggleStates}
+                  />
+                )}
+              </Stack>
             </SectionMessage>
           </Box>
-
-          {/* Enhanced diff view with ghost mode */}
-          {showDiffView && (
-            <EnhancedDiffView
-              oldSourceContent={syncedContent}
-              newSourceContent={latestRenderedContent}
-              variableValues={variableValues}
-              toggleStates={toggleStates}
-            />
-          )}
         </Fragment>
       )}
       <Box xcss={adfContentContainerStyle}>
