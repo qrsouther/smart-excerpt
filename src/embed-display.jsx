@@ -8,6 +8,7 @@ import ForgeReconciler, {
   Textfield,
   Toggle,
   Button,
+  ButtonGroup,
   Tabs,
   Tab,
   TabList,
@@ -844,12 +845,13 @@ const App = () => {
             <Box xcss={updateBannerStyle}>
               <SectionMessage appearance="success">
                 <Stack space="space.200">
-                  <Inline spread="space-between" alignBlock="start">
-                    <Stack space="space.100">
-                      <Heading size="medium">Update Available</Heading>
+                  {/* Compact heading section with inline buttons */}
+                  <Inline spread="space-between" alignBlock="center">
+                    <Stack space="space.050">
+                      <Heading size="small">Update Available</Heading>
                       <Text>The source content has been updated since this Embed was last edited.</Text>
                     </Stack>
-                    <Stack space="space.100">
+                    <ButtonGroup>
                       <Button
                         appearance="primary"
                         onClick={handleUpdateToLatest}
@@ -863,10 +865,10 @@ const App = () => {
                       >
                         {showDiffView ? 'Hide' : 'View'} Diff
                       </Button>
-                    </Stack>
+                    </ButtonGroup>
                   </Inline>
 
-                  {/* Enhanced diff view with ghost mode - inside green box */}
+                  {/* Enhanced diff view - inside green box */}
                   {showDiffView && (
                     <EnhancedDiffView
                       oldSourceContent={syncedContent}
@@ -895,12 +897,13 @@ const App = () => {
           <Box xcss={updateBannerStyle}>
             <SectionMessage appearance="success">
               <Stack space="space.200">
-                <Inline spread="space-between" alignBlock="start">
-                  <Stack space="space.100">
-                    <Heading size="medium">Update Available</Heading>
+                {/* Compact heading section with inline buttons */}
+                <Inline spread="space-between" alignBlock="center">
+                  <Stack space="space.050">
+                    <Heading size="small">Update Available</Heading>
                     <Text>The source content has been updated since this Embed was last edited.</Text>
                   </Stack>
-                  <Stack space="space.100">
+                  <ButtonGroup>
                     <Button
                       appearance="primary"
                       onClick={handleUpdateToLatest}
@@ -914,10 +917,10 @@ const App = () => {
                     >
                       {showDiffView ? 'Hide' : 'View'} Diff
                     </Button>
-                  </Stack>
+                  </ButtonGroup>
                 </Inline>
 
-                {/* Enhanced diff view with ghost mode - inside green box */}
+                {/* Enhanced diff view - inside green box */}
                 {showDiffView && (
                   <EnhancedDiffView
                     oldSourceContent={syncedContent}
