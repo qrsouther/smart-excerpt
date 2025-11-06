@@ -33,18 +33,23 @@ const containerStyle = xcss({
 // Two-column layout container
 const twoColumnStyle = xcss({
   display: 'flex',
+  flexDirection: 'row',
   gap: 'space.300',
   marginTop: 'space.200'
 });
 
 // Left and right column styles (50% each)
 const columnStyle = xcss({
-  flex: '1',
+  flexGrow: 1,
+  flexShrink: 1,
+  flexBasis: '0%',
   minWidth: '0' // Prevents flex items from overflowing
 });
 
 const sideBoxStyle = xcss({
-  flex: '1',
+  flexGrow: 1,
+  flexShrink: 1,
+  flexBasis: '0%',
   padding: 'space.200',
   backgroundColor: 'color.background.input',
   borderRadius: 'border.radius',
