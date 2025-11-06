@@ -54,6 +54,7 @@ import {
 import { VariableConfigPanel } from './components/VariableConfigPanel';
 import { ToggleConfigPanel } from './components/ToggleConfigPanel';
 import { CustomInsertionsPanel } from './components/CustomInsertionsPanel';
+import { EnhancedDiffView } from './components/EnhancedDiffView';
 
 // Style for preview border
 const previewBoxStyle = xcss({
@@ -82,41 +83,10 @@ const requiredFieldStyle = xcss({
   padding: 'space.050'
 });
 
-// Diff view styles for current version (gray border)
-const diffCurrentVersionStyle = xcss({
-  borderColor: 'color.border',
-  borderWidth: 'border.width',
-  borderStyle: 'solid',
-  borderRadius: 'border.radius',
-  padding: 'space.150',
-  backgroundColor: 'color.background.neutral.subtle'
-});
-
-// Diff view styles for new version (green border)
-const diffNewVersionStyle = xcss({
-  borderColor: 'color.border.success',
-  borderWidth: 'border.width',
-  borderStyle: 'solid',
-  borderRadius: 'border.radius',
-  padding: 'space.150',
-  backgroundColor: 'color.background.success.subtle'
-});
-
 // Style for Update Available banner
 const updateBannerStyle = xcss({
   padding: 'space.100',
   marginBottom: 'space.200'
-});
-
-// Style for View Diff button with border
-const viewDiffButtonStyle = xcss({
-  borderColor: 'color.border',
-  borderWidth: 'border.width',
-  borderStyle: 'solid',
-  display: 'flex',
-  justifyContent: 'center',
-  alignItems: 'center',
-  paddingInline: 'space.050'
 });
 
 // Style for ADF content container to prevent horizontal scrollbar
@@ -174,6 +144,7 @@ const App = () => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [showDiffView, setShowDiffView] = useState(false);
   const [latestRenderedContent, setLatestRenderedContent] = useState(null);
+  const [syncedContent, setSyncedContent] = useState(null); // Old Source ADF from last sync for diff comparison
 
   // Use React Query to fetch excerpt data (only in edit mode)
   const {
@@ -461,9 +432,10 @@ const App = () => {
         setSourceLastModified(excerptResult.excerpt.updatedAt);
         setIncludeLastSynced(varsResult.lastSynced);
 
-        // If stale, store the raw latest content for diff view
+        // If stale, store both old and new content for enhanced diff view
         if (stale) {
-          setLatestRenderedContent(excerptResult.excerpt.content);
+          setLatestRenderedContent(excerptResult.excerpt.content); // New Source content
+          setSyncedContent(varsResult.syncedContent || null); // Old Source content from last sync
         }
       } catch (err) {
         console.error('[Include] Staleness check error:', err);
@@ -895,43 +867,14 @@ const App = () => {
               </SectionMessage>
             </Box>
 
-            {/* Diff view - side-by-side comparison */}
+            {/* Enhanced diff view with ghost mode */}
             {showDiffView && (
-              <Box xcss={previewBoxStyle}>
-                <Stack space="space.200">
-                  <Text><Strong>Content Comparison:</Strong></Text>
-                  <Inline space="space.200" alignBlock="start">
-                    <Box xcss={xcss({ width: '50%' })}>
-                      <Stack space="space.100">
-                        <Text><Strong>Your Current Rendered Version</Strong></Text>
-                        <Box xcss={diffCurrentVersionStyle}>
-                          {content && typeof content === 'object' && content.type === 'doc' ? (
-                            <Box xcss={adfContentContainerStyle}>
-                              <AdfRenderer document={content} />
-                            </Box>
-                          ) : (
-                            <Text>{content || 'No content'}</Text>
-                          )}
-                        </Box>
-                      </Stack>
-                    </Box>
-                    <Box xcss={xcss({ width: '50%' })}>
-                      <Stack space="space.100">
-                        <Text><Strong>Latest Raw Source (with all tags)</Strong></Text>
-                        <Box xcss={diffNewVersionStyle}>
-                          {latestRenderedContent && typeof latestRenderedContent === 'object' && latestRenderedContent.type === 'doc' ? (
-                            <Box xcss={adfContentContainerStyle}>
-                              <AdfRenderer document={latestRenderedContent} />
-                            </Box>
-                          ) : (
-                            <Text>{latestRenderedContent || 'No content'}</Text>
-                          )}
-                        </Box>
-                      </Stack>
-                    </Box>
-                  </Inline>
-                </Stack>
-              </Box>
+              <EnhancedDiffView
+                oldSourceContent={syncedContent}
+                newSourceContent={latestRenderedContent}
+                variableValues={variableValues}
+                toggleStates={toggleStates}
+              />
             )}
           </Fragment>
         )}
@@ -973,31 +916,14 @@ const App = () => {
             </SectionMessage>
           </Box>
 
-          {/* Diff view - side-by-side comparison */}
+          {/* Enhanced diff view with ghost mode */}
           {showDiffView && (
-            <Box xcss={previewBoxStyle}>
-              <Stack space="space.200">
-                <Text><Strong>Content Comparison:</Strong></Text>
-                <Inline space="space.200" alignBlock="start">
-                  <Box xcss={xcss({ width: '50%' })}>
-                    <Stack space="space.100">
-                      <Text><Strong>Your Current Rendered Version</Strong></Text>
-                      <Box xcss={diffCurrentVersionStyle}>
-                        <Text>{content || 'No content'}</Text>
-                      </Box>
-                    </Stack>
-                  </Box>
-                  <Box xcss={xcss({ width: '50%' })}>
-                    <Stack space="space.100">
-                      <Text><Strong>Latest Raw Source (with all tags)</Strong></Text>
-                      <Box xcss={diffNewVersionStyle}>
-                        <Text>{latestRenderedContent || 'No content'}</Text>
-                      </Box>
-                    </Stack>
-                  </Box>
-                </Inline>
-              </Stack>
-            </Box>
+            <EnhancedDiffView
+              oldSourceContent={syncedContent}
+              newSourceContent={latestRenderedContent}
+              variableValues={variableValues}
+              toggleStates={toggleStates}
+            />
           )}
         </Fragment>
       )}
