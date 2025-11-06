@@ -18,7 +18,7 @@
 
 import React from 'react';
 import { Box, Heading, Text, Strong, Em, Stack, xcss } from '@forge/react';
-import ReactDiffViewer, { DiffMethod } from 'react-diff-viewer';
+import { diffLines } from 'diff';
 import { AdfRendererWithGhostToggles } from './AdfRendererWithGhostToggles.jsx';
 import {
   renderContentWithGhostToggles,
@@ -44,7 +44,41 @@ const sideBoxStyle = xcss({
 const diffContainerStyle = xcss({
   marginBlock: 'space.200',
   borderRadius: 'border.radius',
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderColor: 'color.border',
   overflow: 'hidden'
+});
+
+// Styles for diff lines
+const lineAddedStyle = xcss({
+  backgroundColor: 'color.background.success',
+  paddingBlock: 'space.050',
+  paddingInline: 'space.100',
+  fontFamily: 'monospace',
+  fontSize: '12px',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word'
+});
+
+const lineRemovedStyle = xcss({
+  backgroundColor: 'color.background.danger',
+  paddingBlock: 'space.050',
+  paddingInline: 'space.100',
+  fontFamily: 'monospace',
+  fontSize: '12px',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word'
+});
+
+const lineUnchangedStyle = xcss({
+  backgroundColor: 'color.background.neutral.subtle',
+  paddingBlock: 'space.050',
+  paddingInline: 'space.100',
+  fontFamily: 'monospace',
+  fontSize: '12px',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word'
 });
 
 const previewContainerStyle = xcss({
@@ -52,6 +86,54 @@ const previewContainerStyle = xcss({
   gap: 'space.200',
   marginBlock: 'space.200'
 });
+
+/**
+ * Render line-based diff with color coding
+ * Green background = added lines
+ * Red background = removed lines
+ * Gray background = unchanged lines
+ */
+function renderLineDiff(oldText, newText) {
+  const differences = diffLines(oldText || '', newText || '');
+
+  return (
+    <Stack space="space.0">
+      {differences.map((part, index) => {
+        // Split into individual lines for rendering
+        const lines = part.value.split('\n');
+
+        return lines.map((line, lineIndex) => {
+          // Skip empty last line from split
+          if (lineIndex === lines.length - 1 && line === '') {
+            return null;
+          }
+
+          const key = `${index}-${lineIndex}`;
+
+          if (part.added) {
+            return (
+              <Box key={key} xcss={lineAddedStyle}>
+                <Text>+ {line}</Text>
+              </Box>
+            );
+          } else if (part.removed) {
+            return (
+              <Box key={key} xcss={lineRemovedStyle}>
+                <Text>- {line}</Text>
+              </Box>
+            );
+          } else {
+            return (
+              <Box key={key} xcss={lineUnchangedStyle}>
+                <Text>  {line}</Text>
+              </Box>
+            );
+          }
+        });
+      })}
+    </Stack>
+  );
+}
 
 /**
  * Enhanced Diff View Component
@@ -83,61 +165,24 @@ export function EnhancedDiffView({
     toggleStates
   );
 
-  // Convert to text for diff highlighting
+  // Convert to text for side-by-side comparison
   // Includes markers like [DISABLED TOGGLE: name] for visual distinction
   const oldText = extractTextWithToggleMarkers(oldRenderedFull, toggleStates);
   const newText = extractTextWithToggleMarkers(newRenderedFull, toggleStates);
 
-  // Custom styles for react-diff-viewer
-  const diffStyles = {
-    variables: {
-      light: {
-        diffViewerBackground: '#fff',
-        addedBackground: '#e6ffed',
-        addedColor: '#24292e',
-        removedBackground: '#ffeef0',
-        removedColor: '#24292e',
-        wordAddedBackground: '#acf2bd',
-        wordRemovedBackground: '#fdb8c0',
-        addedGutterBackground: '#cdffd8',
-        removedGutterBackground: '#ffdce0',
-        gutterBackground: '#f6f8fa',
-        gutterBackgroundDark: '#f3f4f6',
-        highlightBackground: '#fffbdd',
-        highlightGutterBackground: '#fff5b1',
-      }
-    },
-    line: {
-      padding: '8px 10px',
-      fontSize: '14px',
-      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace'
-    }
-  };
-
   return (
     <Box xcss={containerStyle}>
       <Stack space="space.400">
-        {/* Section 1: Word-level text diff */}
+        {/* Section 1: Line-based diff with color coding */}
         <Box>
           <Heading size="small">Changes in This Update</Heading>
           <Text>
-            Green highlighting shows new content. Red highlighting shows removed content.
+            Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray).
             Both enabled and disabled toggle content is shown for complete transparency.
           </Text>
 
           <Box xcss={diffContainerStyle}>
-            <ReactDiffViewer
-              oldValue={oldText}
-              newValue={newText}
-              splitView={true}
-              compareMethod={DiffMethod.WORDS}
-              styles={diffStyles}
-              leftTitle="Your Current Version (at last sync)"
-              rightTitle="Updated Version Available"
-              showDiffOnly={false}
-              useDarkTheme={false}
-              hideLineNumbers={false}
-            />
+            {renderLineDiff(oldText, newText)}
           </Box>
         </Box>
 
