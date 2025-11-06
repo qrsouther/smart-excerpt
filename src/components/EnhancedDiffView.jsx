@@ -90,11 +90,13 @@ const diffContainerStyle = xcss({
   backgroundColor: 'elevation.surface' // White/neutral background for diff content
 });
 
-// Styles for diff lines
+// Styles for diff lines (with hanging indent for wrapped lines)
 const lineAddedStyle = xcss({
   backgroundColor: 'color.background.success',
   paddingBlock: 'space.050',
-  paddingInline: 'space.100',
+  paddingLeft: '3em',
+  paddingRight: 'space.100',
+  textIndent: '-2.5em',
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
@@ -104,7 +106,9 @@ const lineAddedStyle = xcss({
 const lineRemovedStyle = xcss({
   backgroundColor: 'color.background.danger',
   paddingBlock: 'space.050',
-  paddingInline: 'space.100',
+  paddingLeft: '3em',
+  paddingRight: 'space.100',
+  textIndent: '-2.5em',
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
@@ -114,7 +118,9 @@ const lineRemovedStyle = xcss({
 const lineUnchangedStyle = xcss({
   backgroundColor: 'color.background.neutral.subtle',
   paddingBlock: 'space.050',
-  paddingInline: 'space.100',
+  paddingLeft: '3em',
+  paddingRight: 'space.100',
+  textIndent: '-2.5em',
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
