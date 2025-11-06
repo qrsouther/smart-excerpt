@@ -62,10 +62,6 @@ const App = () => {
         if (result.success) {
           // Update our hash tracker
           lastContentHashRef.current = currentHash;
-          // Only log when actual update happened (not when hash matched in backend)
-          if (!result.unchanged) {
-            console.log('[Source] Updated:', config.excerptName);
-          }
         } else {
           console.error('[Source] Update failed:', result.error);
         }

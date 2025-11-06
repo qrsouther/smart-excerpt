@@ -23,8 +23,6 @@ export async function saveExcerpt(req) {
   const pageId = sourcePageId || req.context?.extension?.content?.id;
   const spaceKey = sourceSpaceKey || req.context?.extension?.space?.key;
 
-  console.log('Saving with page info - pageId:', pageId, 'spaceKey:', spaceKey);
-
   // Generate or reuse excerpt ID
   const id = excerptId || generateUUID();
 
@@ -79,8 +77,6 @@ export async function saveExcerpt(req) {
 
   // Update index
   await updateExcerptIndex(excerpt);
-
-  console.log('Excerpt saved successfully:', id);
 
   return {
     excerptId: id,
@@ -143,7 +139,6 @@ export async function updateExcerptContent(req) {
 
     // Compare to existing hash - if unchanged, skip the update
     if (excerpt.contentHash === newContentHash) {
-      console.log('updateExcerptContent - no changes detected for:', excerptId);
       return { success: true, unchanged: true };
     }
 
@@ -156,7 +151,6 @@ export async function updateExcerptContent(req) {
     // Update index
     await updateExcerptIndex(updatedExcerpt);
 
-    console.log('Excerpt content auto-updated:', excerptId);
     return { success: true, unchanged: false };
   } catch (error) {
     console.error('Error updating excerpt content:', error);
@@ -211,7 +205,6 @@ export async function deleteExcerpt(req) {
     index.excerpts = index.excerpts.filter(e => e.id !== excerptId);
     await storage.set('excerpt-index', index);
 
-    console.log('Excerpt deleted:', excerptId);
     return {
       success: true
     };
@@ -251,7 +244,6 @@ export async function updateExcerptMetadata(req) {
     // Update the index
     await updateExcerptIndex(excerpt);
 
-    console.log('Excerpt metadata updated:', excerptId);
     return {
       success: true
     };
@@ -283,7 +275,6 @@ export async function massUpdateExcerpts(req) {
 
     await Promise.all(updatePromises);
 
-    console.log('Mass update completed for', excerptIds.length, 'excerpts');
     return {
       success: true
     };

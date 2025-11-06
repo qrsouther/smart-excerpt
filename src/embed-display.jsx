@@ -28,8 +28,32 @@ import ForgeReconciler, {
   AdfRenderer
 } from '@forge/react';
 import { invoke, router, view } from '@forge/bridge';
-import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+
+// Import ADF rendering utilities
+import {
+  cleanAdfForRenderer,
+  filterContentByToggles,
+  substituteVariablesInAdf,
+  insertCustomParagraphsInAdf,
+  insertInternalNotesInAdf,
+  extractParagraphsFromAdf
+} from './utils/adf-rendering-utils';
+
+// Import React Query hooks
+import {
+  useExcerptData,
+  useSaveVariableValues,
+  useAvailableExcerpts,
+  useVariableValues,
+  useCachedContent
+} from './hooks/embed-hooks';
+
+// Import UI components
+import { VariableConfigPanel } from './components/VariableConfigPanel';
+import { ToggleConfigPanel } from './components/ToggleConfigPanel';
+import { CustomInsertionsPanel } from './components/CustomInsertionsPanel';
 
 // Style for preview border
 const previewBoxStyle = xcss({
@@ -95,585 +119,14 @@ const viewDiffButtonStyle = xcss({
   paddingInline: 'space.050'
 });
 
-
-// Helper function to clean ADF for Forge's AdfRenderer
-const cleanAdfForRenderer = (adfNode) => {
-  if (!adfNode || typeof adfNode !== 'object') return adfNode;
-
-  const cleaned = { ...adfNode };
-
-  if (cleaned.attrs) {
-    const cleanedAttrs = { ...cleaned.attrs };
-
-    // Remove localId (not supported by Forge AdfRenderer)
-    delete cleanedAttrs.localId;
-
-    // Handle panels - remove null attributes
-    if (cleaned.type === 'panel') {
-      if (cleanedAttrs.panelIconId === null) delete cleanedAttrs.panelIconId;
-      if (cleanedAttrs.panelIcon === null) delete cleanedAttrs.panelIcon;
-      if (cleanedAttrs.panelIconText === null) delete cleanedAttrs.panelIconText;
-      if (cleanedAttrs.panelColor === null) delete cleanedAttrs.panelColor;
-    }
-
-    // Remove null-valued table cell attributes
-    if (cleaned.type === 'tableCell' || cleaned.type === 'tableHeader') {
-      if (cleanedAttrs.background === null) delete cleanedAttrs.background;
-      if (cleanedAttrs.colwidth === null) delete cleanedAttrs.colwidth;
-    }
-
-    // Remove unsupported table attributes
-    if (cleaned.type === 'table') {
-      if (cleanedAttrs.displayMode === null) delete cleanedAttrs.displayMode;
-      delete cleanedAttrs.width;
-      delete cleanedAttrs.__autoSize;
-      delete cleanedAttrs.isNumberColumnEnabled;
-      delete cleanedAttrs.layout;
-    }
-
-    cleaned.attrs = cleanedAttrs;
-  }
-
-  // Recursively clean content array
-  if (cleaned.content && Array.isArray(cleaned.content)) {
-    cleaned.content = cleaned.content.map(child => cleanAdfForRenderer(child));
-  }
-
-  return cleaned;
-};
-
-// Helper function to clean up empty or invalid nodes after toggle filtering
-const cleanupEmptyNodes = (adfNode) => {
-  if (!adfNode) return null;
-
-  // If it's a text node with empty text, remove it
-  if (adfNode.type === 'text' && (!adfNode.text || adfNode.text.trim() === '')) {
-    return null;
-  }
-
-  // Recursively process content array
-  if (adfNode.content && Array.isArray(adfNode.content)) {
-    const cleanedContent = adfNode.content
-      .map(child => cleanupEmptyNodes(child))
-      .filter(child => child !== null);  // Remove null nodes
-
-    // If this node has no content left after cleanup, remove it
-    // Exception: Keep certain nodes even if empty (like hardBreak, etc)
-    const keepEvenIfEmpty = ['hardBreak', 'rule', 'emoji', 'mention', 'date'];
-    if (cleanedContent.length === 0 && !keepEvenIfEmpty.includes(adfNode.type)) {
-      return null;
-    }
-
-    return {
-      ...adfNode,
-      content: cleanedContent
-    };
-  }
-
-  return adfNode;
-};
-
-// Helper function to filter content based on toggle states
-// Handles rich text formatting by processing toggle ranges across multiple nodes
-const filterContentByToggles = (adfNode, toggleStates) => {
-  if (!adfNode) return null;
-
-  // For container nodes (paragraph, doc, etc.), process toggle ranges across all children
-  if (adfNode.content && Array.isArray(adfNode.content)) {
-    // First pass: Flatten and extract all text with node references
-    const flattenNodes = (nodes, path = []) => {
-      const flattened = [];
-      let textPosition = 0;
-
-      for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i];
-        const currentPath = [...path, i];
-
-        if (node.type === 'text' && node.text) {
-          flattened.push({
-            node,
-            path: currentPath,
-            textStart: textPosition,
-            textEnd: textPosition + node.text.length,
-            text: node.text
-          });
-          textPosition += node.text.length;
-        } else if (node.content && Array.isArray(node.content)) {
-          // Recursively flatten nested content
-          const nested = flattenNodes(node.content, currentPath);
-          flattened.push({
-            node,
-            path: currentPath,
-            textStart: textPosition,
-            textEnd: textPosition + nested.totalText.length,
-            isContainer: true,
-            children: nested.flattened
-          });
-          textPosition += nested.totalText.length;
-        } else {
-          // Non-text, non-container nodes (images, etc.)
-          flattened.push({
-            node,
-            path: currentPath,
-            textStart: textPosition,
-            textEnd: textPosition,
-            isLeaf: true
-          });
-        }
-      }
-
-      const totalText = flattened
-        .map(f => f.text || '')
-        .join('');
-
-      return { flattened, totalText, textPosition };
-    };
-
-    const { flattened, totalText } = flattenNodes(adfNode.content);
-
-    // Find all toggle ranges
-    const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
-    const toggleRanges = [];
-    let match;
-
-    while ((match = toggleRegex.exec(totalText)) !== null) {
-      const toggleName = match[1].trim();
-      const isEnabled = toggleStates?.[toggleName] === true;
-
-      const openMarker = `{{toggle:${match[1]}}}`;
-      const closeMarker = `{{/toggle:${match[1]}}}`;
-
-      toggleRanges.push({
-        name: toggleName,
-        enabled: isEnabled,
-        fullStart: match.index,
-        fullEnd: match.index + match[0].length,
-        contentStart: match.index + openMarker.length,
-        contentEnd: match.index + match[0].length - closeMarker.length
-      });
-    }
-
-    // Second pass: Filter and process nodes
-    const processFlattened = () => {
-      const newContent = [];
-
-      for (const item of flattened) {
-        // Check if node overlaps with any toggle range
-        let inDisabledToggle = false;
-        let textModifications = [];
-
-        for (const range of toggleRanges) {
-          if (!range.enabled) {
-            // Node overlaps with disabled toggle - remove entire node
-            // Check if node has ANY overlap with the full toggle range (including markers)
-            if (item.textEnd > range.fullStart && item.textStart < range.fullEnd) {
-              inDisabledToggle = true;
-              break;
-            }
-          }
-        }
-
-        if (inDisabledToggle) {
-          continue; // Skip this node
-        }
-
-        // For text nodes, strip toggle markers if present
-        if (item.node.type === 'text' && item.text) {
-          let newText = item.text;
-
-          // Remove any toggle markers from this text node
-          newText = newText.replace(/\{\{toggle:[^}]+\}\}/g, '');
-          newText = newText.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
-
-          if (newText.trim() === '') {
-            continue; // Skip empty nodes
-          }
-
-          newContent.push({ ...item.node, text: newText });
-        } else if (item.isContainer) {
-          // Recursively process container
-          const processed = filterContentByToggles({ ...item.node }, toggleStates);
-          if (processed) {
-            newContent.push(processed);
-          }
-        } else {
-          // Keep other nodes as-is
-          newContent.push(item.node);
-        }
-      }
-
-      return newContent;
-    };
-
-    const newContent = processFlattened();
-
-    if (newContent.length === 0 && adfNode.type !== 'doc') {
-      return null;
-    }
-
-    return {
-      ...adfNode,
-      content: newContent
-    };
-  }
-
-  return adfNode;
-};
-
-// Helper function to strip toggle markers from text nodes
-// Removes {{toggle:name}} and {{/toggle:name}} markers from rendered content
-// This is applied AFTER filterContentByToggles to ensure markers are never visible
-const stripToggleMarkers = (adfNode) => {
-  if (!adfNode) return adfNode;
-
-  // If it's a text node, strip markers
-  if (adfNode.type === 'text' && adfNode.text) {
-    let text = adfNode.text;
-    // Remove opening toggle markers
-    text = text.replace(/\{\{toggle:[^}]+\}\}/g, '');
-    // Remove closing toggle markers
-    text = text.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
-    return { ...adfNode, text };
-  }
-
-  // Recursively process content array
-  if (adfNode.content && Array.isArray(adfNode.content)) {
-    return {
-      ...adfNode,
-      content: adfNode.content.map(child => stripToggleMarkers(child))
-    };
-  }
-
-  return adfNode;
-};
-
-// Helper function to perform variable substitution in ADF content
-// Unset variables (empty values) are wrapped in code marks for visual distinction
-const substituteVariablesInAdf = (adfNode, variableValues) => {
-  if (!adfNode) return adfNode;
-
-  // If it's a text node, perform substitution
-  if (adfNode.type === 'text' && adfNode.text) {
-    let text = adfNode.text;
-    const regex = /\{\{([^}]+)\}\}/g;
-    const parts = [];
-    let lastIndex = 0;
-    let match;
-
-    while ((match = regex.exec(text)) !== null) {
-      // Add text before the variable
-      if (match.index > lastIndex) {
-        parts.push({
-          type: 'text',
-          text: text.substring(lastIndex, match.index)
-        });
-      }
-
-      const varName = match[1].trim();
-      const value = variableValues?.[varName];
-
-      if (value) {
-        // Variable has a value - substitute it
-        parts.push({
-          type: 'text',
-          text: value
-        });
-      } else {
-        // Variable is unset - keep as code/monospace
-        parts.push({
-          type: 'text',
-          text: match[0],
-          marks: [{ type: 'code' }]
-        });
-      }
-
-      lastIndex = regex.lastIndex;
-    }
-
-    // Add remaining text
-    if (lastIndex < text.length) {
-      parts.push({
-        type: 'text',
-        text: text.substring(lastIndex)
-      });
-    }
-
-    // If we found variables, return a content array, otherwise return the original node
-    if (parts.length === 0) {
-      return adfNode;
-    } else if (parts.length === 1 && !parts[0].marks) {
-      return { ...adfNode, text: parts[0].text };
-    } else {
-      // Need to return multiple text nodes - caller must handle this
-      return { ...adfNode, _parts: parts };
-    }
-  }
-
-  // Recursively process content array
-  if (adfNode.content && Array.isArray(adfNode.content)) {
-    const newContent = [];
-    adfNode.content.forEach(child => {
-      const processed = substituteVariablesInAdf(child, variableValues);
-      if (processed._parts) {
-        // Expand parts into multiple text nodes
-        newContent.push(...processed._parts);
-        delete processed._parts;
-      } else {
-        newContent.push(processed);
-      }
-    });
-    return {
-      ...adfNode,
-      content: newContent
-    };
-  }
-
-  return adfNode;
-};
-
-// Helper function to insert custom paragraphs into ADF content
-// customInsertions is an array of { position: number, text: string }
-const insertCustomParagraphsInAdf = (adfNode, customInsertions) => {
-  if (!adfNode || !adfNode.content || !customInsertions || customInsertions.length === 0) {
-    return adfNode;
-  }
-
-  const newContent = [];
-  let paragraphIndex = 0;
-
-  // Traverse content and insert custom paragraphs after specified positions
-  adfNode.content.forEach(node => {
-    // Add the original node
-    newContent.push(node);
-
-    // If this is a paragraph, check if we need to insert custom content after it
-    if (node.type === 'paragraph') {
-      // Find all insertions for this position
-      const insertionsHere = customInsertions.filter(ins => ins.position === paragraphIndex);
-
-      insertionsHere.forEach(insertion => {
-        // Create a new paragraph node with the custom text
-        newContent.push({
-          type: 'paragraph',
-          content: [
-            {
-              type: 'text',
-              text: insertion.text
-            }
-          ]
-        });
-      });
-
-      paragraphIndex++;
-    }
-  });
-
-  return {
-    ...adfNode,
-    content: newContent
-  };
-};
-
-// Helper function to insert internal note markers inline in ADF content
-// Uses footnote-style numbering with content collected at the bottom
-// All internal note elements use 'internal-note-marker' class for:
-// 1. CSS styling in Confluence (distinctive appearance)
-// 2. External filtering (hide from external users)
-// internalNotes is an array of { position: number, content: string }
-const insertInternalNotesInAdf = (adfNode, internalNotes) => {
-  if (!adfNode || !adfNode.content || !internalNotes || internalNotes.length === 0) {
-    return adfNode;
-  }
-
-  // Sort notes by position to assign sequential footnote numbers
-  const sortedNotes = [...internalNotes].sort((a, b) => a.position - b.position);
-
-  // Create a map of position -> footnote number
-  const positionToNumber = {};
-  sortedNotes.forEach((note, index) => {
-    positionToNumber[note.position] = index + 1;
-  });
-
-  // Unicode superscript numbers
-  const superscriptNumbers = ['⁰', '¹', '²', '³', '⁴', '⁵', '⁶', '⁷', '⁸', '⁹'];
-  const toSuperscript = (num) => {
-    return num.toString().split('').map(digit => superscriptNumbers[parseInt(digit)]).join('');
-  };
-
-  const newContent = [];
-  let paragraphIndex = 0;
-
-  // Traverse content and insert inline markers at the end of specified paragraphs
-  adfNode.content.forEach(node => {
-    if (node.type === 'paragraph') {
-      // Check if there's an internal note for this position
-      const noteNumber = positionToNumber[paragraphIndex];
-
-      if (noteNumber) {
-        // Add the paragraph with an inline footnote marker at the end
-        const paragraphContent = [...(node.content || [])];
-
-        // Add inline marker with distinctive purple color for internal notes
-        // External filtering app should remove text nodes with color #6554C0 (purple)
-        paragraphContent.push({
-          type: 'text',
-          text: toSuperscript(noteNumber),
-          marks: [
-            {
-              type: 'textColor',
-              attrs: {
-                color: '#6554C0' // Purple marks internal note references
-              }
-            },
-            {
-              type: 'strong'
-            }
-          ]
-        });
-
-        newContent.push({
-          ...node,
-          content: paragraphContent
-        });
-      } else {
-        // No note at this position, keep the paragraph as is
-        newContent.push(node);
-      }
-
-      paragraphIndex++;
-    } else {
-      // Not a paragraph, keep as is
-      newContent.push(node);
-    }
-  });
-
-  // Add footnotes section at the bottom wrapped in an expand node
-  if (sortedNotes.length > 0) {
-    // Wrap entire footnotes section in an expandable/collapsible section
-    // External filtering app will hide all expand nodes
-    const footnotesContent = [];
-
-    // Add "Internal Notes" heading with lock icon
-    footnotesContent.push({
-      type: 'paragraph',
-      content: [
-        {
-          type: 'text',
-          text: '🔒 Internal Notes',
-          marks: [
-            {
-              type: 'strong'
-            },
-            {
-              type: 'em'
-            }
-          ]
-        }
-      ]
-    });
-
-    // Add each footnote with its number
-    sortedNotes.forEach((note, index) => {
-      const footnoteNumber = index + 1;
-      footnotesContent.push({
-        type: 'paragraph',
-        content: [
-          {
-            type: 'text',
-            text: `${toSuperscript(footnoteNumber)} `,
-            marks: [
-              {
-                type: 'strong'
-              }
-            ]
-          },
-          {
-            type: 'text',
-            text: note.content,
-            marks: [
-              {
-                type: 'em'
-              }
-            ]
-          }
-        ]
-      });
-    });
-
-    // Use an expand (collapsible section) for internal notes
-    // This gives us a cleaner appearance without forced panel icons
-    // External filtering app should hide expand nodes with title '🔒 Internal Notes'
-    newContent.push({
-      type: 'expand',
-      attrs: {
-        title: '🔒 Internal Notes'
-      },
-      content: footnotesContent.slice(1) // Skip the heading since expand already has a title
-    });
-  }
-
-  return {
-    ...adfNode,
-    content: newContent
-  };
-};
-
-// Helper function to extract paragraphs from ADF content
-// Returns array of { index, lastSentence, fullText }
-const extractParagraphsFromAdf = (adfNode) => {
-  const paragraphs = [];
-
-  if (!adfNode || !adfNode.content) return paragraphs;
-
-  const traverseContent = (node, paragraphIndex = { value: 0 }) => {
-    if (!node) return;
-
-    // If this is a paragraph node, extract text
-    if (node.type === 'paragraph') {
-      let fullText = '';
-
-      // Recursively extract text from paragraph content
-      const extractText = (contentNode) => {
-        if (!contentNode) return '';
-
-        if (contentNode.type === 'text') {
-          return contentNode.text || '';
-        }
-
-        if (contentNode.content && Array.isArray(contentNode.content)) {
-          return contentNode.content.map(child => extractText(child)).join('');
-        }
-
-        return '';
-      };
-
-      if (node.content && Array.isArray(node.content)) {
-        fullText = node.content.map(child => extractText(child)).join('');
-      }
-
-      // Extract last sentence (rough heuristic: split by period/question/exclamation)
-      const sentences = fullText.split(/[.!?]+/).filter(s => s.trim());
-      const lastSentence = sentences.length > 0 ? sentences[sentences.length - 1].trim() : fullText.trim();
-
-      if (fullText.trim()) {
-        paragraphs.push({
-          index: paragraphIndex.value,
-          lastSentence: lastSentence.substring(0, 60) + (lastSentence.length > 60 ? '...' : ''),
-          fullText: fullText
-        });
-        paragraphIndex.value++;
-      }
-    }
-
-    // Recursively traverse content
-    if (node.content && Array.isArray(node.content)) {
-      node.content.forEach(child => traverseContent(child, paragraphIndex));
-    }
-  };
-
-  traverseContent(adfNode);
-  return paragraphs;
-};
+// Style for ADF content container to prevent horizontal scrollbar
+// Constrains width to prevent expand panels and other ADF elements from overflowing
+const adfContentContainerStyle = xcss({
+  width: '99%',
+  maxWidth: '99%',
+  overflow: 'hidden',
+  boxSizing: 'border-box'
+});
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -686,195 +139,6 @@ const queryClient = new QueryClient({
     }
   }
 });
-
-// Custom hook for fetching excerpt data with React Query
-const useExcerptData = (excerptId, enabled) => {
-  return useQuery({
-    queryKey: ['excerpt', excerptId],
-    queryFn: async () => {
-      // This shouldn't run when excerptId is null due to enabled check,
-      // but React Query may still initialize - just skip silently
-      if (!excerptId) {
-        return null;
-      }
-
-      const result = await invoke('getExcerpt', { excerptId });
-
-      if (!result.success || !result.excerpt) {
-        throw new Error('Failed to load excerpt');
-      }
-
-      return result.excerpt;
-    },
-    enabled: enabled && !!excerptId,
-    staleTime: 1000 * 60 * 5, // Consider data fresh for 5 minutes
-    gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes (renamed from cacheTime in v5)
-  });
-};
-
-// Custom hook for saving variable values with React Query mutation
-const useSaveVariableValues = () => {
-  return useMutation({
-    mutationFn: async ({ localId, excerptId, variableValues, toggleStates, customInsertions, internalNotes }) => {
-      const result = await invoke('saveVariableValues', {
-        localId,
-        excerptId,
-        variableValues,
-        toggleStates,
-        customInsertions,
-        internalNotes
-      });
-
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to save variable values');
-      }
-
-      return result;
-    },
-    onError: (error) => {
-      console.error('[REACT-QUERY-MUTATION] Save failed:', error);
-    }
-  });
-};
-
-// Custom hook for fetching available excerpts list with React Query
-const useAvailableExcerpts = (enabled) => {
-  return useQuery({
-    queryKey: ['excerpts', 'list'],
-    queryFn: async () => {
-      const result = await invoke('getExcerpts');
-
-      if (!result.success) {
-        throw new Error('Failed to load excerpts');
-      }
-
-      return result.excerpts || [];
-    },
-    enabled: enabled,
-    staleTime: 1000 * 60 * 2, // 2 minutes - excerpt list doesn't change often
-    gcTime: 1000 * 60 * 10, // 10 minutes
-  });
-};
-
-// Custom hook for fetching variable values with React Query
-const useVariableValues = (localId, enabled) => {
-  return useQuery({
-    queryKey: ['variableValues', localId],
-    queryFn: async () => {
-      const result = await invoke('getVariableValues', { localId });
-
-      if (!result.success) {
-        throw new Error('Failed to load variable values');
-      }
-
-      return result;
-    },
-    enabled: enabled && !!localId,
-    staleTime: 1000 * 30, // 30 seconds - this changes frequently during editing
-    gcTime: 1000 * 60 * 5, // 5 minutes
-  });
-};
-
-// Custom hook for fetching cached content in view mode with React Query
-const useCachedContent = (localId, excerptId, enabled, context, setVariableValues, setToggleStates, setCustomInsertions, setInternalNotes, setExcerptForViewMode) => {
-  return useQuery({
-    queryKey: ['cachedContent', localId],
-    queryFn: async () => {
-      // First, try to get cached content
-      const cachedResult = await invoke('getCachedContent', { localId });
-
-      if (cachedResult && cachedResult.content) {
-        return { content: cachedResult.content, fromCache: true };
-      }
-
-      // No cached content - fetch fresh and process
-
-      const excerptResult = await invoke('getExcerpt', { excerptId });
-      if (!excerptResult.success || !excerptResult.excerpt) {
-        throw new Error('Failed to load excerpt');
-      }
-
-      setExcerptForViewMode(excerptResult.excerpt);
-
-      // Load variable values and check for orphaned data
-      let varsResult = await invoke('getVariableValues', { localId });
-
-      // CRITICAL: Check if data is missing - attempt recovery from drag-to-move
-      const hasNoData = !varsResult.lastSynced &&
-                        Object.keys(varsResult.variableValues || {}).length === 0 &&
-                        Object.keys(varsResult.toggleStates || {}).length === 0 &&
-                        (varsResult.customInsertions || []).length === 0 &&
-                        (varsResult.internalNotes || []).length === 0;
-
-      if (varsResult.success && hasNoData && excerptId) {
-        const pageId = context?.contentId || context?.extension?.content?.id;
-
-        const recoveryResult = await invoke('recoverOrphanedData', {
-          pageId: pageId,
-          excerptId: excerptId,
-          currentLocalId: context.localId
-        });
-
-        if (recoveryResult.success && recoveryResult.recovered) {
-          // Reload the data
-          varsResult = await invoke('getVariableValues', { localId });
-        }
-      }
-
-      const loadedVariableValues = varsResult.success ? varsResult.variableValues : {};
-      const loadedToggleStates = varsResult.success ? varsResult.toggleStates : {};
-      const loadedCustomInsertions = varsResult.success ? varsResult.customInsertions : [];
-      const loadedInternalNotes = varsResult.success ? varsResult.internalNotes : [];
-
-      setVariableValues(loadedVariableValues);
-      setToggleStates(loadedToggleStates);
-      setCustomInsertions(loadedCustomInsertions);
-      setInternalNotes(loadedInternalNotes);
-
-      // Generate and cache the content
-      let freshContent = excerptResult.excerpt.content;
-      const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
-
-      if (isAdf) {
-        freshContent = filterContentByToggles(freshContent, loadedToggleStates);
-        freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
-        freshContent = insertCustomParagraphsInAdf(freshContent, loadedCustomInsertions);
-        freshContent = insertInternalNotesInAdf(freshContent, loadedInternalNotes);
-      } else {
-        // For plain text, filter toggles
-        const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
-        freshContent = freshContent.replace(toggleRegex, (match, toggleName, content) => {
-          const trimmedName = toggleName.trim();
-          return loadedToggleStates?.[trimmedName] === true ? content : '';
-        });
-        // Strip any remaining markers
-        freshContent = freshContent.replace(/\{\{toggle:[^}]+\}\}/g, '');
-        freshContent = freshContent.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
-
-        // Substitute variables
-        const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        if (excerptResult.excerpt.variables) {
-          excerptResult.excerpt.variables.forEach(variable => {
-            const value = loadedVariableValues[variable.name] || `{{${variable.name}}}`;
-            const regex = new RegExp(`\\{\\{${escapeRegex(variable.name)}\\}\\}`, 'g');
-            freshContent = freshContent.replace(regex, value);
-          });
-        }
-      }
-
-      // Cache it for next time
-      await invoke('saveCachedContent', {
-        localId,
-        renderedContent: freshContent
-      });
-
-      return { content: freshContent, fromCache: false };
-    },
-    enabled: enabled && !!localId && !!excerptId,
-    staleTime: 1000 * 60 * 5, // 5 minutes - cached content should be stable
-    gcTime: 1000 * 60 * 30, // 30 minutes
-  });
-};
 
 const App = () => {
   const config = useConfig();
@@ -976,7 +240,11 @@ const App = () => {
     if (!isEditing && cachedContentData) {
       setContent(cachedContentData.content);
     }
-  }, [isEditing, cachedContentData]);
+  }, [isEditing, cachedContentData, effectiveLocalId]);
+
+  // NOTE: Cache invalidation ONLY happens after auto-save (see line ~406)
+  // We do NOT invalidate on every mode switch - that would defeat caching!
+  // The auto-save invalidation is sufficient to keep view mode fresh after edits.
 
   // In edit mode, process excerpt data from React Query
   useEffect(() => {
@@ -1128,6 +396,10 @@ const App = () => {
               renderedContent: previewContent
             });
 
+            // Invalidate the cached content query to force refresh when switching to view mode
+            // This marks the React Query cache as stale so it refetches next time
+            await queryClient.invalidateQueries({ queryKey: ['cachedContent', effectiveLocalId] });
+
             setSaveStatus('saved');
           },
           onError: (error) => {
@@ -1189,12 +461,9 @@ const App = () => {
         setSourceLastModified(excerptResult.excerpt.updatedAt);
         setIncludeLastSynced(varsResult.lastSynced);
 
-        // If stale, store the raw latest content for diff view and log it
+        // If stale, store the raw latest content for diff view
         if (stale) {
           setLatestRenderedContent(excerptResult.excerpt.content);
-          console.log('[Include] Update available for:', excerptResult.excerpt.name);
-          console.log('[Include] Source hash:', sourceContentHash);
-          console.log('[Include] Synced hash:', syncedContentHash);
         }
       } catch (err) {
         console.error('[Include] Staleness check error:', err);
@@ -1520,391 +789,48 @@ const App = () => {
         </TabList>
         {/* Write Tab - Variables */}
         <TabPanel>
-          {excerpt.variables && excerpt.variables.length > 0 && (
-            <Box xcss={variableBoxStyle}>
-              <DynamicTable
-                  head={{
-                    cells: [
-                      {
-                        key: 'variable',
-                        content: 'Variable',
-                        width: 20
-                      },
-                      {
-                        key: 'value',
-                        content: 'Value',
-                        width: 75
-                      },
-                      {
-                        key: 'status',
-                        content: 'Status',
-                        width: 5
-                      }
-                    ]
-                  }}
-                  rows={excerpt.variables.map(variable => {
-                    const isRequired = variable.required || false;
-                    const isEmpty = !variableValues[variable.name] || variableValues[variable.name].trim() === '';
-                    const showWarning = isRequired && isEmpty;
-
-                    return {
-                      key: variable.name,
-                      cells: [
-                        {
-                          key: 'variable',
-                          content: (
-                            <Inline space="space.050" alignBlock="center">
-                              {isRequired && <Text><Strong>*</Strong></Text>}
-                              <Text><Code>{variable.name}</Code></Text>
-                              {variable.description && (
-                                <Tooltip content={variable.description} position="right">
-                                  <Icon glyph="question-circle" size="small" label="" />
-                                </Tooltip>
-                              )}
-                              {showWarning && (
-                                <Tooltip content="This field is required. Please provide a value." position="right">
-                                  <Icon glyph="warning" size="small" label="Required field" color="color.icon.warning" />
-                                </Tooltip>
-                              )}
-                            </Inline>
-                          )
-                        },
-                        {
-                          key: 'value',
-                          content: (
-                            <Box xcss={showWarning ? requiredFieldStyle : undefined}>
-                              <Textfield
-                                placeholder={variable.example ? `e.g., ${variable.example}` : `Enter value for ${variable.name}`}
-                                value={variableValues[variable.name] || ''}
-                                onChange={(e) => {
-                                  setVariableValues({
-                                    ...variableValues,
-                                    [variable.name]: e.target.value
-                                  });
-                                }}
-                              />
-                            </Box>
-                          )
-                        },
-                        {
-                          key: 'status',
-                          content: (
-                            isEmpty ? (
-                              isRequired ? (
-                                <Icon glyph="checkbox-unchecked" label="Required - Empty" color="color.icon.danger" />
-                              ) : (
-                                <Icon glyph="checkbox-unchecked" label="Optional - Empty" color="color.icon.subtle" />
-                              )
-                            ) : (
-                              <Icon glyph="check-circle" label="Filled" color="color.icon.success" />
-                            )
-                          )
-                        }
-                      ]
-                    };
-                  })}
-                />
-            </Box>
-          )}
-
-          {(!excerpt.variables || excerpt.variables.length === 0) && (
-            <Text>No variables defined for this standard.</Text>
-          )}
+          <VariableConfigPanel
+            excerpt={excerpt}
+            variableValues={variableValues}
+            setVariableValues={setVariableValues}
+          />
         </TabPanel>
 
         {/* Alternatives Tab - Toggles */}
         <TabPanel>
-          {excerpt.toggles && excerpt.toggles.length > 0 ? (
-            <Box xcss={variableBoxStyle}>
-              <DynamicTable
-                head={{
-                  cells: [
-                    {
-                      key: 'toggle',
-                      content: '',
-                      width: 5
-                    },
-                    {
-                      key: 'name',
-                      content: 'Toggle',
-                      width: 30
-                    },
-                    {
-                      key: 'description',
-                      content: 'Description',
-                      width: 65
-                    }
-                  ]
-                }}
-                rows={excerpt.toggles.map(toggle => ({
-                  key: toggle.name,
-                  cells: [
-                    {
-                      key: 'toggle',
-                      content: (
-                        <Toggle
-                          isChecked={toggleStates[toggle.name] || false}
-                          onChange={(e) => {
-                            setToggleStates({
-                              ...toggleStates,
-                              [toggle.name]: e.target.checked
-                            });
-                          }}
-                        />
-                      )
-                    },
-                    {
-                      key: 'name',
-                      content: <Text><Strong>{toggle.name}</Strong></Text>
-                    },
-                    {
-                      key: 'description',
-                      content: toggle.description ? <Text><Em>{toggle.description}</Em></Text> : <Text>—</Text>
-                    }
-                  ]
-                }))}
-              />
-            </Box>
-          ) : (
-            <Text>No toggles defined for this standard.</Text>
-          )}
+          <ToggleConfigPanel
+            excerpt={excerpt}
+            toggleStates={toggleStates}
+            setToggleStates={setToggleStates}
+          />
         </TabPanel>
 
         {/* Custom Tab - Custom paragraph insertions and internal notes */}
         <TabPanel>
-          {(() => {
-            // Extract paragraphs from ORIGINAL excerpt content only (not preview with custom insertions)
-            // This ensures users can only position custom content relative to source content
-            let originalContent = excerpt?.content;
-            if (originalContent && typeof originalContent === 'object' && originalContent.type === 'doc') {
-              // Apply variable substitution and toggle filtering to show accurate text
-              originalContent = filterContentByToggles(originalContent, toggleStates);
-              originalContent = substituteVariablesInAdf(originalContent, variableValues);
-            }
-
-            const paragraphs = extractParagraphsFromAdf(originalContent);
-
-            if (paragraphs.length === 0) {
-              return <Text><Em>No paragraphs available for insertion. Please add content first.</Em></Text>;
-            }
-
-            // Create dropdown options from ONLY original source paragraphs
-            const paragraphOptions = paragraphs.map(p => ({
-              label: `After paragraph ${p.index + 1}: "${p.lastSentence}"`,
-              value: p.index
-            }));
-
-            // Combine existing content and sort by position
-            const existingContent = [
-              ...customInsertions.map((item, idx) => ({
-                type: 'paragraph',
-                position: item.position,
-                content: item.text,
-                originalIndex: idx
-              })),
-              ...internalNotes.map((item, idx) => ({
-                type: 'note',
-                position: item.position,
-                content: item.content,
-                originalIndex: idx
-              }))
-            ].sort((a, b) => a.position - b.position);
-
-            // Build table rows: "Add New" row + existing content rows
-            const tableRows = [
-              // Add New row
-              {
-                key: 'add-new',
-                cells: [
-                  {
-                    key: 'type-toggle',
-                    content: (
-                      <Inline space="space.050" alignBlock="center">
-                        <Text>📝</Text>
-                        <Tooltip content="📝 is saved as a custom paragraph that is visible to clients, 🔒 is saved as an Internal Note that is visible only to SeatGeek employees.">
-                          <Toggle
-                            isChecked={insertionType === 'note'}
-                            onChange={(e) => {
-                              setInsertionType(e.target.checked ? 'note' : 'body');
-                              setSelectedPosition(null);
-                              setCustomText('');
-                            }}
-                          />
-                        </Tooltip>
-                        <Text>🔒</Text>
-                      </Inline>
-                    )
-                  },
-                  {
-                    key: 'position',
-                    content: (
-                      <Select
-                        options={paragraphOptions}
-                        value={paragraphOptions.find(opt => opt.value === selectedPosition)}
-                        placeholder="After paragraph..."
-                        onChange={(e) => setSelectedPosition(e.value)}
-                      />
-                    )
-                  },
-                  {
-                    key: 'content',
-                    content: (
-                      <Textfield
-                        placeholder={insertionType === 'body' ? "Enter paragraph text..." : "Enter internal note..."}
-                        value={customText}
-                        onChange={(e) => setCustomText(e.target.value)}
-                        isDisabled={selectedPosition === null}
-                      />
-                    )
-                  },
-                  {
-                    key: 'action',
-                    content: (() => {
-                      // Calculate target position for the disabled check
-                      let targetPosition = null;
-                      if (selectedPosition !== null) {
-                        const rendered = [];
-                        const originalCount = paragraphs.length - customInsertions.length;
-
-                        for (let i = 0; i < originalCount; i++) {
-                          rendered.push({ type: 'original', index: i });
-                          const customsHere = customInsertions.filter(ins => ins.position === i);
-                          for (const custom of customsHere) {
-                            rendered.push({ type: 'custom', insertedAfter: i });
-                          }
-                        }
-
-                        const selected = rendered[selectedPosition];
-                        if (selected) {
-                          targetPosition = selected.type === 'original' ? selected.index : selected.insertedAfter;
-                        }
-                      }
-
-                      const hasNoteAtPosition = targetPosition !== null && internalNotes.some(n => n.position === targetPosition);
-
-                      return (
-                        <Button
-                          appearance="primary"
-                          isDisabled={selectedPosition === null || !customText.trim() || (insertionType === 'note' && hasNoteAtPosition)}
-                          onClick={() => {
-                            if (insertionType === 'body') {
-                              const newInsertion = {
-                                position: targetPosition,
-                                text: customText.trim()
-                              };
-                              setCustomInsertions([...customInsertions, newInsertion]);
-                            } else {
-                              if (!hasNoteAtPosition) {
-                                const newNote = {
-                                  position: targetPosition,
-                                  content: customText.trim()
-                                };
-                                setInternalNotes([...internalNotes, newNote]);
-                              }
-                            }
-
-                            setSelectedPosition(null);
-                            setCustomText('');
-                          }}
-                        >
-                          Add
-                        </Button>
-                      );
-                    })()
-                  }
-                ]
-              },
-              // Existing content rows
-              ...existingContent.map((item, idx) => {
-                // Get the paragraph text preview for the position
-                const targetParagraph = paragraphs.find(p => p.index === item.position);
-                const positionPreview = targetParagraph
-                  ? targetParagraph.lastSentence.substring(0, 30) + (targetParagraph.lastSentence.length > 30 ? '...' : '')
-                  : `¶${item.position + 1}`;
-
-                return {
-                  key: `existing-${idx}`,
-                  cells: [
-                    {
-                      key: 'type-indicator',
-                      content: (
-                        <Inline space="space.075" alignBlock="center">
-                          <Text>{item.type === 'paragraph' ? '📝' : '🔒'}</Text>
-                          <Lozenge appearance={item.type === 'paragraph' ? 'success' : 'moved'}>
-                            {item.type === 'paragraph' ? 'External' : 'Internal'}
-                          </Lozenge>
-                        </Inline>
-                      )
-                    },
-                    {
-                      key: 'position-display',
-                      content: <Text><Em>After: "{positionPreview}"</Em></Text>
-                    },
-                    {
-                      key: 'content-display',
-                      content: <Text>{item.content.substring(0, 100)}{item.content.length > 100 ? '...' : ''}</Text>
-                    },
-                    {
-                      key: 'delete-action',
-                      content: (
-                        <Button
-                          appearance="subtle"
-                          onClick={() => {
-                            if (item.type === 'paragraph') {
-                              setCustomInsertions(customInsertions.filter((_, i) => i !== item.originalIndex));
-                            } else {
-                              setInternalNotes(internalNotes.filter((_, i) => i !== item.originalIndex));
-                            }
-                          }}
-                        >
-                          <Icon glyph="trash" size="small" label="Delete" />
-                        </Button>
-                      )
-                    }
-                  ]
-                };
-              })
-            ];
-
-            return (
-              <Box xcss={variableBoxStyle}>
-                <DynamicTable
-                  head={{
-                    cells: [
-                      {
-                        key: 'type',
-                        content: 'Internal? 🔒',
-                        width: 12
-                      },
-                      {
-                        key: 'position',
-                        content: 'Placement',
-                        width: 18
-                      },
-                      {
-                        key: 'content',
-                        content: 'Content',
-                        width: 65
-                      },
-                      {
-                        key: 'action',
-                        content: '',
-                        width: 5
-                      }
-                    ]
-                  }}
-                  rows={tableRows}
-                />
-              </Box>
-            );
-          })()}
+          <CustomInsertionsPanel
+            excerpt={excerpt}
+            variableValues={variableValues}
+            toggleStates={toggleStates}
+            customInsertions={customInsertions}
+            setCustomInsertions={setCustomInsertions}
+            internalNotes={internalNotes}
+            setInternalNotes={setInternalNotes}
+            insertionType={insertionType}
+            setInsertionType={setInsertionType}
+            selectedPosition={selectedPosition}
+            setSelectedPosition={setSelectedPosition}
+            customText={customText}
+            setCustomText={setCustomText}
+          />
         </TabPanel>
         </Tabs>
 
         {/* Preview - Always visible below tabs */}
         <Box xcss={previewBoxStyle}>
           {isAdf ? (
-            <AdfRenderer document={previewContent} />
+            <Box xcss={adfContentContainerStyle}>
+              <AdfRenderer document={previewContent} />
+            </Box>
           ) : (
             <Text>{previewContent || 'No content'}</Text>
           )}
@@ -1980,7 +906,9 @@ const App = () => {
                         <Text><Strong>Your Current Rendered Version</Strong></Text>
                         <Box xcss={diffCurrentVersionStyle}>
                           {content && typeof content === 'object' && content.type === 'doc' ? (
-                            <AdfRenderer document={content} />
+                            <Box xcss={adfContentContainerStyle}>
+                              <AdfRenderer document={content} />
+                            </Box>
                           ) : (
                             <Text>{content || 'No content'}</Text>
                           )}
@@ -1992,7 +920,9 @@ const App = () => {
                         <Text><Strong>Latest Raw Source (with all tags)</Strong></Text>
                         <Box xcss={diffNewVersionStyle}>
                           {latestRenderedContent && typeof latestRenderedContent === 'object' && latestRenderedContent.type === 'doc' ? (
-                            <AdfRenderer document={latestRenderedContent} />
+                            <Box xcss={adfContentContainerStyle}>
+                              <AdfRenderer document={latestRenderedContent} />
+                            </Box>
                           ) : (
                             <Text>{latestRenderedContent || 'No content'}</Text>
                           )}
@@ -2005,7 +935,9 @@ const App = () => {
             )}
           </Fragment>
         )}
-        <AdfRenderer document={cleaned} />
+        <Box xcss={adfContentContainerStyle}>
+          <AdfRenderer document={cleaned} />
+        </Box>
       </Fragment>
     );
   }
@@ -2069,18 +1001,13 @@ const App = () => {
           )}
         </Fragment>
       )}
-      <div style={{
-        width: '100%',
-        maxWidth: '100%',
-        overflow: 'hidden',
-        boxSizing: 'border-box'
-      }}>
+      <Box xcss={adfContentContainerStyle}>
         {content && typeof content === 'object' && content.type === 'doc' ? (
           <AdfRenderer document={content} />
         ) : (
           <Text>{content}</Text>
         )}
-      </div>
+      </Box>
     </Fragment>
   );
 };

@@ -31,8 +31,29 @@ import ForgeReconciler, {
   xcss
 } from '@forge/react';
 import { invoke, router } from '@forge/bridge';
-import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
+
+// Import React Query hooks
+import {
+  useExcerptsQuery,
+  useCategoriesQuery,
+  useSaveCategoriesMutation,
+  useExcerptUsageQuery,
+  useDeleteExcerptMutation,
+  useCheckAllSourcesMutation,
+  useCheckAllIncludesMutation,
+  usePushUpdatesToPageMutation,
+  usePushUpdatesToAllMutation,
+  useAllUsageCountsQuery
+} from './hooks/admin-hooks';
+
+// Import utility functions
+import {
+  escapeCSV,
+  generateIncludesCSV,
+  generateMultiExcerptCSV
+} from './utils/admin-utils';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -49,258 +70,8 @@ const queryClient = new QueryClient({
 });
 
 // ============================================================================
-// REACT QUERY HOOKS
+// STYLES
 // ============================================================================
-
-// Hook for fetching all excerpts with orphaned data
-const useExcerptsQuery = () => {
-  return useQuery({
-    queryKey: ['excerpts', 'list'],
-    queryFn: async () => {
-      const timestamp = new Date().toISOString();
-      console.log(`[REACT-QUERY-ADMIN] 🔄 EXECUTING excerpts query at ${timestamp}`);
-      const result = await invoke('getAllExcerpts');
-
-      if (!result || !result.success) {
-        throw new Error('Failed to load excerpts');
-      }
-
-      // Sanitize excerpts
-      const sanitized = (result.excerpts || []).map(excerpt => {
-        const cleanVariables = Array.isArray(excerpt.variables)
-          ? excerpt.variables.filter(v => v && typeof v === 'object' && v.name)
-          : [];
-        const cleanToggles = Array.isArray(excerpt.toggles)
-          ? excerpt.toggles.filter(t => t && typeof t === 'object' && t.name)
-          : [];
-
-        return {
-          ...excerpt,
-          variables: cleanVariables,
-          toggles: cleanToggles,
-          category: String(excerpt.category || 'General'),
-          updatedAt: excerpt.updatedAt ? String(excerpt.updatedAt) : null
-        };
-      });
-
-      // Load orphaned usage data
-      let orphanedUsage = [];
-      try {
-        const orphanedResult = await invoke('getOrphanedUsage');
-        if (orphanedResult && orphanedResult.success) {
-          orphanedUsage = orphanedResult.orphanedUsage;
-        }
-      } catch (err) {
-        console.error('[REACT-QUERY-ADMIN] Failed to load orphaned usage:', err);
-      }
-
-      return { excerpts: sanitized, orphanedUsage };
-    },
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    gcTime: 1000 * 60 * 30, // 30 minutes
-  });
-};
-
-// Hook for fetching categories
-const useCategoriesQuery = () => {
-  return useQuery({
-    queryKey: ['categories'],
-    queryFn: async () => {
-      const result = await invoke('getCategories');
-      if (result.success && result.categories) {
-        return result.categories;
-      }
-      // Default categories if none stored
-      return ['General', 'Pricing', 'Technical', 'Legal', 'Marketing'];
-    },
-    staleTime: 1000 * 60 * 10, // 10 minutes - categories change rarely
-    gcTime: 1000 * 60 * 60, // 1 hour
-  });
-};
-
-// Hook for saving categories
-const useSaveCategoriesMutation = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (categories) => {
-      await invoke('saveCategories', { categories });
-      return categories;
-    },
-    onSuccess: (categories) => {
-      // Update cache immediately
-      queryClient.setQueryData(['categories'], categories);
-    },
-    onError: (error) => {
-      console.error('[REACT-QUERY-ADMIN] Failed to save categories:', error);
-    }
-  });
-};
-
-// Hook for lazy-loading usage data for a specific excerpt
-const useExcerptUsageQuery = (excerptId, enabled = true) => {
-  return useQuery({
-    queryKey: ['excerpt', excerptId, 'usage'],
-    queryFn: async () => {
-      const result = await invoke('getExcerptUsage', { excerptId });
-      if (result && result.success) {
-        return result.usage || [];
-      }
-      throw new Error('Failed to load usage data');
-    },
-    enabled: enabled && !!excerptId,
-    staleTime: 1000 * 60 * 2, // 2 minutes for usage data
-    gcTime: 1000 * 60 * 10, // 10 minutes
-  });
-};
-
-// Hook for deleting an excerpt
-const useDeleteExcerptMutation = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (excerptId) => {
-      const result = await invoke('deleteExcerpt', { excerptId });
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to delete excerpt');
-      }
-      return excerptId;
-    },
-    // Optimistic update: remove excerpt from UI immediately
-    onMutate: async (excerptId) => {
-      // Cancel any outgoing refetches (so they don't overwrite our optimistic update)
-      await queryClient.cancelQueries({ queryKey: ['excerpts', 'list'] });
-
-      // Snapshot the previous value
-      const previousExcerpts = queryClient.getQueryData(['excerpts', 'list']);
-
-      // Optimistically update to the new value
-      queryClient.setQueryData(['excerpts', 'list'], (old) => {
-        if (!old) return old;
-        return old.filter(excerpt => excerpt.id !== excerptId);
-      });
-
-      // Return context with previous value for rollback
-      return { previousExcerpts };
-    },
-    onSuccess: (excerptId) => {
-      // Remove usage data for this excerpt
-      queryClient.removeQueries({ queryKey: ['excerpt', excerptId, 'usage'] });
-    },
-    onError: (error, excerptId, context) => {
-      console.error('[REACT-QUERY-ADMIN] Delete failed:', error);
-      // Rollback optimistic update on error
-      if (context?.previousExcerpts) {
-        queryClient.setQueryData(['excerpts', 'list'], context.previousExcerpts);
-      }
-    },
-    // Always refetch after error or success to ensure data consistency
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['excerpts', 'list'] });
-    }
-  });
-};
-
-// Hook for Check All Sources (maintenance operation)
-const useCheckAllSourcesMutation = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async () => {
-      console.log('[REACT-QUERY-ADMIN] Starting Check All Sources...');
-      const result = await invoke('checkAllSources');
-      if (!result.success) {
-        throw new Error(result.error || 'Check failed');
-      }
-      return result;
-    },
-    onSuccess: (result) => {
-      // Invalidate excerpts to show updated orphan status
-      queryClient.invalidateQueries({ queryKey: ['excerpts', 'list'] });
-    },
-    onError: (error) => {
-      console.error('[REACT-QUERY-ADMIN] Check All Sources failed:', error);
-    }
-  });
-};
-
-// Hook for Check All Includes (maintenance operation)
-const useCheckAllIncludesMutation = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async () => {
-      console.log('[REACT-QUERY-ADMIN] Starting Check All Includes...');
-      const result = await invoke('checkAllIncludes');
-      if (!result.success) {
-        throw new Error(result.error || 'Check failed');
-      }
-      return result;
-    },
-    onSuccess: () => {
-      // Invalidate all usage queries as they may have changed
-      queryClient.invalidateQueries({ queryKey: ['excerpt'] });
-    },
-    onError: (error) => {
-      console.error('[REACT-QUERY-ADMIN] Check All Includes failed:', error);
-    }
-  });
-};
-
-// Hook for pushing updates to a page
-const usePushUpdatesToPageMutation = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ excerptId, pageId }) => {
-      const result = await invoke('pushUpdatesToPage', { excerptId, pageId });
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to push updates');
-      }
-      return { excerptId, result };
-    },
-    onSuccess: ({ excerptId }) => {
-      // Invalidate usage data for this excerpt
-      queryClient.invalidateQueries({ queryKey: ['excerpt', excerptId, 'usage'] });
-    }
-  });
-};
-
-// Hook for pushing updates to all pages
-const usePushUpdatesToAllMutation = () => {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (excerptId) => {
-      const result = await invoke('pushUpdatesToAll', { excerptId });
-      if (!result.success) {
-        throw new Error(result.error || 'Failed to push updates');
-      }
-      return { excerptId, result };
-    },
-    onSuccess: ({ excerptId }) => {
-      // Invalidate usage data for this excerpt
-      queryClient.invalidateQueries({ queryKey: ['excerpt', excerptId, 'usage'] });
-    }
-  });
-};
-
-// Hook for fetching usage counts for all excerpts (lightweight for sorting)
-const useAllUsageCountsQuery = () => {
-  return useQuery({
-    queryKey: ['usageCounts', 'all'],
-    queryFn: async () => {
-      const result = await invoke('getAllUsageCounts');
-      if (result && result.success) {
-        // Returns object like { excerptId1: 5, excerptId2: 12, ... }
-        return result.usageCounts || {};
-      }
-      throw new Error('Failed to load usage counts');
-    },
-    staleTime: 1000 * 60 * 2, // 2 minutes
-    gcTime: 1000 * 60 * 10, // 10 minutes
-  });
-};
 
 // Card styling
 const cardStyles = xcss({
@@ -380,7 +151,7 @@ const rightContentStyles = xcss({
 const SHOW_MIGRATION_TOOLS = false;
 
 // App version (from package.json)
-const APP_VERSION = '7.6.1';
+const APP_VERSION = '7.20.0-debug';
 
 const App = () => {
   // ============================================================================
@@ -619,91 +390,6 @@ const App = () => {
     }
   };
 
-  // Helper function to generate CSV from Include data
-  const generateIncludesCSV = (includesData) => {
-    if (!includesData || includesData.length === 0) {
-      return '';
-    }
-
-    // Collect all unique variable names and toggle names
-    const allVariableNames = new Set();
-    const allToggleNames = new Set();
-
-    includesData.forEach(inc => {
-      if (inc.variables) {
-        inc.variables.forEach(v => allVariableNames.add(v.name));
-      }
-      if (inc.toggles) {
-        inc.toggles.forEach(t => allToggleNames.add(t.name));
-      }
-    });
-
-    const variableColumns = Array.from(allVariableNames).sort();
-    const toggleColumns = Array.from(allToggleNames).sort();
-
-    // Build CSV header
-    const headers = [
-      'Page URL',
-      'Page Title',
-      'Heading Anchor',
-      'Standard Name',
-      'Standard Category',
-      'Status',
-      'Last Synced',
-      'Standard Last Modified',
-      ...variableColumns.map(v => `Variable: ${v}`),
-      ...toggleColumns.map(t => `Toggle: ${t}`),
-      'Custom Insertions Count',
-      'Rendered Content'
-    ];
-
-    // Escape CSV value (handle quotes and commas)
-    const escapeCSV = (value) => {
-      if (value === null || value === undefined) return '';
-      const str = String(value);
-      if (str.includes('"') || str.includes(',') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
-
-    // Build CSV rows
-    const rows = includesData.map(inc => {
-      const row = [
-        escapeCSV(inc.pageUrl || ''),
-        escapeCSV(inc.pageTitle || ''),
-        escapeCSV(inc.headingAnchor || ''),
-        escapeCSV(inc.excerptName || ''),
-        escapeCSV(inc.excerptCategory || ''),
-        escapeCSV(inc.status || ''),
-        escapeCSV(inc.lastSynced || ''),
-        escapeCSV(inc.excerptLastModified || '')
-      ];
-
-      // Add variable values
-      variableColumns.forEach(varName => {
-        const value = inc.variableValues?.[varName] || '';
-        row.push(escapeCSV(value));
-      });
-
-      // Add toggle states
-      toggleColumns.forEach(toggleName => {
-        const state = inc.toggleStates?.[toggleName] || false;
-        row.push(escapeCSV(state ? 'Enabled' : 'Disabled'));
-      });
-
-      // Add custom insertions count
-      row.push(escapeCSV((inc.customInsertions || []).length));
-
-      // Add rendered content
-      row.push(escapeCSV(inc.renderedContent || ''));
-
-      return row.join(',');
-    });
-
-    // Combine header and rows
-    return [headers.join(','), ...rows].join('\n');
-  };
 
   // Poll for progress updates
   useEffect(() => {
@@ -789,8 +475,9 @@ const App = () => {
 
     try {
       // Call async trigger - returns immediately with jobId + progressId
-      console.log('[ADMIN] Starting async Check All Includes...');
-      const triggerResult = await invoke('checkAllIncludes', {});
+      // Always start in dry-run mode (preview) first
+      console.log('[ADMIN] Starting async Check All Includes (dry-run mode)...');
+      const triggerResult = await invoke('checkAllIncludes', { dryRun: true });
 
       if (!triggerResult.success) {
         throw new Error(triggerResult.error || 'Failed to start check');
@@ -852,22 +539,8 @@ const App = () => {
       // Store results for potential CSV download
       setIncludesCheckResult(results);
 
-      // Build summary message
-      let message = `✅ Check complete:\n`;
-      message += `• ${summary.activeCount} active Embed(s)\n`;
-      message += `• ${summary.orphanedCount} orphaned Embed(s)\n`;
-      message += `• ${summary.brokenReferenceCount} broken reference(s)\n`;
-      message += `• ${summary.staleCount} stale Embed(s)`;
-
-      if (summary.orphanedEntriesRemoved > 0) {
-        message += `\n\n🧹 Cleanup complete:\n`;
-        message += `• ${summary.orphanedEntriesRemoved} orphaned entry/entries removed`;
-      } else {
-        message += `\n\n✨ No orphaned entries found`;
-      }
-
-      console.log(message);
-      alert(message);
+      // Results will be displayed in the progress UI component
+      // No alert needed - keep progress state with complete phase
 
       // Offer to download CSV
       if (results.activeIncludes && results.activeIncludes.length > 0) {
@@ -891,83 +564,130 @@ const App = () => {
       setLastVerificationTime(now);
       console.log('[ADMIN] Verification timestamp updated:', now);
 
-      // Show 100% briefly before clearing
-      await new Promise(resolve => setTimeout(resolve, 800));
+      // Keep progress visible in dry-run mode so user can see results and clean up button
+      // Only clear in live mode after a delay
+      if (!finalProgressResult.progress.dryRun) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        setIncludesProgress(null);
+      }
 
     } catch (err) {
       console.error('[ADMIN] Error checking includes:', err);
       alert('Error checking includes: ' + err.message);
       isComplete = true; // Stop polling on error
+      setIncludesProgress(null);
     } finally {
       isComplete = true; // Ensure polling stops
       setProgressId(null);
+    }
+  };
+
+  // Handle Clean Up Now button (live mode - actually deletes orphaned data)
+  const handleCleanUpNow = async () => {
+    // Confirm before running cleanup
+    if (!confirm('⚠️ This will permanently move orphaned Embed configurations to the deleted namespace (recoverable for 90 days).\n\nContinue with cleanup?')) {
+      return;
+    }
+
+    // Clear current progress and start fresh
+    setIncludesProgress({
+      phase: 'queuing',
+      total: 0,
+      processed: 0,
+      percent: 0,
+      status: 'Queuing cleanup job...'
+    });
+
+    let isComplete = false;
+    let progressId = null;
+
+    try {
+      // Call async trigger with dryRun: false (LIVE MODE)
+      console.log('[ADMIN] Starting async Check All Includes (LIVE mode - cleanup enabled)...');
+      const triggerResult = await invoke('checkAllIncludes', { dryRun: false });
+
+      if (!triggerResult.success) {
+        throw new Error(triggerResult.error || 'Failed to start cleanup');
+      }
+
+      progressId = triggerResult.progressId;
+      const jobId = triggerResult.jobId;
+
+      console.log(`[ADMIN] Cleanup job queued: jobId=${jobId}, progressId=${progressId}`);
+
+      // Start polling for progress
+      const pollForProgress = async () => {
+        // Give worker a moment to start
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        while (!isComplete) {
+          try {
+            const progressResult = await invoke('getCheckProgress', { progressId });
+            if (progressResult.success && progressResult.progress) {
+              const progress = progressResult.progress;
+              setIncludesProgress(progress);
+              console.log(`[ADMIN] Cleanup Progress: ${progress.percent}% - ${progress.status}`);
+
+              // Check if complete
+              if (progress.phase === 'complete') {
+                isComplete = true;
+                break;
+              }
+
+              // Check if error
+              if (progress.phase === 'error') {
+                throw new Error(progress.error || 'Cleanup failed');
+              }
+            }
+          } catch (err) {
+            console.error('[ADMIN] Polling error:', err);
+            // Continue polling unless complete
+          }
+
+          // Poll every 500ms
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      };
+
+      // Start polling
+      await pollForProgress();
+
+      // Fetch final results from progress data
+      const finalProgressResult = await invoke('getCheckProgress', { progressId });
+      if (!finalProgressResult.success || !finalProgressResult.progress.results) {
+        throw new Error('Failed to retrieve final cleanup results');
+      }
+
+      const results = finalProgressResult.progress.results;
+      const summary = results.summary;
+
+      console.log('[ADMIN] Cleanup complete:', summary);
+
+      // Store results for potential CSV download
+      setIncludesCheckResult(results);
+
+      // Update last verification timestamp
+      const now = new Date().toISOString();
+      await invoke('setLastVerificationTime', { timestamp: now });
+      setLastVerificationTime(now);
+      console.log('[ADMIN] Verification timestamp updated:', now);
+
+      // Show results for 2 seconds before clearing
+      await new Promise(resolve => setTimeout(resolve, 2000));
       setIncludesProgress(null);
+
+    } catch (err) {
+      console.error('[ADMIN] Error during cleanup:', err);
+      alert('Error during cleanup: ' + err.message);
+      isComplete = true; // Stop polling on error
+      setIncludesProgress(null);
+    } finally {
+      isComplete = true; // Ensure polling stops
+      setProgressId(null);
     }
   };
 
   // Generate CSV for MultiExcerpt Includes scan results
-  const generateMultiExcerptCSV = (includeData) => {
-    // Helper to escape CSV values
-    const escapeCSV = (value) => {
-      if (value === null || value === undefined) return '';
-      const stringValue = String(value);
-      if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n')) {
-        return `"${stringValue.replace(/"/g, '""')}"`;
-      }
-      return stringValue;
-    };
-
-    // Collect all unique variable names across all includes
-    const allVariables = new Set();
-    includeData.forEach(inc => {
-      if (inc.variableValues && Array.isArray(inc.variableValues)) {
-        inc.variableValues.forEach(varObj => {
-          if (varObj.k) {
-            allVariables.add(varObj.k);
-          }
-        });
-      }
-    });
-
-    const variableColumns = Array.from(allVariables).sort();
-
-    // Build CSV header
-    const baseHeaders = [
-      'Page ID',
-      'Page Title',
-      'Page URL',
-      'MultiStandard Name',
-      'Source Page Title'
-    ];
-
-    // Add variable columns
-    const variableHeaders = variableColumns.map(varName => `Variable: ${varName}`);
-
-    const headers = [...baseHeaders, ...variableHeaders];
-
-    // Build CSV rows
-    const rows = includeData.map(inc => {
-      const row = [
-        escapeCSV(inc.pageId || ''),
-        escapeCSV(inc.pageTitle || ''),
-        escapeCSV(inc.pageUrl || ''),
-        escapeCSV(inc.multiExcerptName || ''),
-        escapeCSV(inc.sourcePageTitle || '')
-      ];
-
-      // Add variable values
-      variableColumns.forEach(varName => {
-        const varObj = inc.variableValues?.find(v => v.k === varName);
-        const value = varObj?.v || '';
-        row.push(escapeCSV(value));
-      });
-
-      return row.join(',');
-    });
-
-    // Combine header and rows
-    return [headers.join(','), ...rows].join('\n');
-  };
 
   // Handle Scan MultiExcerpt Includes button click
   const handleScanMultiExcerptIncludes = async () => {
@@ -1436,7 +1156,7 @@ const App = () => {
               onClick={handleCheckAllSources}
               isDisabled={checkAllSourcesMutation.isPending}
             >
-              {checkAllSourcesMutation.isPending ? 'Checking...' : '🔍 Check All Standards'}
+              {checkAllSourcesMutation.isPending ? 'Checking...' : '🔍 Check All Sources'}
             </Button>
 
             <Box xcss={xcss({ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 'space.050' })}>
@@ -1565,37 +1285,81 @@ const App = () => {
       {/* Progress Bar for Check All Includes */}
       {includesProgress && (
         <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
-          <SectionMessage appearance="information">
+          <SectionMessage appearance={includesProgress.phase === 'complete' ? 'success' : 'information'}>
             <Stack space="space.200">
-              <Text><Strong>Checking All Embeds...</Strong></Text>
-              <Text><Em>⚠️ Please stay on this page until the check completes. Navigating away will cancel the operation.</Em></Text>
-              {includesProgress ? (
+              {includesProgress.phase === 'complete' ? (
                 <Fragment>
-                  <Text>{includesProgress.status || 'Processing...'}</Text>
-                  {includesProgress.currentPage && includesProgress.totalPages && (
-                    <Text><Em>Page {includesProgress.currentPage} of {includesProgress.totalPages}</Em></Text>
+                  <Text><Strong>✅ Check Complete</Strong></Text>
+                  {includesProgress.results && includesProgress.results.summary && (
+                    <Fragment>
+                      <Box xcss={xcss({ marginBlockStart: 'space.100' })}>
+                        <Text><Strong>Summary:</Strong></Text>
+                        <Stack space="space.050" xcss={xcss({ marginBlockStart: 'space.050' })}>
+                          <Text>• {includesProgress.results.summary.activeCount} active Embed(s) - working correctly</Text>
+                          <Text>• {includesProgress.results.summary.orphanedCount} orphaned Embed(s) - need cleanup</Text>
+                          <Text>• {includesProgress.results.summary.brokenReferenceCount} broken reference(s) - auto-repaired</Text>
+                          <Text>• {includesProgress.results.summary.staleCount} stale Embed(s) - updates available</Text>
+                        </Stack>
+                      </Box>
+
+                      {includesProgress.dryRun && includesProgress.results.summary.orphanedCount > 0 && (
+                        <Box xcss={xcss({ marginBlockStart: 'space.200' })}>
+                          <Text><Strong>🛡️ Dry-Run Mode:</Strong> No data was deleted. {includesProgress.results.summary.orphanedCount} orphaned Embed(s) found.</Text>
+                          <Box xcss={xcss({ marginBlockStart: 'space.100' })}>
+                            <Button appearance="warning" onClick={handleCleanUpNow}>
+                              🧹 Clean Up Now
+                            </Button>
+                          </Box>
+                        </Box>
+                      )}
+
+                      {!includesProgress.dryRun && includesProgress.results.summary.orphanedEntriesRemoved > 0 && (
+                        <Box xcss={xcss({ marginBlockStart: 'space.200' })}>
+                          <Text><Strong>🧹 Cleanup Complete:</Strong> {includesProgress.results.summary.orphanedEntriesRemoved} orphaned entry/entries removed and backed up for 90 days.</Text>
+                        </Box>
+                      )}
+
+                      {includesProgress.results.summary.orphanedCount === 0 && (
+                        <Box xcss={xcss({ marginBlockStart: 'space.200' })}>
+                          <Text><Strong>✨ All Clear:</Strong> No orphaned Embeds found.</Text>
+                        </Box>
+                      )}
+                    </Fragment>
                   )}
-                  <ProgressBar value={includesProgress.percent / 100} />
-                  <Inline space="space.200" alignBlock="center">
-                    <Text><Strong>{includesProgress.percent}%</Strong></Text>
-                    {includesProgress.total > 0 && (
-                      <Fragment>
-                        <Text>|</Text>
-                        <Text>{includesProgress.processed} / {includesProgress.total} Embeds processed</Text>
-                      </Fragment>
-                    )}
-                    {includesProgress.processed > 0 && (
-                      <Fragment>
-                        <Text>|</Text>
-                        <Text><Em>{calculateETA(includesProgress)}</Em></Text>
-                      </Fragment>
-                    )}
-                  </Inline>
                 </Fragment>
               ) : (
                 <Fragment>
-                  <Text>Starting check...</Text>
-                  <ProgressBar />
+                  <Text><Strong>Checking All Embeds...</Strong></Text>
+                  <Text><Em>⚠️ Please stay on this page until the check completes. Navigating away will cancel the operation.</Em></Text>
+                  {includesProgress ? (
+                    <Fragment>
+                      <Text>{includesProgress.status || 'Processing...'}</Text>
+                      {includesProgress.currentPage && includesProgress.totalPages && (
+                        <Text><Em>Page {includesProgress.currentPage} of {includesProgress.totalPages}</Em></Text>
+                      )}
+                      <ProgressBar value={includesProgress.percent / 100} />
+                      <Inline space="space.200" alignBlock="center">
+                        <Text><Strong>{includesProgress.percent}%</Strong></Text>
+                        {includesProgress.total > 0 && (
+                          <Fragment>
+                            <Text>|</Text>
+                            <Text>{includesProgress.processed} / {includesProgress.total} Embeds processed</Text>
+                          </Fragment>
+                        )}
+                        {includesProgress.processed > 0 && (
+                          <Fragment>
+                            <Text>|</Text>
+                            <Text><Em>{calculateETA(includesProgress)}</Em></Text>
+                          </Fragment>
+                        )}
+                      </Inline>
+                    </Fragment>
+                  ) : (
+                    <Fragment>
+                      <Text>Starting check...</Text>
+                      <ProgressBar />
+                    </Fragment>
+                  )}
                 </Fragment>
               )}
             </Stack>

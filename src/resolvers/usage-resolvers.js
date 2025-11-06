@@ -148,7 +148,6 @@ export async function removeExcerptUsage(req) {
       }
     }
 
-    console.log('Usage removed for excerpt:', excerptId, 'localId:', localId);
     return {
       success: true
     };
@@ -296,8 +295,6 @@ export async function pushUpdatesToAll(req) {
       }
     }
 
-    console.log(`pushUpdatesToAll: Updated ${updated} instances for excerpt ${excerptId}`);
-
     return {
       success: true,
       updated,
@@ -368,8 +365,6 @@ export async function pushUpdatesToPage(req) {
         errors.push({ localId: usage.localId, error: err.message });
       }
     }
-
-    console.log(`pushUpdatesToPage: Updated ${updated} instances on page ${pageId}`);
 
     return {
       success: true,

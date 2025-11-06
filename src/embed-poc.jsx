@@ -37,7 +37,6 @@ const App = () => {
 
   useEffect(() => {
     view.getContext().then(ctx => {
-      console.log('[POC] Context:', ctx);
       setContext(ctx);
     });
   }, []);

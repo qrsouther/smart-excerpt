@@ -59,7 +59,6 @@ export async function detectTogglesFromContent(req) {
 export async function getExcerpts() {
   try {
     const index = await storage.get('excerpt-index') || { excerpts: [] };
-    console.log('getExcerpts called, returning:', index.excerpts.length, 'excerpts');
     return {
       success: true,
       excerpts: index.excerpts
@@ -80,34 +79,7 @@ export async function getExcerpts() {
 export async function getExcerpt(req) {
   try {
     const excerptId = req.payload.excerptId;
-    console.log('getExcerpt called for:', excerptId);
-
     const excerpt = await storage.get(`excerpt:${excerptId}`);
-    console.log('getExcerpt - excerpt from storage:', excerpt ? 'FOUND' : 'NULL/UNDEFINED');
-
-    if (excerpt) {
-      console.log('getExcerpt - excerpt name:', excerpt.name);
-      console.log('getExcerpt - excerpt category:', excerpt.category);
-      console.log('getExcerpt - excerpt has content:', !!excerpt.content);
-
-      // DEBUG: Log complete JSON for specific excerpt
-      if (excerptId === 'f19f9c95-eb59-484f-bb48-6bf5a88ab7be' || excerptId === '5e7f419c-e862-478a-a368-8ac9a78e4640') {
-        console.log('========================================');
-        console.log('COMPLETE EXCERPT JSON:');
-        console.log('========================================');
-        console.log(JSON.stringify(excerpt, null, 2));
-        console.log('========================================');
-      }
-
-      // Log panel types to debug custom panel rendering
-      if (excerpt.content && excerpt.content.content) {
-        excerpt.content.content.forEach((node, i) => {
-          if (node.type === 'panel') {
-            console.log(`getExcerpt - Panel ${i}: type=${node.attrs?.panelType}, color=${node.attrs?.panelColor}, icon=${node.attrs?.panelIcon}`);
-          }
-        });
-      }
-    }
 
     return {
       success: true,
@@ -130,12 +102,6 @@ export async function debugExcerpt(req) {
     const excerptId = req.payload.excerptId;
     const excerpt = await storage.get(`excerpt:${excerptId}`);
 
-    console.log('========================================');
-    console.log('DEBUG EXCERPT JSON FOR:', excerptId);
-    console.log('========================================');
-    console.log(JSON.stringify(excerpt, null, 2));
-    console.log('========================================');
-
     return {
       success: true,
       excerpt: excerpt,
@@ -156,12 +122,9 @@ export async function debugExcerpt(req) {
 export async function getPageTitle(req) {
   try {
     const contentId = req.payload.contentId;
-    console.log('getPageTitle called for contentId:', contentId);
 
     const response = await api.asApp().requestConfluence(route`/wiki/api/v2/pages/${contentId}`);
     const data = await response.json();
-
-    console.log('getPageTitle - title:', data.title);
 
     return {
       success: true,
@@ -234,14 +197,10 @@ export async function recoverOrphanedData(req) {
   try {
     const { pageId, excerptId, currentLocalId } = req.payload;
 
-    console.log(`Attempting data recovery for localId ${currentLocalId}, excerptId ${excerptId} on page ${pageId}`);
-
     // Query all macro-vars entries
     const allEntries = await storage.query()
       .where('key', startsWith('macro-vars:'))
       .getMany();
-
-    console.log(`Found ${allEntries.results.length} total macro-vars entries`);
 
     // Find candidates: entries with matching excerptId that were recently accessed
     const now = new Date();
@@ -270,7 +229,6 @@ export async function recoverOrphanedData(req) {
               ageInSeconds: ageInSeconds,
               updatedAt: data.updatedAt || data.lastSynced // Use updatedAt for tiebreaker
             });
-            console.log(`Found candidate: localId ${entryLocalId}, age ${ageInSeconds}s, updatedAt: ${data.updatedAt || data.lastSynced}`);
           }
         }
       }
@@ -286,13 +244,6 @@ export async function recoverOrphanedData(req) {
       });
 
       const orphanedEntry = candidates[0];
-
-      if (candidates.length > 1) {
-        console.log(`Found ${candidates.length} candidates (multiple instances of same excerpt on page)`);
-        console.log(`Using most recently updated: ${orphanedEntry.localId} (${orphanedEntry.updatedAt})`);
-      } else {
-        console.log(`Migrating data from ${orphanedEntry.localId} to ${currentLocalId}`);
-      }
 
       // Update excerptId to match (in case it was somehow different)
       orphanedEntry.data.excerptId = excerptId;
@@ -312,7 +263,6 @@ export async function recoverOrphanedData(req) {
         if (orphanedEntry.localId !== currentLocalId) {
           await storage.delete(`macro-cache:${orphanedEntry.localId}`);
         }
-        console.log(`Also migrated cache from ${orphanedEntry.localId} to ${currentLocalId}`);
       }
 
       return {
@@ -323,7 +273,6 @@ export async function recoverOrphanedData(req) {
         candidateCount: candidates.length
       };
     } else {
-      console.log('No recent orphaned data found');
       return {
         success: true,
         recovered: false,
@@ -348,8 +297,6 @@ export async function getCachedContent(req) {
 
     const key = `macro-cache:${localId}`;
     const cached = await storage.get(key);
-
-    console.log(`getCachedContent for localId ${localId}: ${cached ? 'FOUND' : 'NOT FOUND'}`);
 
     if (!cached) {
       return { success: false, error: 'No cached content found' };
@@ -552,8 +499,6 @@ export async function saveCachedContent(req) {
       cachedAt: now
     });
 
-    console.log(`saveCachedContent: Cached content for localId ${localId}`);
-
     // Also update lastSynced in macro-vars
     const varsKey = `macro-vars:${localId}`;
     const existingVars = await storage.get(varsKey) || {};
@@ -572,16 +517,12 @@ export async function saveCachedContent(req) {
  */
 export async function getOrphanedUsage(req) {
   try {
-    console.log('Checking for orphaned usage entries...');
-
     // Get all storage keys
     const allKeys = await storage.query().where('key', startsWith('usage:')).getMany();
-    console.log('Found usage keys:', allKeys.results.length);
 
     // Get all existing excerpt IDs
     const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
     const existingExcerptIds = new Set(excerptIndex.excerpts.map(e => e.id));
-    console.log('Existing excerpts:', existingExcerptIds.size);
 
     // Find orphaned usage entries
     const orphanedUsage = [];
@@ -599,8 +540,6 @@ export async function getOrphanedUsage(req) {
         });
       }
     }
-
-    console.log('Found orphaned usage entries:', orphanedUsage.length);
 
     return {
       success: true,
@@ -645,7 +584,6 @@ export async function setLastVerificationTime(req) {
   const { timestamp } = req.payload;
   try {
     await storage.set('last-verification-time', timestamp);
-    console.log('Last verification time updated:', timestamp);
     return {
       success: true,
       timestamp

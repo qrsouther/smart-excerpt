@@ -21,9 +21,115 @@
  */
 
 import { AsyncEvent } from '@forge/events';
-import { storage } from '@forge/api';
+import { storage, startsWith } from '@forge/api';
 import api, { route } from '@forge/api';
 import { findHeadingBeforeMacro } from '../utils/adf-utils.js';
+
+// SAFETY: Dry-run mode configuration
+// Default is true (preview mode) - must be explicitly set to false for cleanup
+const DEFAULT_DRY_RUN_MODE = true;
+
+/**
+ * Soft Delete: Move data to deleted namespace instead of permanent deletion
+ * Allows recovery for 90 days before automatic expiration
+ */
+async function softDeleteMacroVars(localId, reason, metadata = {}, dryRun = true) {
+  const data = await storage.get(`macro-vars:${localId}`);
+
+  if (data) {
+    // Move to deleted namespace with recovery metadata
+    await storage.set(`macro-vars-deleted:${localId}`, {
+      ...data,
+      deletedAt: new Date().toISOString(),
+      deletedBy: 'checkAllIncludes',
+      deletionReason: reason,
+      canRecover: true,
+      ...metadata
+    });
+
+    console.log(`[SOFT-DELETE] Moved macro-vars:${localId} to deleted namespace`);
+    console.log(`[SOFT-DELETE] Reason: ${reason}`);
+    console.log(`[SOFT-DELETE] Data can be recovered for 90 days`);
+  }
+
+  // Remove from active namespace
+  if (!dryRun) {
+    await storage.delete(`macro-vars:${localId}`);
+    console.log(`[DELETE] Removed macro-vars:${localId} from active storage`);
+  } else {
+    console.log(`[DRY-RUN] Would delete macro-vars:${localId} (SKIPPED)`);
+  }
+}
+
+/**
+ * Soft Delete for cached content
+ */
+async function softDeleteMacroCache(localId, reason, dryRun = true) {
+  if (!dryRun) {
+    await storage.delete(`macro-cache:${localId}`);
+    console.log(`[DELETE] Removed macro-cache:${localId}`);
+  } else {
+    console.log(`[DRY-RUN] Would delete macro-cache:${localId} (SKIPPED)`);
+  }
+}
+
+/**
+ * Create a full backup of all embed configurations before running destructive operations
+ * @param {string} operation - The operation triggering the backup (e.g., 'checkAllIncludes')
+ * @returns {string} The backupId for recovery operations
+ */
+async function createBackupSnapshot(operation = 'checkAllIncludes') {
+  const timestamp = new Date().toISOString();
+  const backupId = `backup-${timestamp}`;
+
+  console.log(`[BACKUP] Creating full system backup...`);
+  console.log(`[BACKUP] Backup ID: ${backupId}`);
+
+  try {
+    // Query all active embed configurations
+    const allKeys = await storage.query()
+      .where('key', startsWith('macro-vars:'))
+      .getMany();
+
+    const embedCount = allKeys.results.length;
+
+    console.log(`[BACKUP] Found ${embedCount} embed configurations to backup`);
+
+    // Save backup metadata
+    await storage.set(`${backupId}:metadata`, {
+      backupId,
+      createdAt: timestamp,
+      operation,
+      totalEmbeds: embedCount,
+      canRestore: true,
+      version: '1.0'
+    });
+
+    console.log(`[BACKUP] Saved backup metadata`);
+
+    // Save each embed configuration to backup namespace
+    let savedCount = 0;
+    for (const entry of allKeys.results) {
+      const localId = entry.key.replace('macro-vars:', '');
+      await storage.set(`${backupId}:embed:${localId}`, entry.value);
+      savedCount++;
+
+      // Log progress every 10 embeds
+      if (savedCount % 10 === 0) {
+        console.log(`[BACKUP] Progress: ${savedCount}/${embedCount} embeds backed up`);
+      }
+    }
+
+    console.log(`[BACKUP] ✅ Backup complete: ${backupId}`);
+    console.log(`[BACKUP] Backed up ${savedCount} embed configurations`);
+    console.log(`[BACKUP] Backup can be used to restore data if needed`);
+
+    return backupId;
+  } catch (error) {
+    console.error(`[BACKUP] ❌ Failed to create backup:`, error);
+    throw new Error(`Backup creation failed: ${error.message}`);
+  }
+}
 
 /**
  * Process Check All Includes operation asynchronously
@@ -34,19 +140,67 @@ import { findHeadingBeforeMacro } from '../utils/adf-utils.js';
 export async function handler(event, context) {
   // In @forge/events v2, payload is in event.body, not event.payload
   const payload = event.payload || event.body || event;
-  const { progressId } = payload;
+  const { progressId, dryRun = DEFAULT_DRY_RUN_MODE } = payload;
 
-  console.log(`[WORKER] Starting Check All Includes (progressId: ${progressId})`);
+  console.log(`[WORKER] Starting Check All Includes (progressId: ${progressId}, dryRun: ${dryRun})`);
+
+  // CRITICAL SAFETY MESSAGE
+  if (dryRun) {
+    console.log(`[WORKER] 🛡️ DRY-RUN MODE ENABLED 🛡️`);
+    console.log(`[WORKER] No data will be deleted. Orphaned items will be logged only.`);
+    console.log(`[WORKER] This is a preview - use Clean Up to actually remove orphaned data.`);
+  } else {
+    console.log(`[WORKER] ⚠️ LIVE MODE - Deletions ENABLED ⚠️`);
+    console.log(`[WORKER] Orphaned data will be soft-deleted and moved to recovery namespace.`);
+  }
 
   try {
-    // Phase 1: Initialize (0-10%)
+    // Phase 1: Initialize (0-5%)
     await updateProgress(progressId, {
       phase: 'initializing',
       percent: 0,
-      status: 'Starting check...',
+      status: dryRun ? '🛡️ DRY-RUN: Starting check (no deletions)...' : 'Starting check...',
       total: 0,
-      processed: 0
+      processed: 0,
+      dryRun: dryRun
     });
+
+    // Phase 1.5: Create backup snapshot (5-10%)
+    await updateProgress(progressId, {
+      phase: 'backup',
+      percent: 5,
+      status: '💾 Creating backup snapshot...',
+      total: 0,
+      processed: 0,
+      dryRun: dryRun
+    });
+
+    let backupId = null;
+    try {
+      backupId = await createBackupSnapshot('checkAllIncludes');
+
+      await updateProgress(progressId, {
+        phase: 'backup',
+        percent: 10,
+        status: `✅ Backup created: ${backupId.substring(0, 30)}...`,
+        total: 0,
+        processed: 0,
+        backupId,
+        dryRun: dryRun
+      });
+    } catch (backupError) {
+      // Log backup failure but continue - don't block the check operation
+      console.error(`[WORKER] ⚠️ Backup creation failed, continuing anyway:`, backupError);
+
+      await updateProgress(progressId, {
+        phase: 'backup',
+        percent: 10,
+        status: '⚠️ Backup failed - continuing check...',
+        total: 0,
+        processed: 0,
+        dryRun: dryRun
+      });
+    }
 
     // Phase 2: Fetch excerpts index (10-15%)
     await updateProgress(progressId, {
@@ -120,6 +274,7 @@ export async function handler(event, context) {
     const activeIncludes = [];
     const orphanedIncludes = [];
     const brokenReferences = [];
+    const repairedReferences = [];
     const staleIncludes = [];
     const orphanedEntriesRemoved = [];
 
@@ -146,9 +301,12 @@ export async function handler(event, context) {
               pageExists: false
             });
 
-            // Clean up orphaned data
-            await storage.delete(`macro-cache:${include.localId}`);
-            await storage.delete(`macro-vars:${include.localId}`);
+            // Clean up orphaned data (using soft delete for recovery)
+            await softDeleteMacroCache(include.localId, 'Page deleted or inaccessible', dryRun);
+            await softDeleteMacroVars(include.localId, 'Page deleted or inaccessible', {
+              pageId: include.pageId,
+              pageExists: false
+            }, dryRun);
 
             // Remove from usage tracking
             const usageKey = `usage:${include.excerptId || 'unknown'}`;
@@ -170,20 +328,29 @@ export async function handler(event, context) {
           const pageData = await response.json();
           const adfContent = JSON.parse(pageData.body?.atlas_doc_format?.value || '{}');
 
+          // Construct page URL for CSV export
+          const pageUrl = pageData._links?.webui ? `/wiki${pageData._links.webui}` : null;
+
           for (const include of pageIncludes) {
             // Check if this localId exists in the ADF
             const macroExists = checkMacroExistsInADF(adfContent, include.localId);
 
             if (!macroExists) {
+              console.log(`[WORKER] ⚠️ ORPHAN DETECTED: localId ${include.localId} not found in page ${include.pageId}`);
+
               orphanedIncludes.push({
                 ...include,
                 reason: 'Macro not found in page content',
                 pageExists: true
               });
 
-              // Clean up orphaned data
-              await storage.delete(`macro-cache:${include.localId}`);
-              await storage.delete(`macro-vars:${include.localId}`);
+              // Clean up orphaned data (using soft delete for recovery)
+              await softDeleteMacroCache(include.localId, 'Macro not found in page content', dryRun);
+              await softDeleteMacroVars(include.localId, 'Macro not found in page content', {
+                pageId: include.pageId,
+                pageTitle: pageData.title,
+                pageExists: true
+              }, dryRun);
 
               // Remove from usage tracking
               const usageKey = `usage:${include.excerptId || 'unknown'}`;
@@ -202,20 +369,96 @@ export async function handler(event, context) {
             } else {
               // Macro exists - check if referenced excerpt exists
               const excerptId = include.excerptId;
+              console.log(`[CHECK-MACRO] Checking excerptId for localId ${include.localId}: ${excerptId}`);
+
               if (!excerptId) {
-                brokenReferences.push({
-                  ...include,
-                  reason: 'No excerptId in usage data'
-                });
-              } else {
+                console.log(`[CHECK-MACRO] ⚠️ No excerptId in usage data for localId ${include.localId}`);
+                console.log(`[CHECK-MACRO] 🔧 Attempting to repair from macro-vars storage...`);
+
+                // Try to repair: read the actual excerptId from macro-vars storage
+                const macroVars = await storage.get(`macro-vars:${include.localId}`);
+                const actualExcerptId = macroVars?.excerptId;
+
+                if (!actualExcerptId) {
+                  console.log(`[CHECK-MACRO] ❌ BROKEN: No excerptId found in macro-vars either - truly broken`);
+                  brokenReferences.push({
+                    ...include,
+                    reason: 'No excerptId in usage data or macro-vars storage'
+                  });
+                } else {
+                  console.log(`[CHECK-MACRO] ✅ Found excerptId in macro-vars: ${actualExcerptId}`);
+                  console.log(`[CHECK-MACRO] 🔧 Repairing usage tracking...`);
+
+                  // Verify the excerpt exists
+                  const excerpt = await storage.get(`excerpt:${actualExcerptId}`);
+                  if (!excerpt) {
+                    console.log(`[CHECK-MACRO] ❌ BROKEN: Excerpt ${actualExcerptId} not found - orphaned reference`);
+                    brokenReferences.push({
+                      ...include,
+                      reason: 'Referenced excerpt not found (from macro-vars)',
+                      excerptId: actualExcerptId
+                    });
+                  } else {
+                    // Update the usage tracking with the correct excerptId
+                    const usageKey = `usage:${actualExcerptId}`;
+                    const usageData = await storage.get(usageKey) || { excerptId: actualExcerptId, references: [] };
+
+                    // Find and update this reference
+                    const refIndex = usageData.references.findIndex(r => r.localId === include.localId);
+                    if (refIndex >= 0) {
+                      // Update existing reference
+                      usageData.references[refIndex] = {
+                        ...usageData.references[refIndex],
+                        ...include,
+                        excerptId: actualExcerptId,
+                        updatedAt: new Date().toISOString()
+                      };
+                    } else {
+                      // Add missing reference
+                      usageData.references.push({
+                        ...include,
+                        excerptId: actualExcerptId,
+                        updatedAt: new Date().toISOString()
+                      });
+                    }
+
+                    await storage.set(usageKey, usageData);
+
+                    console.log(`[CHECK-MACRO] ✅ REPAIRED: Updated usage tracking for localId ${include.localId} with excerptId ${actualExcerptId}`);
+
+                    repairedReferences.push({
+                      localId: include.localId,
+                      pageId: include.pageId,
+                      pageTitle: include.pageTitle || pageData.title,
+                      excerptId: actualExcerptId,
+                      excerptName: excerpt.name,
+                      repairedAt: new Date().toISOString()
+                    });
+
+                    // Now continue with normal active check (use actualExcerptId as excerptId)
+                    // Set excerptId for the rest of this iteration
+                    include.excerptId = actualExcerptId;
+                  }
+                }
+              }
+
+              // Continue with normal checks if excerptId is now available (either was there or repaired)
+              if (include.excerptId) {
+                const excerptId = include.excerptId;
                 const excerpt = await storage.get(`excerpt:${excerptId}`);
+                console.log(`[CHECK-MACRO] Looking up excerpt:${excerptId} - Found: ${!!excerpt}`);
+
                 if (!excerpt) {
+                  console.log(`[CHECK-MACRO] ❌ BROKEN: Referenced excerpt ${excerptId} not found in storage for localId ${include.localId}`);
+                  console.log(`[CHECK-MACRO] This usually means the Source was deleted or the usage tracking is stale`);
                   brokenReferences.push({
                     ...include,
                     reason: 'Referenced excerpt not found',
                     excerptId
                   });
                 } else {
+                  console.log(`[CHECK-MACRO] ✅ Excerpt "${excerpt.name}" found for localId ${include.localId}`);
+                  console.log(`[CHECK-MACRO] Checking staleness...`);
                   // Active Include - check if stale
                   const macroVars = await storage.get(`macro-vars:${include.localId}`);
                   const lastSynced = macroVars?.lastSynced;
@@ -232,16 +475,22 @@ export async function handler(event, context) {
                     localId: include.localId,
                     pageId: include.pageId,
                     pageTitle: include.pageTitle || pageData.title,
+                    pageUrl: pageUrl,
                     spaceKey: include.spaceKey,
                     headingAnchor: include.headingAnchor,
                     excerptId,
                     excerptName: excerpt.name,
                     excerptCategory: excerpt.category,
+                    status: isStale ? 'Stale (update available)' : 'Active',
                     lastSynced,
                     excerptUpdated,
+                    excerptLastModified: excerpt.updatedAt,
                     isStale,
-                    variableValues: include.variableValues || {},
-                    toggleStates: include.toggleStates || {},
+                    variables: excerpt.variables || [],
+                    toggles: excerpt.toggles || [],
+                    variableValues: macroVars?.variableValues || {},
+                    toggleStates: macroVars?.toggleStates || {},
+                    customInsertions: macroVars?.customInsertions || [],
                     renderedContent
                   });
 
@@ -294,6 +543,7 @@ export async function handler(event, context) {
       activeCount: activeIncludes.length,
       orphanedCount: orphanedIncludes.length,
       brokenReferenceCount: brokenReferences.length,
+      repairedReferenceCount: repairedReferences.length,
       staleCount: staleIncludes.length,
       orphanedEntriesRemoved: orphanedEntriesRemoved.length,
       pagesChecked: totalPages
@@ -307,26 +557,49 @@ export async function handler(event, context) {
       activeIncludes,
       orphanedIncludes,
       brokenReferences,
+      repairedReferences,
       staleIncludes,
       orphanedEntriesRemoved,
+      backupId, // Include backup ID for potential recovery operations
       completedAt: new Date().toISOString()
     };
+
+    // Build completion status message
+    let completionStatus;
+    if (dryRun) {
+      const parts = [];
+      if (orphanedIncludes.length > 0) parts.push(`${orphanedIncludes.length} potential orphans`);
+      if (repairedReferences.length > 0) parts.push(`${repairedReferences.length} repaired`);
+      completionStatus = `🛡️ DRY-RUN Complete - No data deleted${parts.length > 0 ? ` (found ${parts.join(', ')})` : ''}`;
+    } else {
+      const parts = [];
+      if (orphanedEntriesRemoved.length > 0) parts.push(`${orphanedEntriesRemoved.length} orphaned entries cleaned`);
+      if (repairedReferences.length > 0) parts.push(`${repairedReferences.length} usage tracking repaired`);
+      completionStatus = `Check complete${parts.length > 0 ? ` - ${parts.join(', ')}` : ''}`;
+    }
 
     await updateProgress(progressId, {
       phase: 'complete',
       percent: 100,
-      status: 'Check complete!',
+      status: completionStatus,
       total: totalPages,
       processed: totalPages,
+      dryRun: dryRun,
       results: finalResults
     });
 
     console.log(`[WORKER] Check All Includes complete (progressId: ${progressId})`);
 
+    if (backupId) {
+      console.log(`[WORKER] 💾 Backup available for recovery: ${backupId}`);
+      console.log(`[WORKER] Use restore functions if data recovery is needed`);
+    }
+
     return {
       success: true,
       progressId,
-      summary
+      summary,
+      backupId
     };
 
   } catch (error) {
@@ -362,26 +635,89 @@ async function updateProgress(progressId, progressData) {
 /**
  * Helper: Check if a macro with given localId exists in ADF content
  * Recursively searches through ADF structure for extension nodes with matching localId
+ *
+ * CRITICAL: This function determines if an embed is orphaned. False negatives
+ * cause data deletion. Extensive logging added to debug search failures.
  */
-function checkMacroExistsInADF(node, targetLocalId) {
+function checkMacroExistsInADF(node, targetLocalId, depth = 0) {
   if (!node || typeof node !== 'object') {
     return false;
   }
 
-  // Check if this node is an extension (macro) with matching localId
-  if (node.type === 'extension' &&
-      node.attrs?.extensionType === 'com.atlassian.confluence.macro.core' &&
-      node.attrs?.localId === targetLocalId) {
-    return true;
+  // Log search initiation (only at root level)
+  if (depth === 0) {
+    console.log(`[CHECK-MACRO] 🔍 Searching for localId: ${targetLocalId}`);
+  }
+
+  // Check if this node is an extension (macro)
+  if (node.type === 'extension') {
+    // Log EVERY extension we find for debugging
+    console.log(`[CHECK-MACRO] Found extension at depth ${depth}:`, {
+      extensionType: node.attrs?.extensionType,
+      extensionKey: node.attrs?.extensionKey,
+      localId: node.attrs?.localId,
+      macroId: node.attrs?.parameters?.macroParams?.['macro-id'],
+      hasLocalId: !!node.attrs?.localId
+    });
+
+    // Check for Blueprint Standard Embed macro (current name)
+    // NOTE: Forge apps use full path in extensionKey like:
+    // "be1ff96b-.../static/blueprint-standard-embed"
+    // So we check if the key CONTAINS or ENDS WITH our macro name
+    const extensionKey = node.attrs?.extensionKey || '';
+    const isOurMacro = extensionKey.includes('blueprint-standard-embed') ||
+                       extensionKey.includes('smart-excerpt-include') || // Legacy name
+                       extensionKey.includes('blueprint-standard-embed-poc') || // POC version
+                       extensionKey === 'blueprint-standard-embed' || // Exact match (just in case)
+                       extensionKey === 'smart-excerpt-include' || // Exact match legacy
+                       extensionKey === 'blueprint-standard-embed-poc'; // Exact match POC
+
+    if (isOurMacro) {
+      console.log(`[CHECK-MACRO] ✅ Found our embed macro (${node.attrs.extensionKey})`);
+
+      // Check localId match
+      if (node.attrs?.localId === targetLocalId) {
+        console.log(`[CHECK-MACRO] ✅✅ MATCH! Found embed with localId: ${targetLocalId}`);
+        return true;
+      } else {
+        console.log(`[CHECK-MACRO] ⚠️ localId mismatch: expected ${targetLocalId}, got ${node.attrs?.localId}`);
+      }
+    }
+
+    // Also check if extensionType matches (broader check for any Confluence/Forge macro)
+    if (node.attrs?.extensionType === 'com.atlassian.confluence.macro.core' ||
+        node.attrs?.extensionType === 'com.atlassian.ecosystem') {
+      // This is a Confluence or Forge macro - check if localId matches regardless of extensionKey
+      if (node.attrs?.localId === targetLocalId) {
+        console.log(`[CHECK-MACRO] ✅ Found macro with matching localId (type: ${node.attrs.extensionType})`);
+        console.log(`[CHECK-MACRO] Extension key: ${node.attrs?.extensionKey}`);
+        return true;
+      }
+    }
   }
 
   // Recursively check content array
   if (Array.isArray(node.content)) {
     for (const child of node.content) {
-      if (checkMacroExistsInADF(child, targetLocalId)) {
+      if (checkMacroExistsInADF(child, targetLocalId, depth + 1)) {
         return true;
       }
     }
+  }
+
+  // Also check marks array (some content nests in marks)
+  if (Array.isArray(node.marks)) {
+    for (const mark of node.marks) {
+      if (checkMacroExistsInADF(mark, targetLocalId, depth + 1)) {
+        return true;
+      }
+    }
+  }
+
+  // Log if we finished searching without finding it (only at root level)
+  if (depth === 0) {
+    console.log(`[CHECK-MACRO] ❌ Search complete - localId ${targetLocalId} NOT found in ADF`);
+    console.log(`[CHECK-MACRO] ⚠️ WARNING: About to mark as orphaned - THIS MAY BE A FALSE POSITIVE!`);
   }
 
   return false;

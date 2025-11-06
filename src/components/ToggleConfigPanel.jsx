@@ -1,0 +1,101 @@
+/**
+ * Toggle Configuration Panel
+ *
+ * Component for the "Alternatives" tab that displays conditional content toggles.
+ * Allows users to enable/disable alternative content sections within a Blueprint Standard embed.
+ *
+ * Features:
+ * - Toggle switches for each conditional section
+ * - Toggle names and descriptions
+ * - Empty state when no toggles defined
+ * - Auto-saving via parent component
+ */
+
+import React from 'react';
+import {
+  Text,
+  Strong,
+  Em,
+  Toggle,
+  DynamicTable,
+  Box,
+  xcss
+} from '@forge/react';
+
+// Style for full-width variable table container
+const variableBoxStyle = xcss({
+  width: '100%',
+  backgroundColor: 'color.background.neutral',
+  paddingBlockStart: 'space.200',
+  paddingBlockEnd: 'space.100',
+  paddingInline: 'space.100'
+});
+
+/**
+ * ToggleConfigPanel Component
+ *
+ * @param {Object} props
+ * @param {Object} props.excerpt - The Blueprint Standard/excerpt object containing toggles
+ * @param {Object} props.toggleStates - Current toggle states (map of name -> boolean)
+ * @param {Function} props.setToggleStates - Function to update toggle states
+ * @returns {JSX.Element}
+ */
+export const ToggleConfigPanel = ({ excerpt, toggleStates, setToggleStates }) => {
+  // If no toggles defined, show empty state
+  if (!excerpt.toggles || excerpt.toggles.length === 0) {
+    return <Text>No toggles defined for this standard.</Text>;
+  }
+
+  return (
+    <Box xcss={variableBoxStyle}>
+      <DynamicTable
+        head={{
+          cells: [
+            {
+              key: 'toggle',
+              content: '',
+              width: 5
+            },
+            {
+              key: 'name',
+              content: 'Toggle',
+              width: 30
+            },
+            {
+              key: 'description',
+              content: 'Description',
+              width: 65
+            }
+          ]
+        }}
+        rows={excerpt.toggles.map(toggle => ({
+          key: toggle.name,
+          cells: [
+            {
+              key: 'toggle',
+              content: (
+                <Toggle
+                  isChecked={toggleStates[toggle.name] || false}
+                  onChange={(e) => {
+                    setToggleStates({
+                      ...toggleStates,
+                      [toggle.name]: e.target.checked
+                    });
+                  }}
+                />
+              )
+            },
+            {
+              key: 'name',
+              content: <Text><Strong>{toggle.name}</Strong></Text>
+            },
+            {
+              key: 'description',
+              content: toggle.description ? <Text><Em>{toggle.description}</Em></Text> : <Text>—</Text>
+            }
+          ]
+        }))}
+      />
+    </Box>
+  );
+};

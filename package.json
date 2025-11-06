@@ -24,6 +24,7 @@
     "@forge/resolver": "^1.6.0",
     "@tanstack/react-query": "^5.90.6",
     "@tanstack/react-query-devtools": "^5.90.2",
+    "debug": "^4.4.3",
     "react": "^18.2.0"
   },
   "devDependencies": {

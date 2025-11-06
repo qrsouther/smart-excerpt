@@ -467,38 +467,39 @@ Several files have grown into monoliths (>500 lines) with mixed responsibilities
 
 **Files Requiring Refactoring:**
 
-#### 1. embed-display.jsx (2,093 lines) - CRITICAL
-**Current Issues:**
-- Massive monolith with multiple concerns mixed together
-- 20+ helper functions for ADF processing
-- Complex state management with many useState/useEffect hooks
-- React Query hooks mixed with rendering logic
-- ADF manipulation utilities should be extracted
+#### 1. embed-display.jsx (2,093 → 1,343 lines) - IN PROGRESS ✅
+**Status:** Phase 1 complete (35.8% reduction), Phase 2 in progress
 
-**Refactoring Plan:**
-- **Evaluate simple-adf-formatter library** (https://github.com/dixahq/simple-adf-formatter):
-  - Lightweight (~2kB, zero dependencies) callback-based ADF traversal framework
-  - Could replace custom tree-walking code with composable pattern
-  - May simplify 8+ ADF manipulation functions by providing standard traversal pattern
-  - Test integration before committing to full replacement
-- Extract ADF processing utilities to `src/utils/adf-rendering-utils.js`:
+**Phase 1 Complete (Utilities & Hooks Extraction):**
+- ✅ Evaluated simple-adf-formatter library (GitHub-only, unreleased v0.1.0, not published to npm)
+- ✅ Extracted 8 ADF utilities to `src/utils/adf-rendering-utils.js` (617 lines):
   - `cleanAdfForRenderer()`, `cleanupEmptyNodes()`, `filterContentByToggles()`
   - `stripToggleMarkers()`, `substituteVariablesInAdf()`, `insertCustomParagraphsInAdf()`
   - `insertInternalNotesInAdf()`, `extractParagraphsFromAdf()`
-  - Consider refactoring these using simple-adf-formatter pattern if beneficial
-- Extract React Query hooks to `src/hooks/embed-hooks.js`:
+  - All functions include comprehensive JSDoc documentation
+- ✅ Extracted 5 React Query hooks to `src/hooks/embed-hooks.js` (293 lines):
   - `useExcerptData()`, `useSaveVariableValues()`, `useAvailableExcerpts()`
   - `useVariableValues()`, `useCachedContent()`
-- Extract complex UI sections to separate components:
-  - `<VariableConfigPanel />` - Variable input section
-  - `<ToggleConfigPanel />` - Toggle selection section
-  - `<CustomInsertionsPanel />` - Free Write section
-  - `<InternalNotesPanel />` - Internal notes section
-  - `<UpdateAvailableBanner />` - Update notification
-  - `<DiffView />` - Side-by-side diff display
-- Move styles to `src/styles/embed-styles.js`
+  - All hooks include JSDoc documentation
+- ✅ File reduced from 2,093 to 1,343 lines (750 lines removed)
+- ✅ All files validated for syntax correctness
 
-**Target:** Break into 4-6 files, each <400 lines
+**Future Consideration - ADF Libraries:**
+When building NEW ADF-related features (exports, transformations, etc.), scout these libraries first:
+- `simple-adf-formatter` (https://github.com/dixahq/simple-adf-formatter) - 2kB, zero deps, callback-based
+- Other Atlassian ecosystem tools
+- Don't replace working code just to use a library - only adopt when solving NEW problems
+
+**Phase 2 - UI Component Extraction (Optional):**
+App component is still ~1,200 lines. Consider extracting:
+- `<VariableConfigPanel />` - Variable input section (Write tab)
+- `<ToggleConfigPanel />` - Toggle selection section (Alternatives tab)
+- `<CustomInsertionsPanel />` - Free Write section (Custom tab)
+- `<UpdateAvailableBanner />` - Update notification (view mode)
+- `<DiffView />` - Side-by-side diff display (view mode)
+- Move xcss styles to `src/styles/embed-styles.js`
+
+**Target for Phase 2:** Break into 6-8 files, main file <400 lines
 
 #### 2. admin-page.jsx (2,682 lines) - CRITICAL
 **Current Issues:**

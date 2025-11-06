@@ -641,7 +641,10 @@ export async function checkAllIncludes_OLD_SYNC_VERSION(req) {
  */
 export async function startCheckAllIncludes(req) {
   try {
-    console.log('[TRIGGER] Starting Check All Includes async operation...');
+    // Extract dryRun parameter from request (defaults to true for safety)
+    const { dryRun = true } = req.payload || {};
+
+    console.log(`[TRIGGER] Starting Check All Includes async operation (dryRun: ${dryRun})...`);
 
     // Generate progressId for frontend polling
     const progressId = generateUUID();
@@ -650,26 +653,28 @@ export async function startCheckAllIncludes(req) {
     await storage.set(`progress:${progressId}`, {
       phase: 'queued',
       percent: 0,
-      status: 'Job queued...',
+      status: dryRun ? '🛡️ Job queued (dry-run mode)...' : 'Job queued (live mode)...',
       total: 0,
       processed: 0,
-      queuedAt: new Date().toISOString()
+      queuedAt: new Date().toISOString(),
+      dryRun
     });
 
-    // Create queue and push event
+    // Create queue and push event (include dryRun in payload)
     const queue = new Queue({ key: 'check-includes-queue' });
     const { jobId } = await queue.push({
-      body: { progressId }
+      body: { progressId, dryRun }
     });
 
-    console.log(`[TRIGGER] Job queued: jobId=${jobId}, progressId=${progressId}`);
+    console.log(`[TRIGGER] Job queued: jobId=${jobId}, progressId=${progressId}, dryRun=${dryRun}`);
 
     // Return immediately - consumer will process in background
     return {
       success: true,
       jobId,
       progressId,
-      message: 'Check All Includes job queued successfully'
+      dryRun,
+      message: `Check All Includes job queued successfully (${dryRun ? 'dry-run' : 'live'} mode)`
     };
 
   } catch (error) {

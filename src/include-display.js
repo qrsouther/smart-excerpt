@@ -20,9 +20,7 @@ const App = () => {
 
   // Load excerpts on mount
   useEffect(async () => {
-    console.log('Loading excerpts...');
     const result = await invoke('getExcerpts');
-    console.log('Excerpts loaded:', result);
 
     if (result.success) {
       setExcerpts(result.excerpts);
@@ -32,7 +30,6 @@ const App = () => {
 
   const onExcerptSelect = async (formData) => {
     const excerptId = formData.excerptSelect;
-    console.log('Excerpt selected:', excerptId);
 
     if (!excerptId) {
       setSelectedExcerptId(null);
@@ -44,7 +41,6 @@ const App = () => {
 
     // Load the full excerpt
     const result = await invoke('getExcerpt', { excerptId });
-    console.log('Loaded excerpt:', result);
 
     if (result.success) {
       setSelectedExcerpt(result.excerpt);
@@ -60,7 +56,6 @@ const App = () => {
   };
 
   const onVariableUpdate = (formData) => {
-    console.log('Variables updated:', formData);
     setVariableValues(formData);
   };
 

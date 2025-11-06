@@ -932,6 +932,77 @@ For each excerpt, you can:
 
 ---
 
+## 🔍 Development & Debugging
+
+### Centralized Logging System
+
+SmartExcerpt uses a centralized logging utility built on the industry-standard [`debug`](https://www.npmjs.com/package/debug) library. This provides namespace-based filtering and rate limiting to prevent console floods.
+
+**How to Use:**
+
+All logging is disabled by default. To enable logging during development, use your browser console:
+
+```javascript
+// Enable all logs
+localStorage.setItem('debug', 'app:*');
+
+// Enable specific categories
+localStorage.setItem('debug', 'app:saves');           // Save operations only
+localStorage.setItem('debug', 'app:errors');          // Errors only
+localStorage.setItem('debug', 'app:cache');           // Cache operations only
+
+// Enable multiple categories
+localStorage.setItem('debug', 'app:saves,app:cache'); // Saves and cache
+
+// Disable all logs
+localStorage.setItem('debug', '');
+```
+
+After setting the debug preference, **refresh the page** for changes to take effect.
+
+**Available Namespaces:**
+
+| Namespace | Description | Rate Limit |
+|-----------|-------------|------------|
+| `app:saves` | Save operations (auto-save, cache updates) | 5/second |
+| `app:errors` | Error conditions and failures | No limit |
+| `app:queries` | React Query operations | 10/second |
+| `app:cache` | Cache operations (hits, misses, invalidation) | 10/second |
+| `app:verification` | Source/Embed verification checks | 5/second |
+| `app:restore` | Backup/restore operations | No limit |
+
+**Rate Limiting:**
+
+The logger automatically limits log output to prevent console floods. When rate limits are exceeded, you'll see a message like:
+```
+[RATE LIMIT] Suppressed 47 logs in last second
+```
+
+**Error Logging:**
+
+Critical errors are always logged to the console, regardless of debug settings, using `console.error()`. These include:
+- API failures
+- Storage operation errors
+- React Query mutation failures
+- Unexpected exceptions
+
+**Implementation Details:**
+
+The logging utility is located in `src/utils/logger.js` and can be imported in any file:
+
+```javascript
+import { logger, logError } from '../utils/logger';
+
+// Use namespaced loggers
+logger.saves('Content saved successfully');
+logger.cache('Cache hit for:', localId);
+
+// Log errors with context
+logError('API call failed', error, { pageId, excerptId });
+```
+
+---
+
 ## 🐛 Troubleshooting
 
 ### Includes Showing Old Content

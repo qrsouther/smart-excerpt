@@ -66,6 +66,16 @@ import {
   saveVariableValues as saveVariableValuesResolver
 } from './resolvers/include-resolvers.js';
 
+// Import restore and recovery resolver functions (Phase 8 modularization)
+import {
+  listBackups as listBackupsResolver,
+  listDeletedEmbeds as listDeletedEmbedsResolver,
+  previewFromBackup as previewFromBackupResolver,
+  previewDeletedEmbed as previewDeletedEmbedResolver,
+  restoreDeletedEmbed as restoreDeletedEmbedResolver,
+  restoreFromBackup as restoreFromBackupResolver
+} from './resolvers/restore-resolvers.js';
+
 // ⚠️ ONE-TIME USE MIGRATION FUNCTIONS - DELETE AFTER PRODUCTION MIGRATION ⚠️
 // Import migration resolver functions (Phase 4 modularization)
 // These are one-time use functions for migrating from MultiExcerpt to SmartExcerpt
@@ -229,5 +239,29 @@ resolver.define('getLastVerificationTime', getLastVerificationTimeResolver);
 
 // Set last verification timestamp (called after Check All Includes completes)
 resolver.define('setLastVerificationTime', setLastVerificationTimeResolver);
+
+// ============================================================================
+// RESTORE AND RECOVERY RESOLVERS (Phase 8 modularization)
+// ============================================================================
+// Functions to restore embed configurations from backups and soft-deletes
+// All restore operations support two-phase preview-then-commit workflow
+
+// List all available backup snapshots
+resolver.define('listBackups', listBackupsResolver);
+
+// List all soft-deleted embeds that can be restored
+resolver.define('listDeletedEmbeds', listDeletedEmbedsResolver);
+
+// Preview embed from backup (Phase 1: show what would be restored)
+resolver.define('previewFromBackup', previewFromBackupResolver);
+
+// Preview soft-deleted embed (Phase 1: show what would be restored)
+resolver.define('previewDeletedEmbed', previewDeletedEmbedResolver);
+
+// Restore deleted embed (Phase 2: actually restore after preview)
+resolver.define('restoreDeletedEmbed', restoreDeletedEmbedResolver);
+
+// Restore from backup snapshot (Phase 2: actually restore after preview)
+resolver.define('restoreFromBackup', restoreFromBackupResolver);
 
 export const handler = resolver.getDefinitions();
