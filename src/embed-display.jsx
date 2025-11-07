@@ -56,52 +56,24 @@ import { VariableConfigPanel } from './components/VariableConfigPanel';
 import { ToggleConfigPanel } from './components/ToggleConfigPanel';
 import { CustomInsertionsPanel } from './components/CustomInsertionsPanel';
 import { EnhancedDiffView } from './components/EnhancedDiffView';
+import { UpdateAvailableBanner } from './components/embed/UpdateAvailableBanner';
+import { EmbedViewMode } from './components/embed/EmbedViewMode';
+import { EmbedEditMode } from './components/embed/EmbedEditMode';
 
-// Style for preview border
-const previewBoxStyle = xcss({
-  borderColor: 'color.border',
-  borderWidth: 'border.width',
-  borderStyle: 'solid',
-  borderRadius: 'border.radius',
-  padding: 'space.200'
-});
+// Import embed styles
+import {
+  previewBoxStyle,
+  variableBoxStyle,
+  requiredFieldStyle,
+  updateBannerStyle,
+  sectionContentStyle,
+  adfContentContainerStyle,
+  excerptSelectorStyle
+} from './styles/embed-styles';
 
-// Style for full-width variable table container
-const variableBoxStyle = xcss({
-  width: '100%',
-  backgroundColor: 'color.background.neutral',
-  paddingBlockStart: 'space.200',
-  paddingBlockEnd: 'space.100',
-  paddingInline: 'space.100'
-});
-
-// Style for required field warning border
-const requiredFieldStyle = xcss({
-  borderColor: 'color.border.warning',
-  borderWidth: 'border.width.outline',
-  borderStyle: 'solid',
-  borderRadius: 'border.radius',
-  padding: 'space.050'
-});
-
-// Style for Update Available banner - only margin, no padding (SectionMessage has its own padding)
-const updateBannerStyle = xcss({
-  marginBottom: 'space.200'
-});
-
-// Style for Stack inside SectionMessage - add right padding to balance icon column
-const sectionContentStyle = xcss({
-  paddingRight: 'space.300'  // 24px - matches SectionMessage icon column width on left
-});
-
-// Style for ADF content container to prevent horizontal scrollbar
-// Constrains width to prevent expand panels and other ADF elements from overflowing
-const adfContentContainerStyle = xcss({
-  width: '99%',
-  maxWidth: '99%',
-  overflow: 'hidden',
-  boxSizing: 'border-box'
-});
+// ============================================================================
+// STYLES - Imported from ./styles/embed-styles.js
+// ============================================================================
 
 // Create a client for React Query
 const queryClient = new QueryClient({
@@ -672,285 +644,52 @@ const App = () => {
 
   // EDIT MODE: Show variable inputs and preview
   if (isEditing && excerpt) {
-    // Use different preview based on selected tab
-    // Write tab (0): Rendered without markers
-    // Alternatives tab (1): Raw with markers
-    // Free Write tab (2): Raw with markers
-    const previewContent = (selectedTabIndex === 1 || selectedTabIndex === 2)
-      ? getRawPreviewContent()
-      : getPreviewContent();
-    const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
-
-    // Format timestamps for display
-    const formatTimestamp = (dateStr) => {
-      if (!dateStr) return 'Unknown';
-      const date = new Date(dateStr);
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
-      const year = date.getFullYear();
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      return `${month}/${day}/${year} ${hours}:${minutes}`;
-    };
-
     return (
-      <Stack space="space.100">
-        {/* Excerpt Selector - always visible at top of edit mode */}
-        <Box xcss={xcss({ paddingBlock: 'space.100', paddingInline: 'space.100', backgroundColor: 'color.background.neutral.subtle' })}>
-          {isLoadingExcerpts ? (
-            <Spinner size="small" label="Loading..." />
-          ) : (
-            <Select
-              options={availableExcerpts.map(ex => ({
-                label: `${ex.name}${ex.category ? ` (${ex.category})` : ''}`,
-                value: ex.id
-              }))}
-              value={availableExcerpts.map(ex => ({
-                label: `${ex.name}${ex.category ? ` (${ex.category})` : ''}`,
-                value: ex.id
-              })).find(opt => opt.value === selectedExcerptId)}
-              onChange={handleExcerptSelection}
-              placeholder="Choose a standard..."
-            />
-          )}
-        </Box>
-
-        <Inline space="space.300" alignBlock="center" spread="space-between">
-          <Inline space="space.100" alignBlock="center">
-            <Heading size="large">{excerpt.name}</Heading>
-            <Button
-              appearance="link"
-              onClick={async () => {
-                try {
-                  // Navigate to the source page where this excerpt is defined
-                  const pageId = excerpt.sourcePageId || excerpt.pageId;
-                  // Use excerpt's space key, or fallback to current space key
-                  const spaceKey = excerpt.sourceSpaceKey || context?.extension?.space?.key || productContext?.spaceKey;
-
-                  if (pageId && spaceKey) {
-                    // Build the URL manually since we have both pageId and spaceKey
-                    const url = `/wiki/spaces/${spaceKey}/pages/${pageId}`;
-                    await router.open(url);
-                  } else if (pageId) {
-                    // Fallback: Try using view.createContentLink if we only have pageId
-                    const contentLink = await view.createContentLink({
-                      contentType: 'page',
-                      contentId: pageId
-                    });
-                    await router.open(contentLink);
-                  }
-                } catch (err) {
-                  console.error('[VIEW-SOURCE] Navigation error:', err);
-                }
-              }}
-            >
-              View Source
-            </Button>
-          </Inline>
-          <Inline space="space.100" alignBlock="center">
-            {saveStatus === 'saving' && (
-              <Fragment>
-                <Spinner size="small" label="Saving" />
-                <Text><Em>Saving...</Em></Text>
-              </Fragment>
-            )}
-            {saveStatus === 'saved' && (
-              <Fragment>
-                <Icon glyph="check-circle" size="small" label="Saved" />
-                <Text><Em>Saved</Em></Text>
-              </Fragment>
-            )}
-          </Inline>
-        </Inline>
-
-        <Tabs onChange={(index) => setSelectedTabIndex(index)}>
-        <TabList>
-          <Tab>Write</Tab>
-          <Tab>Alternatives</Tab>
-          <Tab>Custom</Tab>
-        </TabList>
-        {/* Write Tab - Variables */}
-        <TabPanel>
-          <VariableConfigPanel
-            excerpt={excerpt}
-            variableValues={variableValues}
-            setVariableValues={setVariableValues}
-          />
-        </TabPanel>
-
-        {/* Alternatives Tab - Toggles */}
-        <TabPanel>
-          <ToggleConfigPanel
-            excerpt={excerpt}
-            toggleStates={toggleStates}
-            setToggleStates={setToggleStates}
-          />
-        </TabPanel>
-
-        {/* Custom Tab - Custom paragraph insertions and internal notes */}
-        <TabPanel>
-          <CustomInsertionsPanel
-            excerpt={excerpt}
-            variableValues={variableValues}
-            toggleStates={toggleStates}
-            customInsertions={customInsertions}
-            setCustomInsertions={setCustomInsertions}
-            internalNotes={internalNotes}
-            setInternalNotes={setInternalNotes}
-            insertionType={insertionType}
-            setInsertionType={setInsertionType}
-            selectedPosition={selectedPosition}
-            setSelectedPosition={setSelectedPosition}
-            customText={customText}
-            setCustomText={setCustomText}
-          />
-        </TabPanel>
-        </Tabs>
-
-        {/* Preview - Always visible below tabs */}
-        <Box xcss={previewBoxStyle}>
-          {isAdf ? (
-            <Box xcss={adfContentContainerStyle}>
-              <AdfRenderer document={previewContent} />
-            </Box>
-          ) : (
-            <Text>{previewContent || 'No content'}</Text>
-          )}
-        </Box>
-      </Stack>
+      <EmbedEditMode
+        excerpt={excerpt}
+        availableExcerpts={availableExcerpts}
+        isLoadingExcerpts={isLoadingExcerpts}
+        selectedExcerptId={selectedExcerptId}
+        handleExcerptSelection={handleExcerptSelection}
+        context={context}
+        productContext={productContext}
+        saveStatus={saveStatus}
+        selectedTabIndex={selectedTabIndex}
+        setSelectedTabIndex={setSelectedTabIndex}
+        variableValues={variableValues}
+        setVariableValues={setVariableValues}
+        toggleStates={toggleStates}
+        setToggleStates={setToggleStates}
+        customInsertions={customInsertions}
+        setCustomInsertions={setCustomInsertions}
+        internalNotes={internalNotes}
+        setInternalNotes={setInternalNotes}
+        insertionType={insertionType}
+        setInsertionType={setInsertionType}
+        selectedPosition={selectedPosition}
+        setSelectedPosition={setSelectedPosition}
+        customText={customText}
+        setCustomText={setCustomText}
+        getPreviewContent={getPreviewContent}
+        getRawPreviewContent={getRawPreviewContent}
+      />
     );
   }
 
   // VIEW MODE: Show content with update notification if stale
-  if (!content) {
-    return <Text>Loading content...</Text>;
-  }
-
-  const isAdf = content && typeof content === 'object' && content.type === 'doc';
-
-  // Format timestamps for display
-  const formatTimestamp = (dateStr) => {
-    if (!dateStr) return 'Unknown';
-    const date = new Date(dateStr);
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const year = date.getFullYear();
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${month}/${day}/${year} ${hours}:${minutes}`;
-  };
-
-  if (isAdf) {
-    const cleaned = cleanAdfForRenderer(content);
-
-    if (!cleaned) {
-      return <Text>Error: Content cleaning failed</Text>;
-    }
-
-    return (
-      <Fragment>
-        {isStale && (
-          <Fragment>
-            <Box xcss={updateBannerStyle}>
-              <SectionMessage appearance="success">
-                <Stack space="space.100" xcss={sectionContentStyle}>
-                  {/* Compact heading section with inline buttons */}
-                  <Inline spread="space-between" alignBlock="center">
-                    <Stack space="space.050">
-                      <Heading size="small">Update Available</Heading>
-                      <Text>The Source content has been updated since this Embed was last edited.</Text>
-                    </Stack>
-                    <ButtonGroup>
-                      <Button
-                        appearance="primary"
-                        onClick={handleUpdateToLatest}
-                        isDisabled={isUpdating}
-                      >
-                        {isUpdating ? 'Updating...' : 'Update'}
-                      </Button>
-                      <Button
-                        appearance="default"
-                        onClick={() => setShowDiffView(!showDiffView)}
-                      >
-                        {showDiffView ? 'Hide' : 'View'} Diff
-                      </Button>
-                    </ButtonGroup>
-                  </Inline>
-
-                  {/* Enhanced diff view - inside green box */}
-                  {showDiffView && (
-                    <EnhancedDiffView
-                      oldSourceContent={syncedContent}
-                      newSourceContent={latestRenderedContent}
-                      variableValues={variableValues}
-                      toggleStates={toggleStates}
-                    />
-                  )}
-                </Stack>
-              </SectionMessage>
-            </Box>
-          </Fragment>
-        )}
-        <Box xcss={adfContentContainerStyle}>
-          <AdfRenderer document={cleaned} />
-        </Box>
-      </Fragment>
-    );
-  }
-
-  // Plain text content
   return (
-    <Fragment>
-      {isStale && (
-        <Fragment>
-          <Box xcss={updateBannerStyle}>
-            <SectionMessage appearance="success">
-              <Stack space="space.100" xcss={sectionContentStyle}>
-                {/* Compact heading section with inline buttons */}
-                <Inline spread="space-between" alignBlock="center">
-                  <Stack space="space.050">
-                    <Heading size="small">Update Available</Heading>
-                    <Text>The Source content has been updated since this Embed was last edited.</Text>
-                  </Stack>
-                  <ButtonGroup>
-                    <Button
-                      appearance="primary"
-                      onClick={handleUpdateToLatest}
-                      isDisabled={isUpdating}
-                    >
-                      {isUpdating ? 'Updating...' : 'Update'}
-                    </Button>
-                    <Button
-                      appearance="default"
-                      onClick={() => setShowDiffView(!showDiffView)}
-                    >
-                      {showDiffView ? 'Hide' : 'View'} Diff
-                    </Button>
-                  </ButtonGroup>
-                </Inline>
-
-                {/* Enhanced diff view - inside green box */}
-                {showDiffView && (
-                  <EnhancedDiffView
-                    oldSourceContent={syncedContent}
-                    newSourceContent={latestRenderedContent}
-                    variableValues={variableValues}
-                    toggleStates={toggleStates}
-                  />
-                )}
-              </Stack>
-            </SectionMessage>
-          </Box>
-        </Fragment>
-      )}
-      <Box xcss={adfContentContainerStyle}>
-        {content && typeof content === 'object' && content.type === 'doc' ? (
-          <AdfRenderer document={content} />
-        ) : (
-          <Text>{content}</Text>
-        )}
-      </Box>
-    </Fragment>
+    <EmbedViewMode
+      content={content}
+      isStale={isStale}
+      showDiffView={showDiffView}
+      setShowDiffView={setShowDiffView}
+      handleUpdateToLatest={handleUpdateToLatest}
+      isUpdating={isUpdating}
+      syncedContent={syncedContent}
+      latestRenderedContent={latestRenderedContent}
+      variableValues={variableValues}
+      toggleStates={toggleStates}
+    />
   );
 };
 
