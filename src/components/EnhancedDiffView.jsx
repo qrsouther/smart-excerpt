@@ -106,16 +106,29 @@ const lineUnchangedBgStyle = xcss({
   backgroundColor: 'color.background.neutral.subtle'
 });
 
-// Padding and text styles (applied to inner Box)
-// Using explicit padding property instead of paddingInline
+// Padding style for inner Box (no textIndent - not supported in Forge!)
 const linePaddingStyle = xcss({
-  padding: 'space.050',
-  paddingLeft: '4em',
-  textIndent: '-3em',
+  padding: 'space.100',
+  display: 'flex',
   fontFamily: 'monospace',
-  fontSize: '12px',
+  fontSize: '12px'
+});
+
+// Prefix symbol (+/-/space) with fixed width
+const prefixStyle = xcss({
+  flexShrink: 0,
+  width: '2em',
+  fontFamily: 'monospace',
+  fontSize: '12px'
+});
+
+// Text content that can wrap
+const contentStyle = xcss({
+  flexGrow: 1,
   whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word'
+  wordBreak: 'break-word',
+  fontFamily: 'monospace',
+  fontSize: '12px'
 });
 
 // Two-column layout for preview diff (side-by-side)
@@ -153,7 +166,12 @@ function renderLineDiff(oldText, newText) {
             return (
               <Box key={key} xcss={lineAddedBgStyle}>
                 <Box xcss={linePaddingStyle}>
-                  <Text>+ {line}</Text>
+                  <Box xcss={prefixStyle}>
+                    <Text>+</Text>
+                  </Box>
+                  <Box xcss={contentStyle}>
+                    <Text>{line}</Text>
+                  </Box>
                 </Box>
               </Box>
             );
@@ -161,7 +179,12 @@ function renderLineDiff(oldText, newText) {
             return (
               <Box key={key} xcss={lineRemovedBgStyle}>
                 <Box xcss={linePaddingStyle}>
-                  <Text>- {line}</Text>
+                  <Box xcss={prefixStyle}>
+                    <Text>-</Text>
+                  </Box>
+                  <Box xcss={contentStyle}>
+                    <Text>{line}</Text>
+                  </Box>
                 </Box>
               </Box>
             );
@@ -169,7 +192,12 @@ function renderLineDiff(oldText, newText) {
             return (
               <Box key={key} xcss={lineUnchangedBgStyle}>
                 <Box xcss={linePaddingStyle}>
-                  <Text>  {line}</Text>
+                  <Box xcss={prefixStyle}>
+                    <Text> </Text>
+                  </Box>
+                  <Box xcss={contentStyle}>
+                    <Text>{line}</Text>
+                  </Box>
                 </Box>
               </Box>
             );
