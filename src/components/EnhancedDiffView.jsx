@@ -91,9 +91,9 @@ const diffContainerStyle = xcss({
 });
 
 // Styles for diff lines (with hanging indent for wrapped lines)
-// All styles on single Box to ensure text-indent applies to text content
+// Using explicit hex colors to avoid any hidden CSS from semantic tokens
 const lineAddedStyle = xcss({
-  backgroundColor: 'color.background.success',
+  backgroundColor: '#DFFCF0',  // Light green (similar to GitHub)
   paddingBlock: 'space.050',
   paddingLeft: '4em',
   paddingRight: 'space.100',
@@ -101,11 +101,12 @@ const lineAddedStyle = xcss({
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word'
+  wordBreak: 'break-word',
+  boxSizing: 'border-box'
 });
 
 const lineRemovedStyle = xcss({
-  backgroundColor: 'color.background.danger',
+  backgroundColor: '#FFE7E5',  // Light red (similar to GitHub)
   paddingBlock: 'space.050',
   paddingLeft: '4em',
   paddingRight: 'space.100',
@@ -113,11 +114,12 @@ const lineRemovedStyle = xcss({
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word'
+  wordBreak: 'break-word',
+  boxSizing: 'border-box'
 });
 
 const lineUnchangedStyle = xcss({
-  backgroundColor: 'color.background.neutral.subtle',
+  backgroundColor: '#F7F8F9',  // Light gray
   paddingBlock: 'space.050',
   paddingLeft: '4em',
   paddingRight: 'space.100',
@@ -125,7 +127,8 @@ const lineUnchangedStyle = xcss({
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word'
+  wordBreak: 'break-word',
+  boxSizing: 'border-box'
 });
 
 // Two-column layout for preview diff (side-by-side)
