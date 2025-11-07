@@ -99,7 +99,7 @@ const lineAddedBgStyle = xcss({
 });
 
 const lineRemovedBgStyle = xcss({
-  backgroundColor: 'color.background.warning'  // danger token breaks rendering
+  backgroundColor: 'color.background.danger'
 });
 
 const lineUnchangedBgStyle = xcss({
