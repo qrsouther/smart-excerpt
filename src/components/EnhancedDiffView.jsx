@@ -102,8 +102,10 @@ const lineAddedStyle = xcss({
   wordBreak: 'break-word'
 });
 
+// WORKAROUND: color.background.danger prevents Box from rendering!
+// Using warning color instead until we can find a solution
 const lineRemovedStyle = xcss({
-  backgroundColor: 'color.background.danger',
+  backgroundColor: 'color.background.warning',
   paddingBlock: 'space.050',
   paddingInline: '8px',
   fontFamily: 'monospace',
