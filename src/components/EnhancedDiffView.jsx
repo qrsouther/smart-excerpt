@@ -17,7 +17,7 @@
  */
 
 import React, { useState } from 'react';
-import { Box, Heading, Text, Strong, Em, Stack, Inline, Button, ButtonGroup, AdfRenderer, Code, xcss } from '@forge/react';
+import { Box, Heading, Text, Strong, Em, Stack, Inline, Button, ButtonGroup, AdfRenderer, Code, SectionMessage, xcss } from '@forge/react';
 import { diffLines } from 'diff';
 import {
   filterContentByToggles,
@@ -297,10 +297,12 @@ export function EnhancedDiffView({
         {!showPreview ? (
           /* LINE-BASED DIFF (default view) */
           <Stack space="space.100">
-            <Text>
-              Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray).
-              Includes all content, even from disabled toggles.
-            </Text>
+            <SectionMessage appearance="information">
+              <Text>
+                Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray/white).
+                ALL content in this Embed's Source excerpt is displayed below, even content which may be hidden by disabled toggles in your Blueprint.
+              </Text>
+            </SectionMessage>
 
             <Box xcss={diffContainerStyle}>
               {renderLineDiff(oldText, newText)}
