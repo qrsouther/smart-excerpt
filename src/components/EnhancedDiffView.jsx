@@ -158,62 +158,22 @@ function renderLineDiff(oldText, newText) {
 
           const key = `${index}-${lineIndex}`;
 
-          // Inline styles as a fallback if xcss isn't applying properly
-          const addedInlineStyle = {
-            backgroundColor: '#DFFCF0',
-            paddingTop: '4px',
-            paddingBottom: '4px',
-            paddingLeft: '4em',
-            paddingRight: '8px',
-            textIndent: '-3em',
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word'
-          };
-
-          const removedInlineStyle = {
-            backgroundColor: '#FFE7E5',
-            paddingTop: '4px',
-            paddingBottom: '4px',
-            paddingLeft: '4em',
-            paddingRight: '8px',
-            textIndent: '-3em',
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word'
-          };
-
-          const unchangedInlineStyle = {
-            backgroundColor: '#F7F8F9',
-            paddingTop: '4px',
-            paddingBottom: '4px',
-            paddingLeft: '4em',
-            paddingRight: '8px',
-            textIndent: '-3em',
-            fontFamily: 'monospace',
-            fontSize: '12px',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-word'
-          };
-
           if (part.added) {
             return (
-              <Box key={key} style={addedInlineStyle}>
-                {`+ ${line}`}
+              <Box key={key} xcss={lineAddedStyle}>
+                <Text>+ {line}</Text>
               </Box>
             );
           } else if (part.removed) {
             return (
-              <Box key={key} style={removedInlineStyle}>
-                {`- ${line}`}
+              <Box key={key} xcss={lineRemovedStyle}>
+                <Text>- {line}</Text>
               </Box>
             );
           } else {
             return (
-              <Box key={key} style={unchangedInlineStyle}>
-                {`  ${line}`}
+              <Box key={key} xcss={lineUnchangedStyle}>
+                <Text>  {line}</Text>
               </Box>
             );
           }
