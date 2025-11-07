@@ -161,19 +161,19 @@ function renderLineDiff(oldText, newText) {
           if (part.added) {
             return (
               <Box key={key} xcss={lineAddedStyle}>
-                <Text>+ {line}</Text>
+                {`+ ${line}`}
               </Box>
             );
           } else if (part.removed) {
             return (
               <Box key={key} xcss={lineRemovedStyle}>
-                <Text>- {line}</Text>
+                {`- ${line}`}
               </Box>
             );
           } else {
             return (
               <Box key={key} xcss={lineUnchangedStyle}>
-                <Text>  {line}</Text>
+                {`  ${line}`}
               </Box>
             );
           }
