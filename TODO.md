@@ -6,9 +6,162 @@ This file tracks ongoing tasks, future enhancements, and technical debt for the 
 
 ## Current Sprint / Active Work
 
+### Performance Optimization - Lazy Loading Embeds
+**Status:** Ready to implement
+**Priority:** High (addresses 50-Embed page performance)
+**Estimated Effort:** Medium (4-6 hours)
+
+**Problem:**
+Pages with 50+ Embeds spawn 50 iframes immediately on page load, causing 2.5-5 seconds of initial overhead even though only 5-10 Embeds are visible above the fold.
+
+**Solution:**
+Implement lazy initialization using Intersection Observer to defer loading of off-screen Embeds until they're scrolled into view.
+
+**Implementation Plan:**
+
+**Phase 1: Add Intersection Observer Hook**
+- Create `src/hooks/use-intersection-observer.js`
+- Hook returns `isVisible` boolean when element enters viewport
+- Configurable threshold and root margin
+
+**Phase 2: Modify Embed Rendering**
+- Wrap Embed content in container with ref
+- Only initialize expensive operations when `isVisible === true`
+- Show loading skeleton while waiting for visibility
+
+**Phase 3: Defer Expensive Operations**
+Operations to defer until visible:
+- `checkStaleness()` - Only check when Embed scrolls into view
+- `getCachedContent()` - Already fast, but defer for consistency
+- ADF rendering - Show placeholder until visible
+
+**Implementation Code:**
+```javascript
+// src/embed-display.jsx
+const EmbedDisplay = () => {
+  const [containerRef, isVisible] = useIntersectionObserver({
+    threshold: 0.1,  // Trigger when 10% visible
+    rootMargin: '200px'  // Load 200px before entering viewport
+  });
+
+  // Don't run expensive checks until visible
+  useEffect(() => {
+    if (!isVisible || isEditing) return;
+
+    // Now run staleness check, data fetching, etc.
+    checkStaleness();
+  }, [isVisible, isEditing]);
+
+  if (!isVisible) {
+    return <div ref={containerRef} style={{ minHeight: '100px' }}>
+      {/* Skeleton loader */}
+    </div>;
+  }
+
+  // Render full Embed when visible
+  return <div ref={containerRef}>{/* Full render */}</div>;
+};
+```
+
+**Expected Performance Impact:**
+- **Initial load:** 5-10 visible Embeds load immediately (~1-2s instead of 5-10s)
+- **Scrolling:** Embeds load as user scrolls (smooth progressive enhancement)
+- **Overall improvement:** 70-80% faster perceived page load
+
+**Testing Plan:**
+1. Test page with 50 Embeds - verify only visible ones initialize
+2. Scroll test - verify off-screen Embeds load smoothly
+3. Edge cases: Fast scrolling, page anchor links, browser back button
+4. Performance profiling - measure actual load time improvement
+
+**Success Criteria:**
+- [ ] Only visible Embeds (5-10) initialize on page load
+- [ ] Off-screen Embeds load within 100ms of entering viewport
+- [ ] No layout shift when Embed loads
+- [ ] Page load time reduced by 60-80%
+- [ ] Works in both view and edit modes
+
+---
+
+### Performance Optimization - Defer Staleness Checks
+**Status:** Ready to implement
+**Priority:** High (reduces initial resolver call volume)
+**Estimated Effort:** Small (2-3 hours)
+
+**Problem:**
+Every Embed checks for staleness immediately on mount, causing 50× `getVariableValues` calls and 50× `getExcerpt` calls the instant the page loads. This creates unnecessary network congestion and delays initial content display.
+
+**Solution:**
+Defer staleness checks by 2-3 seconds after initial render. Show cached content immediately, then check for updates in the background.
+
+**Implementation Plan:**
+
+**Phase 1: Add Defer Delay to Staleness Check**
+```javascript
+// src/embed-display.jsx
+
+// Check for staleness in view mode
+useEffect(() => {
+  if (isEditing || !content || !selectedExcerptId || !effectiveLocalId) {
+    return;
+  }
+
+  // NEW: Defer staleness check by 2 seconds
+  const timer = setTimeout(() => {
+    checkStaleness();
+  }, 2000);  // 2 second delay
+
+  return () => clearTimeout(timer);
+
+}, [isEditing, content, selectedExcerptId, effectiveLocalId]);
+```
+
+**Phase 2: Progressive Backoff for Multiple Embeds**
+To avoid 50 Embeds all checking at exactly t=2s, add staggered delays:
+```javascript
+// Add jitter to spread out checks
+const jitter = Math.random() * 1000;  // 0-1s random
+const delay = 2000 + jitter;  // 2-3s total
+
+const timer = setTimeout(() => {
+  checkStaleness();
+}, delay);
+```
+
+**Phase 3: Priority Queue (Optional Enhancement)**
+- Check visible Embeds first (t=2s)
+- Check off-screen Embeds later (t=5-10s)
+- Combines well with lazy loading
+
+**Expected Performance Impact:**
+- **Initial load:** No staleness checks block rendering
+- **Network:** Resolver calls spread over 2-3s instead of all at t=0
+- **User experience:** Cached content appears instantly
+- **Overall improvement:** 30-40% faster perceived page load
+
+**Trade-offs:**
+- ⚠️ "Update Available" banner appears 2-3s after page load (acceptable)
+- ✅ User sees content immediately instead of waiting
+- ✅ Reduces server load spike at page load
+
+**Testing Plan:**
+1. Verify cached content renders immediately
+2. Verify Update Available banner appears after 2-3s delay
+3. Test with multiple Embeds - confirm staggered checks
+4. Monitor network tab - verify reduced initial burst
+
+**Success Criteria:**
+- [ ] Cached content renders in <500ms
+- [ ] Staleness checks deferred by 2-3 seconds
+- [ ] Update Available banners appear after delay
+- [ ] No degradation in staleness detection accuracy
+- [ ] Network activity spread over time instead of burst
+
+---
+
 ### Enhanced Diff View with Ghost Mode Rendering
 **Status:** Not Started - Implementation Plan Ready
-**Priority:** High
+**Priority:** Medium (improved diff view quality)
 **Estimated Effort:** Large (12-15 hours / 1.5-2 days)
 
 **Background:**
@@ -495,6 +648,327 @@ This review will be MORE VALUABLE after refactoring because:
 
 **When to Run:**
 After embed-display.jsx refactoring is complete and stable.
+
+### "Nuclear Option" - Single Blueprint Renderer Macro
+**Status:** Future consideration - Performance escape hatch
+**Priority:** Low (only if performance issues materialize)
+**Estimated Effort:** XL (6-8 weeks, major architectural rewrite)
+
+**Problem Statement:**
+Current architecture spawns 50+ separate iframes for a Blueprint page with 50 Embeds. Each iframe has ~50-100ms overhead just to spawn, resulting in 2.5-5 seconds of unavoidable latency before ANY rendering begins. This is the fundamental performance ceiling of the current multi-macro approach.
+
+**Root Cause:**
+Forge's security model requires each macro instance to run in an isolated iframe. With 50 Embeds = 50 iframes = 50× the overhead.
+
+**The Nuclear Solution:**
+Replace the current "1 Embed = 1 macro instance" model with a single "Blueprint Renderer" macro that:
+- Spawns **ONE iframe** per Blueprint page (instead of 50)
+- Internally renders all Embeds for that Blueprint
+- Eliminates 49 iframes worth of overhead
+- Has full control over lazy loading, caching, and rendering
+
+---
+
+#### Architecture Overview
+
+**Current (Multi-Macro):**
+```
+Blueprint Page
+├── Embed Macro #1 [iframe] → loads data → renders
+├── Embed Macro #2 [iframe] → loads data → renders
+├── Embed Macro #3 [iframe] → loads data → renders
+...
+└── Embed Macro #50 [iframe] → loads data → renders
+
+Total: 50 iframes, 50 independent render cycles, 50 resolver call sets
+```
+
+**Nuclear Option (Single-Macro):**
+```
+Blueprint Page
+└── Blueprint Renderer Macro [ONE iframe]
+    ├── Fetches Blueprint metadata (which Standards to include)
+    ├── Batch-fetches all Embed configs (1 call instead of 50)
+    ├── Batch-fetches all cached content (1 call instead of 50)
+    ├── Internally renders 50 Embed displays
+    └── Lazy loads non-visible Embeds as user scrolls
+
+Total: 1 iframe, 1 coordinated render, 2-3 batched resolver calls
+```
+
+---
+
+#### Performance Impact (Quantified)
+
+**Current Performance (50 Embeds):**
+- Iframe spawn overhead: 2.5-5 seconds
+- 50× getCachedContent calls: ~1.5-3 seconds (parallel but still overhead)
+- 50× getVariableValues calls: ~1.5-3 seconds (for staleness)
+- UI rendering: ~1-2 seconds (staggered as iframes load)
+- **Total perceived load time: 5-10 seconds**
+
+**Nuclear Option Performance (50 Embeds):**
+- Iframe spawn overhead: 50-100ms (ONE iframe)
+- Batched data fetch: ~300-500ms (ONE batched call)
+- Smart rendering: ~500ms-1s (client-side, with lazy loading)
+- **Total perceived load time: 1-2 seconds**
+
+**Performance Improvement: 75-80% faster (5-10× reduction in load time)**
+
+---
+
+#### UX Implications & Challenges
+
+**What Users Lose:**
+1. ❌ **Individual Embed placement** - Can't drag/drop individual Embeds in Confluence editor
+2. ❌ **Per-Embed editing** - Can't configure each Embed independently via macro config
+3. ❌ **Gradual progressive enhancement** - Can't add Embeds one-by-one as page evolves
+
+**What Users Gain:**
+1. ✅ **Instant Blueprint loading** - 5-10× faster page load
+2. ✅ **Smooth scrolling** - No staggered iframe loading causing jank
+3. ✅ **Better caching** - Single coordinated cache strategy
+4. ✅ **Advanced features unlocked** - Table of contents, cross-references, search, etc.
+
+**The UX Challenge:**
+How do users specify WHICH Blueprint Standards to include and configure their variables/toggles if they can't place individual Embed macros?
+
+**Potential Solutions (User's Idea Goes Here):**
+- **Option A: Configuration JSON** - Users edit a structured config block specifying Standards + variables
+- **Option B: Page properties** - Store Blueprint config in Confluence page properties
+- **Option C: Admin-managed** - Configure Blueprint structure in Admin UI, reference by ID
+- **Option D: Hybrid approach** - ??? (User mentioned having an idea)
+
+---
+
+#### Implementation Approach
+
+**New Macro: "Blueprint Renderer"**
+
+**Configuration Schema:**
+```javascript
+{
+  blueprintId: 'unique-id', // Links to centralized Blueprint config
+  // OR
+  embedConfigs: [
+    {
+      standardId: 'excerpt-123',
+      variables: { client: 'Acme Corp', venue: 'Stadium' },
+      toggles: { premium: true, basic: false },
+      customInsertions: [...],
+      internalNotes: [...]
+    },
+    // ... 49 more
+  ]
+}
+```
+
+**Core Rendering Logic:**
+```javascript
+function BlueprintRenderer({ config }) {
+  // 1. Fetch all Blueprint data in batched calls
+  const blueprintData = useBlueprintData(config.blueprintId);
+
+  // 2. Render visible Embeds immediately (first 5-10)
+  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 10 });
+
+  // 3. Lazy load remaining Embeds as user scrolls
+  useIntersectionObserver((entries) => {
+    // Expand visible range as user scrolls down
+    setVisibleRange({ start: 0, end: entries[0].target.index + 10 });
+  });
+
+  // 4. Render Embeds with shared caching/state
+  return (
+    <div className="blueprint-container">
+      {blueprintData.embeds.slice(0, visibleRange.end).map(embed => (
+        <EmbedDisplay
+          key={embed.id}
+          standardContent={embed.standardContent}
+          variables={embed.variables}
+          toggles={embed.toggles}
+        />
+      ))}
+    </div>
+  );
+}
+```
+
+**New Resolvers:**
+```javascript
+// Batch fetch all Embed configs for a Blueprint
+getBlueprintEmbedConfigs({ blueprintId })
+
+// Batch fetch all cached content for Embeds
+getBlueprintCachedContent({ embedIds: [...] })
+
+// Save entire Blueprint configuration
+saveBlueprintConfig({ blueprintId, embedConfigs })
+```
+
+**Storage Schema:**
+```javascript
+// New storage key pattern
+blueprint:{blueprintId} = {
+  pageId: '12345',
+  embedConfigs: [
+    {
+      standardId: 'excerpt-123',
+      variables: {...},
+      toggles: {...},
+      ...
+    },
+    // ...
+  ],
+  createdAt: '...',
+  updatedAt: '...'
+}
+```
+
+---
+
+#### Migration Path
+
+**Phase 1: Build Blueprint Renderer (parallel to existing system)**
+- New macro definition in manifest.yml
+- New resolvers for batched operations
+- Blueprint configuration UI (separate from current Embed config)
+- Rendering engine with lazy loading
+- **No impact on existing Embeds**
+
+**Phase 2: Pilot Testing**
+- Create test Blueprint pages using new renderer
+- Measure performance improvements
+- Gather user feedback on configuration UX
+- Iterate on configuration model
+
+**Phase 3: Migration Tools**
+- Build tool to convert existing Embed-based pages to Blueprint Renderer
+- Scan page, extract all Embed configs
+- Generate Blueprint configuration
+- Replace 50 Embed macros with 1 Blueprint Renderer macro
+
+**Phase 4: Gradual Rollout**
+- Migrate low-traffic pages first
+- Monitor performance and error rates
+- Migrate high-traffic pages after validation
+- Keep old Embed macros for backward compatibility
+
+---
+
+#### Trade-Offs Analysis
+
+**Pros:**
+- ✅ **5-10× faster page load** (most important for user satisfaction)
+- ✅ **Eliminates iframe overhead** (fundamental architectural improvement)
+- ✅ **Enables advanced features** (ToC, search, cross-refs only possible with single iframe)
+- ✅ **Better caching** (coordinated strategy across all Embeds)
+- ✅ **Reduced server load** (fewer resolver calls)
+- ✅ **Smoother UX** (no staggered loading, no layout shifts)
+
+**Cons:**
+- ❌ **Loss of Confluence editor integration** (can't drag/drop individual Embeds)
+- ❌ **Configuration complexity** (users must understand Blueprint structure)
+- ❌ **Major rewrite effort** (6-8 weeks of development)
+- ❌ **Migration complexity** (converting existing pages)
+- ❌ **Backward compatibility burden** (must maintain both systems)
+- ❌ **Testing complexity** (new rendering model to validate)
+
+---
+
+#### Open Questions / Design Decisions
+
+**1. Configuration Model (CRITICAL - User's Idea Here)**
+> User mentioned having an idea to make this "less crazy than it sounds"
+
+How do users specify which Standards to include and configure them?
+- [ ] JSON config block in macro?
+- [ ] Page properties?
+- [ ] Admin UI reference?
+- [ ] Hybrid approach?
+- [ ] **User's proposal:** _____________________________
+
+**2. Edit Mode**
+How do users edit Blueprint configuration after creation?
+- [ ] Edit macro config (large JSON blob)?
+- [ ] Dedicated Blueprint editor UI?
+- [ ] Individual "Edit this Embed" buttons in renderer?
+
+**3. Hybrid Model?**
+Could we support BOTH approaches?
+- Individual Embed macros for simple use cases
+- Blueprint Renderer for complex, performance-critical pages
+- Users choose based on needs
+
+**4. Features to Port**
+Which features from current Embeds MUST work in Blueprint Renderer?
+- [ ] Update Available detection (per-Embed)
+- [ ] Diff view (per-Embed)
+- [ ] Custom insertions (per-Embed)
+- [ ] Internal notes (per-Embed)
+- [ ] Staleness checking (per-Embed)
+
+**5. Render Strategy**
+- [ ] Render all 50 Embeds at once (fast CPU, simple code)
+- [ ] Lazy render on scroll (slower devices, complex code)
+- [ ] Virtual scrolling (only render visible, most complex)
+
+---
+
+#### Success Criteria
+
+**Performance Targets:**
+- [ ] Initial page paint <500ms (vs current 2.5-5s)
+- [ ] All visible content rendered <2s (vs current 5-10s)
+- [ ] Smooth 60fps scrolling (no iframe spawn delays)
+
+**Feature Parity:**
+- [ ] All current Embed features work in Blueprint Renderer
+- [ ] Update Available detection per-Embed
+- [ ] Diff view accessible
+- [ ] Variable/toggle configuration preserved
+
+**User Experience:**
+- [ ] Configuration model is learnable (<30min training)
+- [ ] Users prefer new model over old (survey)
+- [ ] Error rate <5% (users can successfully configure Blueprints)
+
+---
+
+#### When to Execute
+
+**Triggers for Nuclear Option:**
+1. **Performance complaints** - Users report slow Blueprint pages
+2. **Scale issues** - Pages commonly have 50+ Embeds and performance is poor
+3. **Feature blockers** - Advanced features (ToC, search) can't be built in current architecture
+4. **Competitive pressure** - Other solutions offer faster Blueprint rendering
+
+**Don't Execute If:**
+- Current performance is acceptable to users
+- Most pages have <20 Embeds (iframe overhead tolerable)
+- Configuration UX can't be solved elegantly
+- Development resources unavailable (6-8 weeks is significant)
+
+---
+
+#### Next Steps (When Ready)
+
+1. **Validate User Idea** - User has a configuration UX idea, document it here
+2. **Build Prototype** - Create minimal Blueprint Renderer to test feasibility
+3. **Performance Benchmark** - Measure actual performance improvement on test page
+4. **User Testing** - Validate configuration UX with test users
+5. **Go/No-Go Decision** - Based on performance gains and UX validation
+
+---
+
+**Related Discussions:**
+- Performance analysis conversation (2025-11-06)
+- Forge architecture limitations (iframe isolation)
+- Custom UI vs UI Kit trade-offs
+
+**Last Updated:** 2025-11-06
+
+---
 
 ### Expandable Debug View Component
 **Status:** Planning
