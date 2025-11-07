@@ -94,29 +94,22 @@ const diffContainerStyle = xcss({
 // Outer Box: background color ONLY (no padding)
 // Inner Box: padding, text-indent, font styles (no background)
 
-// Alternating backgrounds for better line distinction
+// Background colors - only neutral lines alternate
 const lineAddedBgStyle = xcss({
-  backgroundColor: 'color.background.success'
-});
-
-const lineAddedBgStyleAlt = xcss({
-  backgroundColor: 'color.background.success.hovered'
+  backgroundColor: 'color.background.success'  // Consistent light green for all added
 });
 
 const lineRemovedBgStyle = xcss({
-  backgroundColor: 'color.background.danger'
+  backgroundColor: 'color.background.danger'  // Consistent light red for all removed
 });
 
-const lineRemovedBgStyleAlt = xcss({
-  backgroundColor: 'color.background.danger.hovered'
-});
-
+// Neutral lines alternate between light gray and white
 const lineUnchangedBgStyle = xcss({
-  backgroundColor: 'color.background.neutral.subtle'
+  backgroundColor: 'color.background.neutral.subtle'  // Light gray
 });
 
 const lineUnchangedBgStyleAlt = xcss({
-  backgroundColor: 'elevation.surface'  // White/very light
+  backgroundColor: 'elevation.surface'  // White
 });
 
 // Compact padding for the line container
@@ -161,8 +154,8 @@ const previewContainerStyle = xcss({
 function renderLineDiff(oldText, newText) {
   const differences = diffLines(oldText || '', newText || '');
 
-  // Track global line number for alternating backgrounds
-  let globalLineNumber = 0;
+  // Track neutral line number for alternating backgrounds (only neutral lines alternate)
+  let neutralLineNumber = 0;
 
   return (
     <Stack space="space.0">
@@ -177,12 +170,10 @@ function renderLineDiff(oldText, newText) {
           }
 
           const key = `${index}-${lineIndex}`;
-          const isEvenLine = globalLineNumber % 2 === 0;
-          globalLineNumber++;
 
           if (part.added) {
             return (
-              <Box key={key} xcss={isEvenLine ? lineAddedBgStyle : lineAddedBgStyleAlt}>
+              <Box key={key} xcss={lineAddedBgStyle}>
                 <Box xcss={linePaddingStyle}>
                   <Inline space="space.0" alignBlock="start">
                     <Box xcss={prefixStyle}>
@@ -197,7 +188,7 @@ function renderLineDiff(oldText, newText) {
             );
           } else if (part.removed) {
             return (
-              <Box key={key} xcss={isEvenLine ? lineRemovedBgStyle : lineRemovedBgStyleAlt}>
+              <Box key={key} xcss={lineRemovedBgStyle}>
                 <Box xcss={linePaddingStyle}>
                   <Inline space="space.0" alignBlock="start">
                     <Box xcss={prefixStyle}>
@@ -211,6 +202,10 @@ function renderLineDiff(oldText, newText) {
               </Box>
             );
           } else {
+            // Unchanged lines alternate
+            const isEvenLine = neutralLineNumber % 2 === 0;
+            neutralLineNumber++;
+
             return (
               <Box key={key} xcss={isEvenLine ? lineUnchangedBgStyle : lineUnchangedBgStyleAlt}>
                 <Box xcss={linePaddingStyle}>
