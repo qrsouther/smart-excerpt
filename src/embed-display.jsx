@@ -441,6 +441,11 @@ const App = () => {
         if (stale) {
           setLatestRenderedContent(excerptResult.excerpt.content); // New Source content
           setSyncedContent(varsResult.syncedContent || null); // Old Source content from last sync
+
+          // Load variable values and toggle states for diff view rendering
+          // (We already have varsResult from staleness check, so reuse it)
+          setVariableValues(varsResult.variableValues || {});
+          setToggleStates(varsResult.toggleStates || {});
         }
       } catch (err) {
         console.error('[Include] Staleness check error:', err);
