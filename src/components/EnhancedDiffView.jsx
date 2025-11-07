@@ -104,12 +104,13 @@ const lineRemovedBgStyle = xcss({
 });
 
 // Neutral lines alternate between light gray and white
+// TEST: Using very distinct colors to verify alternation is working
 const lineUnchangedBgStyle = xcss({
   backgroundColor: 'color.background.neutral.subtle'  // Light gray
 });
 
 const lineUnchangedBgStyleAlt = xcss({
-  backgroundColor: 'elevation.surface'  // White
+  backgroundColor: 'color.background.information'  // TEST: Blue to verify alternation works
 });
 
 // Compact padding for the line container
