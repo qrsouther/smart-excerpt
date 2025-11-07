@@ -67,6 +67,19 @@ import { CheckAllProgressBar } from './components/admin/CheckAllProgressBar';
 import { AdminToolbar } from './components/admin/AdminToolbar';
 import { OrphanedItemsSection } from './components/admin/OrphanedItemsSection';
 
+// Import admin styles
+import {
+  cardStyles,
+  fullWidthTableStyle,
+  previewBoxStyle,
+  selectStyles,
+  leftSidebarStyles,
+  middleSectionStyles,
+  rightContentStyles,
+  sectionSeparatorStyles,
+  sectionMarginStyles
+} from './styles/admin-styles';
+
 // Create a client
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -82,75 +95,8 @@ const queryClient = new QueryClient({
 });
 
 // ============================================================================
-// STYLES
+// STYLES - Imported from ./styles/admin-styles.js
 // ============================================================================
-
-// Card styling
-const cardStyles = xcss({
-  padding: 'space.200',
-  borderColor: 'color.border',
-  borderStyle: 'solid',
-  borderWidth: 'border.width',
-  borderRadius: 'border.radius',
-  boxShadow: 'elevation.shadow.raised',
-  backgroundColor: 'color.background.neutral.subtle',
-  minWidth: '250px',
-  flex: '1 1 250px'
-});
-
-// Full-width table container
-const fullWidthTableStyle = xcss({
-  width: '100%'
-});
-
-// Preview content border styling (matches Include macro preview)
-const previewBoxStyle = xcss({
-  borderColor: 'color.border',
-  borderWidth: 'border.width',
-  borderStyle: 'solid',
-  borderRadius: 'border.radius',
-  padding: 'space.200'
-});
-
-// Select dropdown styling - wider to accommodate labels
-const selectStyles = xcss({
-  minWidth: '200px'
-});
-
-// Left sidebar styling - takes up 10% of viewport width
-const leftSidebarStyles = xcss({
-  width: '10%',
-  minWidth: '150px',
-  paddingInlineEnd: 'space.200',
-  padding: 'space.200',
-  borderColor: 'color.border',
-  borderStyle: 'solid',
-  borderWidth: 'border.width',
-  borderRadius: 'border.radius'
-});
-
-// Middle section styling - takes up 90% of viewport width (full width without right panel)
-const middleSectionStyles = xcss({
-  width: '90%',
-  paddingInlineEnd: 'space.200',
-  paddingInlineStart: 'space.200',
-  padding: 'space.200',
-  borderColor: 'color.border',
-  borderStyle: 'solid',
-  borderWidth: 'border.width',
-  borderRadius: 'border.radius'
-});
-
-// Right content area styling - takes up 45% of viewport width
-const rightContentStyles = xcss({
-  width: '45%',
-  paddingInlineStart: 'space.200',
-  padding: 'space.200',
-  borderColor: 'color.border',
-  borderStyle: 'solid',
-  borderWidth: 'border.width',
-  borderRadius: 'border.radius'
-});
 
 // ⚠️ ONE-TIME USE MIGRATION FEATURE FLAG - DELETE AFTER PRODUCTION MIGRATION ⚠️
 // Feature flag: Set to true to show migration tools in Admin UI
@@ -1051,7 +997,7 @@ const App = () => {
   return (
     <Fragment>
       {/* Page Header */}
-      <Box xcss={xcss({ marginBlockEnd: 'space.300', paddingBlockEnd: 'space.200', borderBlockEndColor: 'color.border', borderBlockEndStyle: 'solid', borderBlockEndWidth: 'border.width' })}>
+      <Box xcss={sectionSeparatorStyles}>
         <Inline space="space.200" alignBlock="center" spread="space-between">
           <Text><Strong>Blueprint Standards Admin v{APP_VERSION}</Strong></Text>
           <Button
@@ -1064,7 +1010,7 @@ const App = () => {
       </Box>
 
       {/* Top Toolbar - Filters and Actions */}
-      <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
+      <Box xcss={sectionMarginStyles}>
         <Inline space="space.200" alignBlock="center" spread="space-between">
           {/* Left side - bulk initialization button (hidden via feature flag) */}
           {SHOW_MIGRATION_TOOLS && (
@@ -1123,7 +1069,7 @@ const App = () => {
 
       {/* Bulk Import Section (hidden via feature flag) */}
       {SHOW_MIGRATION_TOOLS && (
-        <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
+        <Box xcss={sectionMarginStyles}>
           <SectionMessage appearance="information">
             <Stack space="space.200">
               <Text><Strong>📥 Import MultiExcerpt Sources</Strong></Text>
@@ -1223,7 +1169,7 @@ const App = () => {
 
       {/* Progress Bar for MultiExcerpt Scan (hidden via feature flag) */}
       {SHOW_MIGRATION_TOOLS && isScanningMultiExcerpt && (
-        <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
+        <Box xcss={sectionMarginStyles}>
           <SectionMessage appearance="information">
             <Stack space="space.200">
               <Text><Strong>Scanning for MultiExcerpt Embeds...</Strong></Text>
@@ -1261,7 +1207,7 @@ const App = () => {
 
       {/* Warning messages */}
       {(orphanedUsage.length > 0 || orphanedSources.length > 0) && (
-        <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
+        <Box xcss={sectionMarginStyles}>
           <SectionMessage appearance="warning">
             {orphanedSources.length > 0 && (
               <Text><Strong>⚠ {orphanedSources.length} Orphaned Source(s)</Strong></Text>
