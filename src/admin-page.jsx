@@ -52,7 +52,10 @@ import {
 import {
   escapeCSV,
   generateIncludesCSV,
-  generateMultiExcerptCSV
+  generateMultiExcerptCSV,
+  filterExcerpts,
+  sortExcerpts,
+  calculateStalenessStatus
 } from './utils/admin-utils';
 
 // Import admin UI components
@@ -1041,34 +1044,9 @@ const App = () => {
     );
   }
 
-  // Filter excerpts based on search term and category
-  const filteredExcerpts = excerpts.filter(excerpt => {
-    const matchesSearch = excerpt.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = categoryFilter === 'All' || excerpt.category === categoryFilter;
-    return matchesSearch && matchesCategory;
-  });
-
-  // Sort filtered excerpts
-  const sortedExcerpts = [...filteredExcerpts].sort((a, b) => {
-    switch (sortBy) {
-      case 'name-asc':
-        return a.name.localeCompare(b.name);
-      case 'name-desc':
-        return b.name.localeCompare(a.name);
-      case 'usage-high':
-        const usageA = usageCounts[a.id] || 0;
-        const usageB = usageCounts[b.id] || 0;
-        return usageB - usageA;
-      case 'usage-low':
-        const usageALow = usageCounts[a.id] || 0;
-        const usageBLow = usageCounts[b.id] || 0;
-        return usageALow - usageBLow;
-      case 'category':
-        return (a.category || 'General').localeCompare(b.category || 'General');
-      default:
-        return 0;
-    }
-  });
+  // Filter and sort excerpts using utility functions
+  const filteredExcerpts = filterExcerpts(excerpts, searchTerm, categoryFilter);
+  const sortedExcerpts = sortExcerpts(filteredExcerpts, sortBy, usageCounts);
 
   return (
     <Fragment>

@@ -2,12 +2,15 @@
  * Admin Utility Functions
  *
  * Utility functions for the Blueprint Standards Admin page.
- * Includes CSV generation, data escaping, and other helper functions.
+ * Includes CSV generation, data escaping, filtering, sorting, and other helper functions.
  *
  * Key functions:
  * - escapeCSV: Escape values for CSV format
  * - generateIncludesCSV: Generate CSV export for embed instances
  * - generateMultiExcerptCSV: Generate CSV for MultiExcerpt migration data
+ * - filterExcerpts: Filter excerpts by search term and category
+ * - sortExcerpts: Sort excerpts by various criteria
+ * - calculateStalenessStatus: Determine if an embed is stale
  */
 
 import { extractTextFromAdf } from './adf-utils.js';
@@ -197,4 +200,70 @@ export const generateMultiExcerptCSV = (includeData) => {
 
   // Combine header and rows
   return [headers.join(','), ...rows].join('\n');
+};
+
+/**
+ * Filter excerpts by search term and category
+ *
+ * @param {Array} excerpts - Array of excerpt objects
+ * @param {string} searchTerm - Search string to filter by name (case-insensitive)
+ * @param {string} categoryFilter - Category to filter by ('All' for no filter)
+ * @returns {Array} Filtered array of excerpts
+ */
+export const filterExcerpts = (excerpts, searchTerm, categoryFilter) => {
+  if (!Array.isArray(excerpts)) return [];
+
+  return excerpts.filter(excerpt => {
+    const matchesSearch = excerpt.name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesCategory = categoryFilter === 'All' || excerpt.category === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+};
+
+/**
+ * Sort excerpts by specified criteria
+ *
+ * @param {Array} excerpts - Array of excerpt objects to sort
+ * @param {string} sortBy - Sort criteria: 'name-asc', 'name-desc', 'usage-high', 'usage-low', 'category'
+ * @param {Object} usageCounts - Map of excerpt IDs to usage counts (for usage sorting)
+ * @returns {Array} Sorted array of excerpts (creates new array, doesn't mutate original)
+ */
+export const sortExcerpts = (excerpts, sortBy, usageCounts = {}) => {
+  if (!Array.isArray(excerpts)) return [];
+
+  return [...excerpts].sort((a, b) => {
+    switch (sortBy) {
+      case 'name-asc':
+        return a.name.localeCompare(b.name);
+      case 'name-desc':
+        return b.name.localeCompare(a.name);
+      case 'usage-high':
+        const usageA = usageCounts[a.id] || 0;
+        const usageB = usageCounts[b.id] || 0;
+        return usageB - usageA;
+      case 'usage-low':
+        const usageALow = usageCounts[a.id] || 0;
+        const usageBLow = usageCounts[b.id] || 0;
+        return usageALow - usageBLow;
+      case 'category':
+        return (a.category || 'General').localeCompare(b.category || 'General');
+      default:
+        return 0;
+    }
+  });
+};
+
+/**
+ * Calculate staleness status for an embed instance
+ *
+ * Determines if an embed is out of sync with its source by comparing timestamps.
+ *
+ * @param {string|Date} sourceLastModified - When the source was last modified
+ * @param {string|Date|null} embedLastSynced - When the embed last synced with source
+ * @returns {boolean} True if the embed is stale (source modified after last sync)
+ */
+export const calculateStalenessStatus = (sourceLastModified, embedLastSynced) => {
+  const sourceDate = new Date(sourceLastModified || 0);
+  const embedDate = embedLastSynced ? new Date(embedLastSynced) : new Date(0);
+  return sourceDate > embedDate;
 };
