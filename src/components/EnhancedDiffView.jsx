@@ -121,11 +121,14 @@ const prefixStyle = xcss({
 });
 
 // Text content that can wrap - using Box so it can have specific styling
+// flexGrow: 1 makes it take remaining space, containing wrapped text
 const contentWrapperStyle = xcss({
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word'
+  wordBreak: 'break-word',
+  flexGrow: 1,
+  minWidth: 0  // Allows flex item to shrink below content size
 });
 
 // Two-column layout for preview diff (side-by-side)
