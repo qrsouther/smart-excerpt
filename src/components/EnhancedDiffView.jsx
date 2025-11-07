@@ -17,7 +17,7 @@
  */
 
 import React, { useState } from 'react';
-import { Box, Heading, Text, Strong, Em, Stack, Button, ButtonGroup, AdfRenderer, Code, xcss } from '@forge/react';
+import { Box, Heading, Text, Strong, Em, Stack, Inline, Button, ButtonGroup, AdfRenderer, Code, xcss } from '@forge/react';
 import { diffLines } from 'diff';
 import {
   filterContentByToggles,
@@ -106,31 +106,26 @@ const lineUnchangedBgStyle = xcss({
   backgroundColor: 'color.background.neutral.subtle'
 });
 
-// Padding style for inner Box (no textIndent - not supported in Forge!)
+// Compact padding for the line container
 const linePaddingStyle = xcss({
-  paddingBlock: 'space.050',
-  paddingInline: 'space.100',
-  display: 'flex',
-  flexDirection: 'row',
+  padding: 'space.050',
   fontFamily: 'monospace',
   fontSize: '12px'
 });
 
-// Prefix symbol (+/-/space) with fixed width
+// Prefix symbol (+/-/space) - just basic styling
 const prefixStyle = xcss({
-  flexShrink: 0,
-  width: '2em',
   fontFamily: 'monospace',
-  fontSize: '12px'
+  fontSize: '12px',
+  minWidth: '2em'
 });
 
-// Text content that can wrap
-const contentStyle = xcss({
-  flexGrow: 1,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
+// Text content that can wrap - using Box so it can have specific styling
+const contentWrapperStyle = xcss({
   fontFamily: 'monospace',
-  fontSize: '12px'
+  fontSize: '12px',
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word'
 });
 
 // Two-column layout for preview diff (side-by-side)
@@ -168,12 +163,14 @@ function renderLineDiff(oldText, newText) {
             return (
               <Box key={key} xcss={lineAddedBgStyle}>
                 <Box xcss={linePaddingStyle}>
-                  <Box xcss={prefixStyle}>
-                    <Text>+</Text>
-                  </Box>
-                  <Box xcss={contentStyle}>
-                    <Text>{line}</Text>
-                  </Box>
+                  <Inline space="space.0" alignBlock="start">
+                    <Box xcss={prefixStyle}>
+                      <Text>+</Text>
+                    </Box>
+                    <Box xcss={contentWrapperStyle}>
+                      <Text>{line}</Text>
+                    </Box>
+                  </Inline>
                 </Box>
               </Box>
             );
@@ -181,12 +178,14 @@ function renderLineDiff(oldText, newText) {
             return (
               <Box key={key} xcss={lineRemovedBgStyle}>
                 <Box xcss={linePaddingStyle}>
-                  <Box xcss={prefixStyle}>
-                    <Text>-</Text>
-                  </Box>
-                  <Box xcss={contentStyle}>
-                    <Text>{line}</Text>
-                  </Box>
+                  <Inline space="space.0" alignBlock="start">
+                    <Box xcss={prefixStyle}>
+                      <Text>-</Text>
+                    </Box>
+                    <Box xcss={contentWrapperStyle}>
+                      <Text>{line}</Text>
+                    </Box>
+                  </Inline>
                 </Box>
               </Box>
             );
@@ -194,12 +193,14 @@ function renderLineDiff(oldText, newText) {
             return (
               <Box key={key} xcss={lineUnchangedBgStyle}>
                 <Box xcss={linePaddingStyle}>
-                  <Box xcss={prefixStyle}>
-                    <Text> </Text>
-                  </Box>
-                  <Box xcss={contentStyle}>
-                    <Text>{line}</Text>
-                  </Box>
+                  <Inline space="space.0" alignBlock="start">
+                    <Box xcss={prefixStyle}>
+                      <Text> </Text>
+                    </Box>
+                    <Box xcss={contentWrapperStyle}>
+                      <Text>{line}</Text>
+                    </Box>
+                  </Inline>
                 </Box>
               </Box>
             );
