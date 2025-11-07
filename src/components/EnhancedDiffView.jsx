@@ -91,12 +91,11 @@ const diffContainerStyle = xcss({
 });
 
 // All styles on Box component (Text doesn't support xcss)
+// Testing with obvious fixed padding to see if it's respected at all
 const lineAddedStyle = xcss({
   backgroundColor: 'color.background.success',
   paddingBlock: 'space.050',
-  paddingInlineStart: '4em',
-  paddingInlineEnd: 'space.100',
-  textIndent: '-3em',
+  paddingInline: '8px',
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
@@ -106,9 +105,7 @@ const lineAddedStyle = xcss({
 const lineRemovedStyle = xcss({
   backgroundColor: 'color.background.danger',
   paddingBlock: 'space.050',
-  paddingInlineStart: '4em',
-  paddingInlineEnd: 'space.100',
-  textIndent: '-3em',
+  paddingInline: '8px',
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
@@ -118,9 +115,7 @@ const lineRemovedStyle = xcss({
 const lineUnchangedStyle = xcss({
   backgroundColor: 'color.background.neutral.subtle',
   paddingBlock: 'space.050',
-  paddingInlineStart: '4em',
-  paddingInlineEnd: 'space.100',
-  textIndent: '-3em',
+  paddingInline: '8px',
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
