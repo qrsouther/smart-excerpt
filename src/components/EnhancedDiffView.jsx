@@ -90,34 +90,27 @@ const diffContainerStyle = xcss({
   backgroundColor: 'elevation.surface' // White/neutral background for diff content
 });
 
-// All styles on Box component (Text doesn't support xcss)
-// Testing with obvious fixed padding to see if it's respected at all
-const lineAddedStyle = xcss({
-  backgroundColor: 'color.background.success',
-  paddingBlock: 'space.050',
-  paddingInline: '8px',
-  fontFamily: 'monospace',
-  fontSize: '12px',
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word'
+// SOLUTION: Separate background from padding using nested Boxes
+// Outer Box: background color ONLY (no padding)
+// Inner Box: padding, text-indent, font styles (no background)
+
+const lineAddedBgStyle = xcss({
+  backgroundColor: 'color.background.success'
 });
 
-// WORKAROUND: color.background.danger prevents Box from rendering!
-// Using warning color instead until we can find a solution
-const lineRemovedStyle = xcss({
-  backgroundColor: 'color.background.warning',
-  paddingBlock: 'space.050',
-  paddingInline: '8px',
-  fontFamily: 'monospace',
-  fontSize: '12px',
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word'
+const lineRemovedBgStyle = xcss({
+  backgroundColor: 'color.background.warning'  // danger token breaks rendering
 });
 
-const lineUnchangedStyle = xcss({
-  backgroundColor: 'color.background.neutral.subtle',
+const lineUnchangedBgStyle = xcss({
+  backgroundColor: 'color.background.neutral.subtle'
+});
+
+// Padding and text styles (applied to inner Box)
+const linePaddingStyle = xcss({
   paddingBlock: 'space.050',
-  paddingInline: '8px',
+  paddingInline: '4em',
+  textIndent: '-3em',
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
@@ -157,20 +150,26 @@ function renderLineDiff(oldText, newText) {
 
           if (part.added) {
             return (
-              <Box key={key} xcss={lineAddedStyle}>
-                <Text>+ {line}</Text>
+              <Box key={key} xcss={lineAddedBgStyle}>
+                <Box xcss={linePaddingStyle}>
+                  <Text>+ {line}</Text>
+                </Box>
               </Box>
             );
           } else if (part.removed) {
             return (
-              <Box key={key} xcss={lineRemovedStyle}>
-                <Text>- {line}</Text>
+              <Box key={key} xcss={lineRemovedBgStyle}>
+                <Box xcss={linePaddingStyle}>
+                  <Text>- {line}</Text>
+                </Box>
               </Box>
             );
           } else {
             return (
-              <Box key={key} xcss={lineUnchangedStyle}>
-                <Text>  {line}</Text>
+              <Box key={key} xcss={lineUnchangedBgStyle}>
+                <Box xcss={linePaddingStyle}>
+                  <Text>  {line}</Text>
+                </Box>
               </Box>
             );
           }
