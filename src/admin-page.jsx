@@ -61,6 +61,8 @@ import { StalenessBadge } from './components/admin/StalenessBadge';
 import { ExcerptPreviewModal } from './components/admin/ExcerptPreviewModal';
 import { CategoryManager } from './components/admin/CategoryManager';
 import { CheckAllProgressBar } from './components/admin/CheckAllProgressBar';
+import { AdminToolbar } from './components/admin/AdminToolbar';
+import { OrphanedItemsSection } from './components/admin/OrphanedItemsSection';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -1119,80 +1121,25 @@ const App = () => {
           )}
 
           {/* Right side - filters and buttons */}
-          <Inline space="space.150" alignBlock="center">
-            <Textfield
-              placeholder="Search by name..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-
-            <Box xcss={selectStyles}>
-              <Select
-                options={[
-                  { label: 'All Categories', value: 'All' },
-                  ...categories.map(cat => ({ label: cat, value: cat }))
-                ]}
-                value={{ label: categoryFilter === 'All' ? 'All Categories' : categoryFilter, value: categoryFilter }}
-                onChange={(e) => setCategoryFilter(e.value)}
-              />
-            </Box>
-
-            <Box xcss={selectStyles}>
-              <Select
-                options={[
-                  { label: 'Sort: Name (A-Z)', value: 'name-asc' },
-                  { label: 'Sort: Name (Z-A)', value: 'name-desc' },
-                  { label: 'Sort: Most Used', value: 'usage-high' },
-                  { label: 'Sort: Least Used', value: 'usage-low' },
-                  { label: 'Sort: Category', value: 'category' }
-                ]}
-                value={{
-                  label: sortBy === 'name-asc' ? 'Sort: Name (A-Z)' :
-                         sortBy === 'name-desc' ? 'Sort: Name (Z-A)' :
-                         sortBy === 'usage-high' ? 'Sort: Most Used' :
-                         sortBy === 'usage-low' ? 'Sort: Least Used' :
-                         'Sort: Category',
-                  value: sortBy
-                }}
-                onChange={(e) => setSortBy(e.value)}
-              />
-            </Box>
-
-            <Button
-              appearance="primary"
-              onClick={handleCheckAllSources}
-              isDisabled={checkAllSourcesMutation.isPending}
-            >
-              {checkAllSourcesMutation.isPending ? 'Checking...' : '🔍 Check All Sources'}
-            </Button>
-
-            <Box xcss={xcss({ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 'space.050' })}>
-              <Tooltip content="Verifies all Embed macros: checks if they exist on their pages, references valid standards, and have up-to-date content. Automatically cleans up orphaned entries and generates a complete CSV-exportable report with usage data, variable values, and rendered content.">
-                <Button
-                  appearance="primary"
-                  onClick={handleCheckAllIncludes}
-                  isDisabled={includesProgress !== null}
-                >
-                  {includesProgress !== null ? 'Checking...' : '🔍 Check All Embeds'}
-                </Button>
-              </Tooltip>
-              {lastVerificationTime && (
-                <Text size="small" color="color.text.subtlest">
-                  Last verified: {formatTimestamp(lastVerificationTime)}
-                </Text>
-              )}
-            </Box>
-
-            {SHOW_MIGRATION_TOOLS && (
-              <Button
-                appearance="primary"
-                onClick={handleScanMultiExcerptIncludes}
-                isDisabled={isScanningMultiExcerpt}
-              >
-                {isScanningMultiExcerpt ? 'Scanning...' : '📦 Scan MultiExcerpt Embeds'}
-              </Button>
-            )}
-          </Inline>
+          <AdminToolbar
+            searchTerm={searchTerm}
+            setSearchTerm={setSearchTerm}
+            categoryFilter={categoryFilter}
+            setCategoryFilter={setCategoryFilter}
+            sortBy={sortBy}
+            setSortBy={setSortBy}
+            categories={categories}
+            onCheckAllSources={handleCheckAllSources}
+            isCheckingAllSources={checkAllSourcesMutation.isPending}
+            onCheckAllIncludes={handleCheckAllIncludes}
+            isCheckingIncludes={includesProgress !== null}
+            lastVerificationTime={lastVerificationTime}
+            formatTimestamp={formatTimestamp}
+            selectStyles={selectStyles}
+            showMigrationTools={SHOW_MIGRATION_TOOLS}
+            onScanMultiExcerpt={handleScanMultiExcerptIncludes}
+            isScanningMultiExcerpt={isScanningMultiExcerpt}
+          />
         </Inline>
       </Box>
 
@@ -1713,79 +1660,17 @@ const App = () => {
       </Inline>
 
       {/* Orphaned items sections */}
-      <Box>
-          {sortedExcerpts.length > 0 && (
-            <Fragment>
-
-          {/* Orphaned Sources Section */}
-          {orphanedSources.length > 0 && (
-            <Fragment>
-              <Text>{' '}</Text>
-              <Text>{' '}</Text>
-              <Text><Strong>⚠ Orphaned Sources</Strong></Text>
-              <Text>These Sources haven't checked in recently (likely deleted from page):</Text>
-              <Text>{' '}</Text>
-              <Inline space="space.200" shouldWrap>
-                {orphanedSources.map((orphaned) => (
-                  <Box key={orphaned.id} xcss={cardStyles}>
-                    <Lozenge appearance="removed" isBold>ORPHANED SOURCE</Lozenge>
-                    <Text>{' '}</Text>
-                    <Text><Strong>{orphaned.name || 'Unknown'}</Strong></Text>
-                    <Text>{' '}</Text>
-                    <Text><Em>{orphaned.orphanedReason || 'Unknown reason'}</Em></Text>
-                    <Text>{' '}</Text>
-                    <Lozenge>{orphaned.category || 'General'}</Lozenge>
-                    <Button
-                      appearance="warning"
-                      onClick={() => {
-                        setSelectedExcerpt(orphaned);
-                        setIsModalOpen(true);
-                      }}
-                    >
-                      View Details
-                    </Button>
-                  </Box>
-                ))}
-              </Inline>
-            </Fragment>
-          )}
-
-          {/* Orphaned Usage Section */}
-          {orphanedUsage.length > 0 && (
-            <Fragment>
-              <Text>{' '}</Text>
-              <Text>{' '}</Text>
-              <Text><Strong>⚠ Orphaned Embeds</Strong></Text>
-              <Text>These Embed macros reference Sources that no longer exist:</Text>
-              <Text>{' '}</Text>
-              <Inline space="space.200" shouldWrap>
-                {orphanedUsage.map((orphaned) => (
-                  <Box key={orphaned.excerptId} xcss={cardStyles}>
-                    <Lozenge appearance="removed" isBold>ORPHANED</Lozenge>
-                    <Text>{' '}</Text>
-                    <Text><Strong>{orphaned.excerptName}</Strong></Text>
-                    <Text>{' '}</Text>
-                    <Inline space="space.100" alignBlock="center">
-                      <Badge>{orphaned.referenceCount}</Badge>
-                      <Text>page(s) affected</Text>
-                    </Inline>
-                    <Button
-                      appearance="warning"
-                      onClick={() => {
-                        setSelectedExcerpt(orphaned);
-                        setIsModalOpen(true);
-                      }}
-                    >
-                      View Details
-                    </Button>
-                  </Box>
-                ))}
-              </Inline>
-            </Fragment>
-          )}
-            </Fragment>
-          )}
-        </Box>
+      {sortedExcerpts.length > 0 && (
+        <OrphanedItemsSection
+          orphanedSources={orphanedSources}
+          orphanedUsage={orphanedUsage}
+          onSelectOrphanedItem={(item) => {
+            setSelectedExcerpt(item);
+            setIsModalOpen(true);
+          }}
+          cardStyles={cardStyles}
+        />
+      )}
 
       <ModalTransition>
         {isModalOpen && selectedExcerpt && (
