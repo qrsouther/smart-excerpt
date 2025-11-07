@@ -107,9 +107,10 @@ const lineUnchangedBgStyle = xcss({
 });
 
 // Padding and text styles (applied to inner Box)
+// Using explicit padding property instead of paddingInline
 const linePaddingStyle = xcss({
-  paddingBlock: 'space.050',
-  paddingInline: '4em',
+  padding: 'space.050',
+  paddingLeft: '4em',
   textIndent: '-3em',
   fontFamily: 'monospace',
   fontSize: '12px',
