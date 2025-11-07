@@ -55,6 +55,11 @@ import {
   generateMultiExcerptCSV
 } from './utils/admin-utils';
 
+// Import admin UI components
+import { ExcerptListSidebar } from './components/admin/ExcerptListSidebar';
+import { StalenessBadge } from './components/admin/StalenessBadge';
+import { ExcerptPreviewModal } from './components/admin/ExcerptPreviewModal';
+
 // Create a client
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -1422,50 +1427,15 @@ const App = () => {
 
       {/* Main Content Area - Split into sidebar and main */}
       <Inline space="space.200" alignBlock="start" shouldWrap={false}>
-        {/* Left Sidebar - Excerpt List Table */}
-        <Box xcss={leftSidebarStyles}>
-          {sortedExcerpts.length === 0 && (searchTerm || categoryFilter !== 'All') ? (
-            <Text>No Blueprint Standards match your filters</Text>
-          ) : !excerpts || excerpts.length === 0 ? (
-            <Fragment>
-              <Text>No Blueprint Standard Sources found.</Text>
-              <Text>Create a Blueprint Standard - Source macro on a page to get started.</Text>
-            </Fragment>
-          ) : (
-            <Stack space="space.100">
-              {sortedExcerpts.map((excerpt) => {
-                const category = String(excerpt.category || 'General');
-                const isSelected = selectedExcerptForDetails?.id === excerpt.id;
-
-                return (
-                  <Pressable
-                    key={excerpt.id}
-                    onClick={() => {
-                      console.log('Row clicked for:', excerpt.name);
-                      setSelectedExcerptForDetails(excerpt);
-                      // Lazy load usage data for this excerpt
-                      loadUsageForExcerpt(excerpt.id);
-                    }}
-                    xcss={xcss({
-                      padding: 'space.100',
-                      borderRadius: 'border.radius',
-                      backgroundColor: isSelected ? 'color.background.selected' : 'color.background.neutral.subtle',
-                      cursor: 'pointer',
-                      ':hover': {
-                        backgroundColor: 'color.background.neutral.hovered'
-                      }
-                    })}
-                  >
-                    <Inline space="space.100" alignBlock="center" shouldWrap>
-                      <Text><Strong>{excerpt.name}</Strong></Text>
-                      <Lozenge isBold>{category}</Lozenge>
-                    </Inline>
-                  </Pressable>
-                );
-              })}
-            </Stack>
-          )}
-        </Box>
+        {/* Left Sidebar - Excerpt List */}
+        <ExcerptListSidebar
+          sortedExcerpts={sortedExcerpts}
+          searchTerm={searchTerm}
+          categoryFilter={categoryFilter}
+          selectedExcerptForDetails={selectedExcerptForDetails}
+          setSelectedExcerptForDetails={setSelectedExcerptForDetails}
+          xcss={leftSidebarStyles}
+        />
 
         {/* Middle Section - Excerpt Details with Inline Editing */}
         <Box xcss={middleSectionStyles}>
@@ -1745,33 +1715,14 @@ const App = () => {
                           isStale
                         });
 
-                        // Format timestamps for tooltip (local timezone with abbreviation)
-                        const formatTimestamp = (date) => {
-                          if (!date || date.getTime() === 0) return 'Never';
-                          const month = String(date.getMonth() + 1).padStart(2, '0');
-                          const day = String(date.getDate()).padStart(2, '0');
-                          const year = date.getFullYear();
-                          const hours = String(date.getHours()).padStart(2, '0');
-                          const minutes = String(date.getMinutes()).padStart(2, '0');
-
-                          // Get timezone abbreviation
-                          const timezoneName = date.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop();
-
-                          return `${month}/${day}/${year} ${hours}:${minutes} ${timezoneName}`;
-                        };
-
-                        const tooltipText = `Source last updated: ${formatTimestamp(excerptLastModified)}\nInclude last synced: ${formatTimestamp(includeLastSynced)}`;
-
                         rowCells.push({
                           key: 'status',
                           content: (
-                            <Tooltip content={tooltipText}>
-                              {isStale ? (
-                                <Lozenge appearance="moved">Update Available</Lozenge>
-                              ) : (
-                                <Lozenge appearance="success">Up to date</Lozenge>
-                              )}
-                            </Tooltip>
+                            <StalenessBadge
+                              isStale={isStale}
+                              sourceLastModified={excerptLastModified}
+                              embedLastSynced={includeLastSynced}
+                            />
                           )
                         });
 
@@ -2181,33 +2132,14 @@ const App = () => {
                                     const includeLastSynced = ref.lastSynced ? new Date(ref.lastSynced) : new Date(0);
                                     const isStale = excerptLastModified > includeLastSynced;
 
-                                    // Format timestamps for tooltip (local timezone with abbreviation)
-                                    const formatTimestamp = (date) => {
-                                      if (!date || date.getTime() === 0) return 'Never';
-                                      const month = String(date.getMonth() + 1).padStart(2, '0');
-                                      const day = String(date.getDate()).padStart(2, '0');
-                                      const year = date.getFullYear();
-                                      const hours = String(date.getHours()).padStart(2, '0');
-                                      const minutes = String(date.getMinutes()).padStart(2, '0');
-
-                                      // Get timezone abbreviation
-                                      const timezoneName = date.toLocaleTimeString('en-US', { timeZoneName: 'short' }).split(' ').pop();
-
-                                      return `${month}/${day}/${year} ${hours}:${minutes} ${timezoneName}`;
-                                    };
-
-                                    const tooltipText = `Source last updated: ${formatTimestamp(excerptLastModified)}\nInclude last synced: ${formatTimestamp(includeLastSynced)}`;
-
                                     rowCells.push({
                                       key: 'status',
                                       content: (
-                                        <Tooltip content={tooltipText}>
-                                          {isStale ? (
-                                            <Lozenge appearance="moved">Update Available</Lozenge>
-                                          ) : (
-                                            <Lozenge appearance="success">Up to date</Lozenge>
-                                          )}
-                                        </Tooltip>
+                                        <StalenessBadge
+                                          isStale={isStale}
+                                          sourceLastModified={excerptLastModified}
+                                          embedLastSynced={includeLastSynced}
+                                        />
                                       )
                                     });
 
@@ -2385,53 +2317,12 @@ const App = () => {
       </ModalTransition>
 
       {/* Preview Content Modal */}
-      <ModalTransition>
-        {showPreviewModal && (() => {
-          const excerpt = excerpts.find(e => e.id === showPreviewModal);
-          if (!excerpt) return null;
-
-          return (
-            <Modal width="x-large" onClose={() => setShowPreviewModal(null)}>
-              <ModalHeader>
-                <ModalTitle>Preview: {excerpt.name}</ModalTitle>
-              </ModalHeader>
-
-              <ModalBody>
-                <Stack space="space.200">
-                  {/* Helper Text */}
-                  <SectionMessage appearance="information">
-                    <Stack space="space.100">
-                      <Text>
-                        The following preview is pulled from the Blueprint Standard - Source macro's body content. The variables (in double curly braces) are filled out by users via the Blueprint Standard - Embed macros.
-                      </Text>
-                      <Text>
-                        The toggle tags allow users to opt into certain settings or options within each excerpted solution, and by enabling a toggle all content that exists in the space between the opening toggle tag and closing toggle tag is revealed within the Embed macro. Variables can be defined within toggles as well; as a result, generally a variable that is utilized ONLY within a toggle in a given Source macro will be optional rather than required.
-                      </Text>
-                      <Text>
-                        Click on View Source to make changes to the body content of the Source macro.
-                      </Text>
-                    </Stack>
-                  </SectionMessage>
-
-                  <Box xcss={previewBoxStyle}>
-                    {excerpt.content && typeof excerpt.content === 'object' ? (
-                      <AdfRenderer document={excerpt.content} />
-                    ) : (
-                      <Text>{excerpt.content || 'No content stored'}</Text>
-                    )}
-                  </Box>
-                </Stack>
-              </ModalBody>
-
-              <ModalFooter>
-                <Button onClick={() => setShowPreviewModal(null)}>
-                  Close
-                </Button>
-              </ModalFooter>
-            </Modal>
-          );
-        })()}
-      </ModalTransition>
+      <ExcerptPreviewModal
+        showPreviewModal={showPreviewModal}
+        setShowPreviewModal={setShowPreviewModal}
+        excerpts={excerpts}
+        previewBoxStyle={previewBoxStyle}
+      />
     </Fragment>
   );
 };
