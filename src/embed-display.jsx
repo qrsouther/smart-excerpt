@@ -84,9 +84,8 @@ const requiredFieldStyle = xcss({
   padding: 'space.050'
 });
 
-// Style for Update Available banner
+// Style for Update Available banner - only margin, no padding (SectionMessage has its own padding)
 const updateBannerStyle = xcss({
-  padding: 'space.100',
   marginBottom: 'space.200'
 });
 
