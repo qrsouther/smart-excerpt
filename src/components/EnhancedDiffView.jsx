@@ -93,10 +93,12 @@ const diffContainerStyle = xcss({
 // Styles for diff lines (with hanging indent for wrapped lines)
 const lineAddedStyle = xcss({
   backgroundColor: 'color.background.success',
+  display: 'inline-block',
+  width: '100%',
   paddingBlock: 'space.050',
-  paddingLeft: '6em',
+  paddingLeft: '3em',
   paddingRight: 'space.100',
-  textIndent: '-4em',
+  textIndent: '-2em',
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
@@ -105,10 +107,12 @@ const lineAddedStyle = xcss({
 
 const lineRemovedStyle = xcss({
   backgroundColor: 'color.background.danger',
+  display: 'inline-block',
+  width: '100%',
   paddingBlock: 'space.050',
-  paddingLeft: '6em',
+  paddingLeft: '3em',
   paddingRight: 'space.100',
-  textIndent: '-4em',
+  textIndent: '-2em',
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
@@ -117,10 +121,12 @@ const lineRemovedStyle = xcss({
 
 const lineUnchangedStyle = xcss({
   backgroundColor: 'color.background.neutral.subtle',
+  display: 'inline-block',
+  width: '100%',
   paddingBlock: 'space.050',
-  paddingLeft: '6em',
+  paddingLeft: '3em',
   paddingRight: 'space.100',
-  textIndent: '-4em',
+  textIndent: '-2em',
   fontFamily: 'monospace',
   fontSize: '12px',
   whiteSpace: 'pre-wrap',
