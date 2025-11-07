@@ -89,6 +89,11 @@ const updateBannerStyle = xcss({
   marginBottom: 'space.200'
 });
 
+// Style for Stack inside SectionMessage - add right padding to balance icon column
+const sectionContentStyle = xcss({
+  paddingRight: 'space.300'  // 24px - matches SectionMessage icon column width on left
+});
+
 // Style for ADF content container to prevent horizontal scrollbar
 // Constrains width to prevent expand panels and other ADF elements from overflowing
 const adfContentContainerStyle = xcss({
@@ -843,7 +848,7 @@ const App = () => {
           <Fragment>
             <Box xcss={updateBannerStyle}>
               <SectionMessage appearance="success">
-                <Stack space="space.100">
+                <Stack space="space.100" xcss={sectionContentStyle}>
                   {/* Compact heading section with inline buttons */}
                   <Inline spread="space-between" alignBlock="center">
                     <Stack space="space.050">
@@ -895,7 +900,7 @@ const App = () => {
         <Fragment>
           <Box xcss={updateBannerStyle}>
             <SectionMessage appearance="success">
-              <Stack space="space.100">
+              <Stack space="space.100" xcss={sectionContentStyle}>
                 {/* Compact heading section with inline buttons */}
                 <Inline spread="space-between" alignBlock="center">
                   <Stack space="space.050">

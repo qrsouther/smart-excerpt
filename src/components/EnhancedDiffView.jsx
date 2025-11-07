@@ -17,7 +17,7 @@
  */
 
 import React, { useState } from 'react';
-import { Box, Heading, Text, Strong, Em, Stack, Inline, Button, ButtonGroup, AdfRenderer, Code, SectionMessage, xcss } from '@forge/react';
+import { Box, Heading, Text, Strong, Em, Stack, Inline, Button, ButtonGroup, AdfRenderer, Code, SectionMessage, Lozenge, xcss } from '@forge/react';
 import { diffLines } from 'diff';
 import {
   filterContentByToggles,
@@ -28,7 +28,8 @@ import {
 
 // Container styles (no background - now inside green SectionMessage)
 const containerStyle = xcss({
-  paddingTop: 'space.050'
+  paddingTop: 'space.050',
+  marginRight: 'space.300'  // 24px - balances SectionMessage icon column on left
 });
 
 // Horizontal separator line
@@ -137,12 +138,28 @@ const contentWrapperStyle = xcss({
   minWidth: 0  // Allows flex item to shrink below content size
 });
 
-// Two-column layout for preview diff (side-by-side)
+// Margin for preview section (Inline component will handle the layout)
 const previewContainerStyle = xcss({
-  display: 'flex',
-  flexDirection: 'row',
-  gap: 'space.200',
   marginBlock: 'space.200'
+});
+
+// Arrow column in the middle - take minimal space, stretch to match box heights
+const arrowColumnStyle = xcss({
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  minHeight: '100%'
+});
+
+// Top arrow positioning (offset from top)
+const topArrowStyle = xcss({
+  marginTop: 'space.400'  // Approximately 1 line-height offset
+});
+
+// Bottom arrow positioning (offset from bottom)
+const bottomArrowStyle = xcss({
+  marginBottom: 'space.400'  // Approximately 1 line-height offset
 });
 
 /**
@@ -310,56 +327,60 @@ export function EnhancedDiffView({
           </Stack>
         ) : (
           /* PREVIEW DIFF (toggled view) */
-          <Stack space="space.200">
-            <Box>
-              <Heading size="small">Visual Preview</Heading>
+          <Stack space="space.100">
+            {/* Info about disabled toggles */}
+            <SectionMessage appearance="information">
               <Text>
-                Side-by-side comparison of rendered content. Shows only enabled toggles.
-              </Text>
-            </Box>
-
-            {/* Warning about disabled toggles */}
-            <Box xcss={xcss({ padding: 'space.200', backgroundColor: 'color.background.warning', borderRadius: 'border.radius' })}>
-              <Text>
-                <Strong>Note:</Strong> Changes in disabled toggles are not shown in this preview.
+                Changes in disabled toggles are not shown in this preview.
                 Toggle back to line-by-line diff to see all changes including disabled toggle content.
               </Text>
-            </Box>
+            </SectionMessage>
 
             <Box xcss={previewContainerStyle}>
-              {/* Left: Current rendered content */}
-              <Box xcss={sideBoxStyle}>
-                <Stack space="space.200">
-                  <Text>
-                    <Strong>Current (What You See Now)</Strong>
-                  </Text>
+              <Inline space="space.100" alignBlock="start">
+                {/* Left: Current rendered content */}
+                <Box xcss={sideBoxStyle}>
+                  <Stack space="space.200">
+                    <Lozenge appearance="default">Current</Lozenge>
 
-                  {oldPreviewContent ? (
-                    <AdfRenderer document={oldPreviewContent} />
-                  ) : (
-                    <Text>
-                      <Em>No previous version available</Em>
-                    </Text>
-                  )}
-                </Stack>
-              </Box>
+                    {oldPreviewContent ? (
+                      <AdfRenderer document={oldPreviewContent} />
+                    ) : (
+                      <Text>
+                        <Em>No previous version available</Em>
+                      </Text>
+                    )}
+                  </Stack>
+                </Box>
 
-              {/* Right: Updated rendered content */}
-              <Box xcss={sideBoxStyle}>
-                <Stack space="space.200">
-                  <Text>
-                    <Strong>Updated (What You'll See After Update)</Strong>
-                  </Text>
+                {/* Middle: Arrow icons */}
+                <Box xcss={arrowColumnStyle}>
+                  <Box xcss={topArrowStyle}>
+                    <Text>→</Text>
+                  </Box>
+                  <Box>
+                    <Text>→</Text>
+                  </Box>
+                  <Box xcss={bottomArrowStyle}>
+                    <Text>→</Text>
+                  </Box>
+                </Box>
 
-                  {newPreviewContent ? (
-                    <AdfRenderer document={newPreviewContent} />
-                  ) : (
-                    <Text>
-                      <Em>No new content available</Em>
-                    </Text>
-                  )}
-                </Stack>
-              </Box>
+                {/* Right: Updated rendered content */}
+                <Box xcss={sideBoxStyle}>
+                  <Stack space="space.200">
+                    <Lozenge appearance="success">Updated</Lozenge>
+
+                    {newPreviewContent ? (
+                      <AdfRenderer document={newPreviewContent} />
+                    ) : (
+                      <Text>
+                        <Em>No new content available</Em>
+                      </Text>
+                    )}
+                  </Stack>
+                </Box>
+              </Inline>
             </Box>
           </Stack>
         )}
