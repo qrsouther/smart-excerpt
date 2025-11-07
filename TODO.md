@@ -1039,22 +1039,50 @@ Several files have grown into monoliths (>500 lines) with mixed responsibilities
 
 **Files Requiring Refactoring:**
 
-#### 1. embed-display.jsx (2,093 → 1,343 lines) - IN PROGRESS ✅
-**Status:** Phase 1 complete (35.8% reduction), Phase 2 in progress
+#### 1. embed-display.jsx (2,093 → 962 lines) - IN PROGRESS ✅
+**Status:** Phase 1-2 complete (54% reduction), Phase 3 ready to start
+**Estimated Effort Remaining:** Medium (5-7 hours for Phase 3)
 
 **Phase 1 Complete (Utilities & Hooks Extraction):**
 - ✅ Evaluated simple-adf-formatter library (GitHub-only, unreleased v0.1.0, not published to npm)
-- ✅ Extracted 8 ADF utilities to `src/utils/adf-rendering-utils.js` (617 lines):
+- ✅ Extracted 8 ADF utilities to `src/utils/adf-rendering-utils.js` (883 lines):
   - `cleanAdfForRenderer()`, `cleanupEmptyNodes()`, `filterContentByToggles()`
   - `stripToggleMarkers()`, `substituteVariablesInAdf()`, `insertCustomParagraphsInAdf()`
   - `insertInternalNotesInAdf()`, `extractParagraphsFromAdf()`
   - All functions include comprehensive JSDoc documentation
-- ✅ Extracted 5 React Query hooks to `src/hooks/embed-hooks.js` (293 lines):
+- ✅ Extracted 5 React Query hooks to `src/hooks/embed-hooks.js` (268 lines):
   - `useExcerptData()`, `useSaveVariableValues()`, `useAvailableExcerpts()`
   - `useVariableValues()`, `useCachedContent()`
   - All hooks include JSDoc documentation
 - ✅ File reduced from 2,093 to 1,343 lines (750 lines removed)
-- ✅ All files validated for syntax correctness
+
+**Phase 2 Complete (UI Panel Components):**
+- ✅ Extracted `<VariableConfigPanel />` to `src/components/VariableConfigPanel.jsx`
+- ✅ Extracted `<ToggleConfigPanel />` to `src/components/ToggleConfigPanel.jsx`
+- ✅ Extracted `<CustomInsertionsPanel />` to `src/components/CustomInsertionsPanel.jsx`
+- ✅ Extracted `<EnhancedDiffView />` to `src/components/EnhancedDiffView.jsx` (390 lines)
+- ✅ File reduced from 1,343 to 962 lines (381 lines removed)
+
+**Phase 3 - View/Edit Mode Split & Final Components:**
+**Status:** Ready to start
+**Target:** Reduce main file from 962 to <300 lines
+
+Extract remaining large sections:
+- [ ] `<UpdateAvailableBanner />` → `src/components/embed/UpdateAvailableBanner.jsx` (150-200 lines)
+  - Includes EnhancedDiffView rendering logic
+  - Update/Hide Diff buttons
+  - Staleness detection UI
+- [ ] `<EmbedViewMode />` → `src/components/embed/EmbedViewMode.jsx` (200-250 lines)
+  - Cached content display
+  - Staleness checking effect
+  - Read-only rendering with Update Available banner
+- [ ] `<EmbedEditMode />` → `src/components/embed/EmbedEditMode.jsx` (300-350 lines)
+  - Tab navigation (Write/Alternatives/Custom/Preview)
+  - Config panels integration
+  - Save/auto-save logic
+  - Preview section
+- [ ] Move xcss styles to `src/styles/embed-styles.js` (~50-100 lines)
+- [ ] Main App component becomes coordinator (<300 lines)
 
 **Future Consideration - ADF Libraries:**
 When building NEW ADF-related features (exports, transformations, etc.), scout these libraries first:
@@ -1062,43 +1090,219 @@ When building NEW ADF-related features (exports, transformations, etc.), scout t
 - Other Atlassian ecosystem tools
 - Don't replace working code just to use a library - only adopt when solving NEW problems
 
-**Phase 2 - UI Component Extraction (Optional):**
-App component is still ~1,200 lines. Consider extracting:
-- `<VariableConfigPanel />` - Variable input section (Write tab)
-- `<ToggleConfigPanel />` - Toggle selection section (Alternatives tab)
-- `<CustomInsertionsPanel />` - Free Write section (Custom tab)
-- `<UpdateAvailableBanner />` - Update notification (view mode)
-- `<DiffView />` - Side-by-side diff display (view mode)
-- Move xcss styles to `src/styles/embed-styles.js`
+**Target for Phase 3:** Break 962 lines into 6 files, main file <300 lines
 
-**Target for Phase 2:** Break into 6-8 files, main file <400 lines
+#### 2. admin-page.jsx (2,446 lines) - CRITICAL 🔴
+**Status:** Not started - Highest priority
+**Estimated Effort:** Large (8-12 hours across multiple phases)
 
-#### 2. admin-page.jsx (2,682 lines) - CRITICAL
 **Current Issues:**
-- Largest file in codebase
+- Largest file in codebase (2,446 lines)
 - Multiple admin functions in single component
-- Many React Query hooks (excerpts, categories, usage, mutations)
-- Multiple distinct UI sections (excerpt list, usage details, migration tools)
-- Complex state management
+- React Query hooks already extracted (✅ good!), but component still huge
+- Multiple distinct UI sections (excerpt list, usage details, migration tools, modals)
+- Complex state management and business logic mixed with presentation
 
-**Refactoring Plan:**
-- Extract React Query hooks to `src/hooks/admin-hooks.js`:
-  - All query and mutation hooks (useExcerptsQuery, useCategoriesQuery, etc.)
-- Split into feature-based components:
-  - `<ExcerptListSidebar />` - Left sidebar with excerpt list
-  - `<UsageDetailsPanel />` - Middle section showing usage for selected excerpt
-  - `<ExcerptPreviewModal />` - Right side preview
-  - `<CategoryManager />` - Category CRUD operations
-  - `<MigrationTools />` - Migration section (if kept)
-  - `<OrphanedItemsView />` - Orphaned sources/embeds display
-- Extract business logic to `src/utils/admin-utils.js`:
-  - CSV generation, filtering, sorting logic
-  - Category management helpers
-- Move styles to `src/styles/admin-styles.js`
+**Phase 1 - Extract UI Components (Primary Goal)**
+**Target:** Break into 10-12 component files, main file <400 lines
+**Effort:** 6-8 hours
 
-**Target:** Break into 8-10 files, main file <500 lines
+Create `src/components/admin/` directory with:
+- [ ] `ExcerptListSidebar.jsx` (200-250 lines)
+  - Left sidebar with excerpt list
+  - Category filtering
+  - Excerpt selection logic
+  - Category badges/lozenges
+- [ ] `UsageDetailsPanel.jsx` (250-300 lines)
+  - Middle section showing usage for selected excerpt
+  - Usage table with page links
+  - "Push Updates" functionality
+  - Staleness indicators
+- [ ] `ExcerptPreviewModal.jsx` (150-200 lines)
+  - Modal for previewing excerpt content
+  - ADF rendering
+  - Variable/toggle display
+  - Close/navigation logic
+- [ ] `CategoryManager.jsx` (150 lines)
+  - Category CRUD operations
+  - Add/edit/delete categories
+  - Category list management
+- [ ] `DeleteConfirmationModal.jsx` (80-100 lines)
+  - Confirmation dialog for deleting excerpts
+  - Warning messages
+  - Confirm/cancel actions
+- [ ] `StalenessBadge.jsx` (50 lines)
+  - Reusable staleness indicator component
+  - Color coding (green/yellow/red)
+  - Tooltip with last modified info
+- [ ] `UsageTable.jsx` (200 lines)
+  - DynamicTable for usage display
+  - Sortable columns
+  - Page navigation links
+  - Actions column
+- [ ] `CheckAllProgressBar.jsx` (100 lines)
+  - Progress bar for Check All operations
+  - Polling logic
+  - Status messages
+  - Cancel button
+- [ ] `MigrationToolsSection.jsx` (200 lines) - Optional, may delete
+  - Migration UI section
+  - Can be removed with migration code cleanup
+- [ ] `OrphanedItemsView.jsx` (150 lines)
+  - Display orphaned sources/embeds
+  - Cleanup actions
+  - Warning messages
 
-#### 3. verification-resolvers.js (690 lines)
+**Phase 2 - Extract Business Logic Utilities**
+**Target:** Create `src/utils/admin-utils.js` with ~150 lines
+**Effort:** 2 hours
+
+Extract pure functions:
+- [ ] `generateExcerptCSV(excerpts)` - CSV generation logic
+- [ ] `filterExcerptsByCategory(excerpts, category)` - Filtering
+- [ ] `sortExcerptsByName(excerpts)` - Sorting
+- [ ] `formatUsageData(usageRaw)` - Data transformation
+- [ ] `calculateStalenessStatus(lastModified, lastSynced)` - Business logic
+
+**Phase 3 - Extract Styles**
+**Target:** Create `src/styles/admin-styles.js` with ~100 lines
+**Effort:** 1 hour
+
+Move all xcss style definitions:
+- [ ] Extract all `xcss()` definitions to separate file
+- [ ] Export named style objects
+- [ ] Import in components as needed
+
+**Phase 4 - Final Cleanup & Testing**
+**Effort:** 1-2 hours
+
+- [ ] Main AdminPage component becomes orchestrator (<400 lines)
+- [ ] Verify all features work after extraction
+- [ ] Test all modals, tables, and interactions
+- [ ] Deploy and validate in production
+
+**Success Metrics:**
+- [ ] Main file reduced from 2,446 to <400 lines (84% reduction)
+- [ ] Created 10-12 focused component files
+- [ ] Each component file <300 lines
+- [ ] All admin features continue to work
+- [ ] Easier to find and modify specific UI sections
+
+**Target:** Break 2,446 lines into 13-15 files, main file <400 lines
+
+---
+
+#### 3. checkIncludesWorker.js (724 lines) - HIGH PRIORITY 🟡
+**Status:** Not started - Enables better testing
+**Estimated Effort:** Medium (4-6 hours)
+
+**Current Issues:**
+- Single 700+ line function doing everything
+- Mixes concerns: page fetching, macro detection, orphan cleanup, progress tracking
+- Hard to unit test individual operations
+- Complex business logic buried in worker
+
+**Phase 1 - Extract Helper Modules**
+**Target:** Break into 5 focused files
+**Effort:** 4-5 hours
+
+Create `src/workers/helpers/` directory with:
+- [ ] `page-scanner.js` (150 lines)
+  - `fetchPageContent(pageId)` - Get page ADF
+  - `findMacrosOnPage(pageAdf, macroKey)` - Locate macros in ADF
+  - `extractMacroIds(macros)` - Extract localIds
+  - Pure functions, easily testable
+- [ ] `orphan-detector.js` (150 lines)
+  - `findOrphanedMacroVars(allVars, validIds)` - Detect orphans
+  - `findOrphanedCaches(allCaches, validIds)` - Cache orphans
+  - `softDeleteOrphans(orphans, reason)` - Cleanup logic
+  - Business logic for orphan detection
+- [ ] `progress-tracker.js` (100 lines)
+  - `updateProgress(progressId, percent, status)` - Write progress
+  - `calculateProgress(current, total, basePercent)` - Math
+  - `writeHeartbeat(progressId)` - Keep-alive
+  - Progress management utilities
+- [ ] `usage-updater.js` (120 lines)
+  - `updateExcerptUsage(excerptId, pages)` - Update usage data
+  - `aggregateUsageCounts(excerpts)` - Calculate totals
+  - Usage tracking business logic
+- [ ] `checkIncludesWorker.js` (200 lines) - Main coordinator
+  - Orchestrates helper modules
+  - Event handler entry point
+  - High-level workflow only
+
+**Phase 2 - Testing & Validation**
+**Effort:** 1 hour
+
+- [ ] Write unit tests for helper functions (now possible!)
+- [ ] Test page scanning with mock ADF
+- [ ] Test orphan detection with test data
+- [ ] Verify worker still functions correctly
+
+**Success Metrics:**
+- [ ] Main worker file reduced from 724 to <200 lines (72% reduction)
+- [ ] Created 4 testable helper modules
+- [ ] Helper functions can be unit tested independently
+- [ ] Easier to debug individual operations
+- [ ] Clearer separation of concerns
+
+**Target:** Break 724 lines into 5 files, main file <200 lines
+
+---
+
+#### 4. adf-rendering-utils.js (883 lines) - MEDIUM PRIORITY 🟡
+**Status:** Not started - Good organization improvement
+**Estimated Effort:** Small (2-3 hours)
+
+**Current Issues:**
+- 10 exported functions in single file
+- Functions serve different purposes (cleaning, filtering, transforming, extracting)
+- File getting large, could be logically grouped by responsibility
+- Good candidate for domain-based splitting
+
+**Phase 1 - Split by Domain**
+**Target:** Break into 4 focused utility files
+**Effort:** 2-3 hours
+
+Create `src/utils/adf/` directory with:
+- [ ] `adf-cleaners.js` (200 lines)
+  - `cleanAdfForRenderer()` - Remove unsupported nodes
+  - `cleanupEmptyNodes()` - Remove empty paragraphs
+  - Document cleaning and sanitization
+- [ ] `adf-filters.js` (250 lines)
+  - `filterContentByToggles()` - Remove disabled toggles
+  - `stripToggleMarkers()` - Remove toggle markers
+  - `extractTextWithToggleMarkers()` - Extract with markers
+  - Content filtering and toggle handling
+- [ ] `adf-transformers.js` (300 lines)
+  - `substituteVariablesInAdf()` - Replace variables
+  - `insertCustomParagraphsInAdf()` - Add custom content
+  - `insertInternalNotesInAdf()` - Add notes
+  - Content transformation and injection
+- [ ] `adf-extractors.js` (150 lines)
+  - `extractParagraphsFromAdf()` - Extract paragraphs
+  - `renderContentWithGhostToggles()` - Ghost mode rendering
+  - Content extraction and specialized rendering
+
+**Phase 2 - Update Imports**
+**Effort:** 30 minutes
+
+- [ ] Update all imports across codebase
+- [ ] Replace `from '../utils/adf-rendering-utils.js'`
+- [ ] With `from '../utils/adf/adf-cleaners.js'` (etc.)
+- [ ] Or create barrel export file `adf/index.js` for convenience
+
+**Success Metrics:**
+- [ ] File split from 883 lines into 4 files (~200 lines each)
+- [ ] Clearer domain separation
+- [ ] Easier to find specific ADF operations
+- [ ] Import paths indicate purpose
+
+**Target:** Break 883 lines into 4 files, ~200 lines each
+
+---
+
+#### 5. verification-resolvers.js (695 lines)
 **Current Issues:**
 - Multiple verification functions in single file
 - `checkAllIncludes` is very long (~400 lines)
@@ -1113,27 +1317,41 @@ App component is still ~1,200 lines. Consider extracting:
 
 **Target:** 3 files, each <300 lines
 
-#### 4. simple-resolvers.js (660 lines)
+#### 6. simple-resolvers.js (600 lines) - LOWER PRIORITY
+**Status:** Not started - Lower priority than above
+**Estimated Effort:** Small (3-4 hours)
+
 **Current Issues:**
 - Poorly named file (not actually "simple")
-- Mix of unrelated resolver functions
+- Mix of unrelated resolver functions (21 different functions)
 - Should be split by feature domain
 
 **Refactoring Plan:**
-- Rename and split by domain:
-  - `src/resolvers/content-detection-resolvers.js` - Variable/toggle detection
-  - `src/resolvers/metadata-resolvers.js` - Page title, categories, etc.
-  - `src/resolvers/cache-resolvers.js` - Cached content operations
-- Keep only truly simple/utility resolvers in simple-resolvers.js
+Rename and split by domain:
+- [ ] `src/resolvers/content-detection-resolvers.js` (150 lines)
+  - `detectVariablesFromContent()`
+  - `detectTogglesFromContent()`
+- [ ] `src/resolvers/metadata-resolvers.js` (200 lines)
+  - `getPageTitle()`
+  - `getCategories()`, `saveCategories()`
+  - `getLastVerificationTime()`, `setLastVerificationTime()`
+- [ ] `src/resolvers/cache-resolvers.js` (150 lines)
+  - `getCachedContent()`
+  - `saveCachedContent()`
+- [ ] Keep truly simple utility resolvers in `simple-resolvers.js` (100 lines)
+  - `getExcerpts()`, `getExcerpt()`, `getVariableValues()`
 
-**Target:** 3-4 files, each <250 lines
+**Target:** 4 files, each <250 lines
 
-#### 5. source-config.jsx (490 lines) - Medium Priority
+---
+
+#### 7. source-config.jsx (490 lines) - WATCH ITEM ⚠️
 **Current Status:** Close to threshold but manageable
+**Priority:** Low - Monitor for growth
 **Watch for:** Adding more features will push it over 500 lines
 
-**Potential Refactoring:**
-- Extract detection logic to separate file if it grows
+**Potential Refactoring (if it grows):**
+- Extract detection logic to separate file
 - Split variable/toggle metadata editors into separate components
 
 **Refactoring Principles (Learned from index.js):**
