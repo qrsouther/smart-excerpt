@@ -108,8 +108,10 @@ const lineUnchangedBgStyle = xcss({
 
 // Padding style for inner Box (no textIndent - not supported in Forge!)
 const linePaddingStyle = xcss({
-  padding: 'space.100',
+  paddingBlock: 'space.050',
+  paddingInline: 'space.100',
   display: 'flex',
+  flexDirection: 'row',
   fontFamily: 'monospace',
   fontSize: '12px'
 });
