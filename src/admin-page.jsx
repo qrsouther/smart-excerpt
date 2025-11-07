@@ -59,6 +59,7 @@ import {
 import { ExcerptListSidebar } from './components/admin/ExcerptListSidebar';
 import { StalenessBadge } from './components/admin/StalenessBadge';
 import { ExcerptPreviewModal } from './components/admin/ExcerptPreviewModal';
+import { CategoryManager } from './components/admin/CategoryManager';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -2228,93 +2229,20 @@ const App = () => {
       </ModalTransition>
 
       {/* Category Management Modal */}
-      <ModalTransition>
-        {isCategoryModalOpen && (
-          <Modal onClose={() => setIsCategoryModalOpen(false)} width="medium">
-            <ModalHeader>
-              <ModalTitle>Manage Categories</ModalTitle>
-            </ModalHeader>
-
-            <ModalBody>
-              <Stack space="space.300">
-                {/* Add New Category Input */}
-                <Box>
-                  <Stack space="space.100">
-                    <Text><Strong>Add New Category:</Strong></Text>
-                    <Inline space="space.100" alignBlock="center">
-                      <Textfield
-                        placeholder="Enter category name..."
-                        value={newCategoryName}
-                        onChange={(e) => setNewCategoryName(e.target.value)}
-                      />
-                      <Button appearance="primary" onClick={handleAddCategory}>
-                        Add
-                      </Button>
-                    </Inline>
-                  </Stack>
-                </Box>
-
-                {/* Category List */}
-                <Box>
-                  <Stack space="space.100">
-                    {categories.map((category, index) => (
-                      <Box
-                        key={category}
-                        xcss={xcss({
-                          padding: 'space.150',
-                          borderColor: 'color.border',
-                          borderStyle: 'solid',
-                          borderWidth: 'border.width',
-                          borderRadius: 'border.radius',
-                          backgroundColor: 'color.background.neutral.subtle'
-                        })}
-                      >
-                        <Inline space="space.200" alignBlock="center" spread="space-between">
-                          <Text><Strong>{category}</Strong></Text>
-                          <Inline space="space.100" alignBlock="center">
-                            <Button
-                              appearance="subtle"
-                              onClick={() => handleMoveCategoryUp(category)}
-                              isDisabled={index === 0}
-                            >
-                              <Icon glyph="arrow-up" label="Move Up" />
-                            </Button>
-                            <Button
-                              appearance="subtle"
-                              onClick={() => handleMoveCategoryDown(category)}
-                              isDisabled={index === categories.length - 1}
-                            >
-                              <Icon glyph="arrow-down" label="Move Down" />
-                            </Button>
-                            <Button
-                              appearance="subtle"
-                              onClick={() => handleEditCategory(category)}
-                            >
-                              <Icon glyph="edit" label="Edit" />
-                            </Button>
-                            <Button
-                              appearance="subtle"
-                              onClick={() => handleDeleteCategory(category)}
-                            >
-                              <Icon glyph="trash" label="Delete" />
-                            </Button>
-                          </Inline>
-                        </Inline>
-                      </Box>
-                    ))}
-                  </Stack>
-                </Box>
-              </Stack>
-            </ModalBody>
-
-            <ModalFooter>
-              <Button onClick={() => setIsCategoryModalOpen(false)}>
-                Close
-              </Button>
-            </ModalFooter>
-          </Modal>
-        )}
-      </ModalTransition>
+      <CategoryManager
+        isOpen={isCategoryModalOpen}
+        onClose={() => setIsCategoryModalOpen(false)}
+        categories={categories}
+        excerpts={excerpts}
+        saveCategoriesMutation={saveCategoriesMutation}
+        newCategoryName={newCategoryName}
+        setNewCategoryName={setNewCategoryName}
+        onAddCategory={handleAddCategory}
+        onDeleteCategory={handleDeleteCategory}
+        onEditCategory={handleEditCategory}
+        onMoveCategoryUp={handleMoveCategoryUp}
+        onMoveCategoryDown={handleMoveCategoryDown}
+      />
 
       {/* Preview Content Modal */}
       <ExcerptPreviewModal
