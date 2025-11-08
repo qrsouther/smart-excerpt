@@ -49,7 +49,7 @@ export const useExcerptData = (excerptId, enabled) => {
       return result.excerpt;
     },
     enabled: enabled && !!excerptId,
-    staleTime: 1000 * 60 * 5, // Consider data fresh for 5 minutes
+    staleTime: 0, // Always fetch fresh data (temporarily set to 0 to bust old cache without documentationLinks)
     gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes (renamed from cacheTime in v5)
   });
 };
@@ -256,7 +256,9 @@ export const useCachedContent = (
       // Cache it for next time
       await invoke('saveCachedContent', {
         localId,
-        renderedContent: freshContent
+        renderedContent: freshContent,
+        syncedContentHash: excerptResult.excerpt.contentHash,
+        syncedContent: excerptResult.excerpt.content
       });
 
       return { content: freshContent, fromCache: false };

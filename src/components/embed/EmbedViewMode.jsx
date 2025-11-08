@@ -21,6 +21,7 @@
  * @param {Object} props.latestRenderedContent - Latest Source content
  * @param {Object} props.variableValues - Current variable values
  * @param {Object} props.toggleStates - Current toggle states
+ * @param {Object} props.excerpt - The Source excerpt object with documentationLinks
  * @returns {JSX.Element} - View mode JSX
  */
 
@@ -28,10 +29,12 @@ import React, { Fragment } from 'react';
 import {
   Text,
   Box,
-  AdfRenderer
+  AdfRenderer,
+  Stack
 } from '@forge/react';
 import { cleanAdfForRenderer } from '../../utils/adf-rendering-utils';
 import { UpdateAvailableBanner } from './UpdateAvailableBanner';
+import { DocumentationLinksDisplay } from './DocumentationLinksDisplay';
 import { adfContentContainerStyle } from '../../styles/embed-styles';
 
 export function EmbedViewMode({
@@ -44,7 +47,8 @@ export function EmbedViewMode({
   syncedContent,
   latestRenderedContent,
   variableValues,
-  toggleStates
+  toggleStates,
+  excerpt
 }) {
   // Loading state
   if (!content) {
@@ -62,7 +66,7 @@ export function EmbedViewMode({
     }
 
     return (
-      <Fragment>
+      <Stack space="space.200">
         <UpdateAvailableBanner
           isStale={isStale}
           showDiffView={showDiffView}
@@ -74,16 +78,17 @@ export function EmbedViewMode({
           variableValues={variableValues}
           toggleStates={toggleStates}
         />
+        <DocumentationLinksDisplay documentationLinks={excerpt?.documentationLinks} />
         <Box xcss={adfContentContainerStyle}>
           <AdfRenderer document={cleaned} />
         </Box>
-      </Fragment>
+      </Stack>
     );
   }
 
   // Plain text content
   return (
-    <Fragment>
+    <Stack space="space.200">
       <UpdateAvailableBanner
         isStale={isStale}
         showDiffView={showDiffView}
@@ -95,6 +100,7 @@ export function EmbedViewMode({
         variableValues={variableValues}
         toggleStates={toggleStates}
       />
+      <DocumentationLinksDisplay documentationLinks={excerpt?.documentationLinks} />
       <Box xcss={adfContentContainerStyle}>
         {content && typeof content === 'object' && content.type === 'doc' ? (
           <AdfRenderer document={content} />
@@ -102,6 +108,6 @@ export function EmbedViewMode({
           <Text>{content}</Text>
         )}
       </Box>
-    </Fragment>
+    </Stack>
   );
 }

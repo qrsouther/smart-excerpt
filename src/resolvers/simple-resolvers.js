@@ -81,6 +81,15 @@ export async function getExcerpt(req) {
     const excerptId = req.payload.excerptId;
     const excerpt = await storage.get(`excerpt:${excerptId}`);
 
+    // DEBUG: Log what we're returning
+    console.log('[getExcerpt] Returning excerpt:', {
+      id: excerpt?.id,
+      name: excerpt?.name,
+      hasDocumentationLinks: !!excerpt?.documentationLinks,
+      documentationLinksCount: excerpt?.documentationLinks?.length || 0,
+      documentationLinks: excerpt?.documentationLinks
+    });
+
     return {
       success: true,
       excerpt: excerpt
@@ -491,7 +500,7 @@ export async function getMultiExcerptScanProgress(req) {
  */
 export async function saveCachedContent(req) {
   try {
-    const { localId, renderedContent } = req.payload;
+    const { localId, renderedContent, syncedContentHash, syncedContent } = req.payload;
 
     const key = `macro-cache:${localId}`;
     const now = new Date().toISOString();
@@ -501,10 +510,21 @@ export async function saveCachedContent(req) {
       cachedAt: now
     });
 
-    // Also update lastSynced in macro-vars
+    // Also update lastSynced, syncedContentHash, and syncedContent in macro-vars
     const varsKey = `macro-vars:${localId}`;
     const existingVars = await storage.get(varsKey) || {};
     existingVars.lastSynced = now;
+
+    // Update syncedContentHash if provided (for Update button in view mode)
+    if (syncedContentHash !== undefined) {
+      existingVars.syncedContentHash = syncedContentHash;
+    }
+
+    // Update syncedContent if provided (for diff view)
+    if (syncedContent !== undefined) {
+      existingVars.syncedContent = syncedContent;
+    }
+
     await storage.set(varsKey, existingVars);
 
     return { success: true, cachedAt: now };

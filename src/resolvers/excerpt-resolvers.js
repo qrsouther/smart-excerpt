@@ -17,7 +17,15 @@ import { calculateContentHash } from '../utils/hash-utils.js';
  * Save excerpt (create or update)
  */
 export async function saveExcerpt(req) {
-  const { excerptName, category, content, excerptId, variableMetadata, toggleMetadata, sourcePageId, sourcePageTitle, sourceSpaceKey, sourceLocalId } = req.payload;
+  // DEBUG: Log the entire payload to see what we receive
+  console.log('[saveExcerpt] RAW PAYLOAD:', JSON.stringify(req.payload, null, 2));
+  console.log('[saveExcerpt] documentationLinks from payload:', req.payload.documentationLinks);
+  console.log('[saveExcerpt] documentationLinks type:', typeof req.payload.documentationLinks);
+  console.log('[saveExcerpt] documentationLinks is array?:', Array.isArray(req.payload.documentationLinks));
+
+  const { excerptName, category, content, excerptId, variableMetadata, toggleMetadata, documentationLinks, sourcePageId, sourcePageTitle, sourceSpaceKey, sourceLocalId } = req.payload;
+
+  console.log('[saveExcerpt] After destructuring, documentationLinks:', documentationLinks);
 
   // Extract page information from backend context (more reliable than frontend)
   const pageId = sourcePageId || req.context?.extension?.content?.id;
@@ -63,6 +71,7 @@ export async function saveExcerpt(req) {
     content: content,
     variables: variables,
     toggles: toggles,
+    documentationLinks: documentationLinks || [],
     sourcePageId: pageId || existingExcerpt?.sourcePageId,
     sourceSpaceKey: spaceKey || existingExcerpt?.sourceSpaceKey,
     sourceLocalId: sourceLocalId || existingExcerpt?.sourceLocalId,
@@ -73,18 +82,34 @@ export async function saveExcerpt(req) {
   // Calculate and add content hash
   excerpt.contentHash = calculateContentHash(excerpt);
 
+  // DEBUG: Log what we're saving
+  console.log('[saveExcerpt] About to save excerpt with documentationLinks:', excerpt.documentationLinks);
+  console.log('[saveExcerpt] Full excerpt object before storage.set:', JSON.stringify(excerpt, null, 2));
+  console.log('[saveExcerpt] Excerpt object keys:', Object.keys(excerpt));
+
   await storage.set(`excerpt:${id}`, excerpt);
+
+  // DEBUG: Immediately read it back to verify it was saved
+  const verifyExcerpt = await storage.get(`excerpt:${id}`);
+  console.log('[saveExcerpt] Verification - read back from storage:', {
+    hasDocumentationLinks: !!verifyExcerpt.documentationLinks,
+    documentationLinksCount: verifyExcerpt.documentationLinks?.length || 0,
+    documentationLinks: verifyExcerpt.documentationLinks,
+    allKeys: Object.keys(verifyExcerpt)
+  });
 
   // Update index
   await updateExcerptIndex(excerpt);
 
+  // Return saved excerpt data
   return {
     excerptId: id,
     excerptName: excerptName,
     category: category,
     content: content,
     variables: variables,
-    toggles: toggles
+    toggles: toggles,
+    documentationLinks: excerpt.documentationLinks || []
   };
 }
 

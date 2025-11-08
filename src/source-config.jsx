@@ -18,6 +18,9 @@ import ForgeReconciler, {
   TabList,
   TabPanel,
   Inline,
+  Stack,
+  Box,
+  Icon,
   useForm,
   useConfig,
   useProductContext
@@ -59,7 +62,7 @@ const useSaveExcerptMutation = () => {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ excerptName, category, content, excerptId, variableMetadata, toggleMetadata, sourcePageId, sourcePageTitle, sourceSpaceKey, sourceLocalId }) => {
+    mutationFn: async ({ excerptName, category, content, excerptId, variableMetadata, toggleMetadata, documentationLinks, sourcePageId, sourcePageTitle, sourceSpaceKey, sourceLocalId }) => {
       try {
         const result = await invoke('saveExcerpt', {
           excerptName,
@@ -68,6 +71,7 @@ const useSaveExcerptMutation = () => {
           excerptId,
           variableMetadata,
           toggleMetadata,
+          documentationLinks,
           sourcePageId,
           sourcePageTitle,
           sourceSpaceKey,
@@ -113,6 +117,12 @@ const App = () => {
   const [variableMetadata, setVariableMetadata] = useState({});
   const [detectedToggles, setDetectedToggles] = useState([]);
   const [toggleMetadata, setToggleMetadata] = useState({});
+  const [documentationLinks, setDocumentationLinks] = useState([]);
+
+  // Form state for adding new documentation links
+  const [newLinkAnchor, setNewLinkAnchor] = useState('');
+  const [newLinkUrl, setNewLinkUrl] = useState('');
+  const [urlError, setUrlError] = useState('');
 
   // Track if we've loaded data to prevent infinite loops
   const hasLoadedDataRef = React.useRef(false);
@@ -180,6 +190,11 @@ const App = () => {
         setToggleMetadata(metadata);
       }
 
+      // Load documentation links
+      if (excerptData.documentationLinks && Array.isArray(excerptData.documentationLinks)) {
+        setDocumentationLinks(excerptData.documentationLinks);
+      }
+
       hasLoadedDataRef.current = true;
     }
   }, [excerptId, excerptData, config.excerptName, config.category]);
@@ -237,6 +252,10 @@ const App = () => {
   ];
 
   const onSubmit = async (formData) => {
+    // DEBUG: Log what we're about to save
+    console.log('[source-config onSubmit] documentationLinks state:', documentationLinks);
+    alert('Saving Source with documentationLinks: ' + JSON.stringify(documentationLinks));
+
     // Merge detected variables with their metadata
     const variablesWithMetadata = detectedVariables.map(v => ({
       name: v.name,
@@ -265,6 +284,7 @@ const App = () => {
         excerptId,
         variableMetadata: variablesWithMetadata,
         toggleMetadata: togglesWithMetadata,
+        documentationLinks,
         sourcePageId,
         sourcePageTitle,
         sourceSpaceKey,
@@ -298,6 +318,7 @@ const App = () => {
           <Tab>Name/Category</Tab>
           <Tab>Variables</Tab>
           <Tab>Toggles</Tab>
+          <Tab>Documentation</Tab>
         </TabList>
 
         <TabPanel>
@@ -446,6 +467,114 @@ const App = () => {
             <Text>{' '}</Text>
             <SectionMessage appearance="discovery">
               <Text>Edit macro body in the page editor. Use {'{{toggle:name}}'} and {'{{/toggle:name}}'} to wrap content that can be toggled on/off. IMPORTANT: After clicking "Save", you MUST publish the page to persist changes!</Text>
+            </SectionMessage>
+          </FormSection>
+        </TabPanel>
+
+        {/* Documentation Tab - Links */}
+        <TabPanel>
+          <FormSection>
+            {/* Existing documentation links */}
+            {documentationLinks.length > 0 && (
+              <Fragment>
+                <Text><Strong>Documentation Links</Strong></Text>
+                <Text>{' '}</Text>
+                {documentationLinks.map((link, index) => (
+                  <Box key={index} padding="space.100" backgroundColor="color.background.neutral.subtle" style={{ marginBottom: '8px', borderRadius: '3px' }}>
+                    <Inline space="space.200" alignBlock="center" spread="space-between">
+                      <Stack space="space.050">
+                        <Text><Strong>{link.anchor}</Strong></Text>
+                        <Text size="small"><Em>{link.url}</Em></Text>
+                      </Stack>
+                      <Inline space="space.100">
+                        <Button
+                          appearance="subtle"
+                          iconBefore={<Icon glyph="arrow-up" label="Move up" />}
+                          isDisabled={index === 0 || isLoadingExcerpt}
+                          onClick={() => {
+                            const newLinks = [...documentationLinks];
+                            [newLinks[index - 1], newLinks[index]] = [newLinks[index], newLinks[index - 1]];
+                            setDocumentationLinks(newLinks);
+                          }}
+                        />
+                        <Button
+                          appearance="subtle"
+                          iconBefore={<Icon glyph="arrow-down" label="Move down" />}
+                          isDisabled={index === documentationLinks.length - 1 || isLoadingExcerpt}
+                          onClick={() => {
+                            const newLinks = [...documentationLinks];
+                            [newLinks[index], newLinks[index + 1]] = [newLinks[index + 1], newLinks[index]];
+                            setDocumentationLinks(newLinks);
+                          }}
+                        />
+                        <Button
+                          appearance="danger"
+                          iconBefore={<Icon glyph="trash" label="Delete" />}
+                          isDisabled={isLoadingExcerpt}
+                          onClick={() => {
+                            setDocumentationLinks(documentationLinks.filter((_, i) => i !== index));
+                          }}
+                        />
+                      </Inline>
+                    </Inline>
+                  </Box>
+                ))}
+                <Text>{' '}</Text>
+              </Fragment>
+            )}
+
+            {/* Add new documentation link form */}
+            <Text><Strong>Add New Documentation Link</Strong></Text>
+            <Text>{' '}</Text>
+            <Textfield
+              label="Anchor Text"
+              placeholder={isLoadingExcerpt ? 'Loading...' : 'e.g., API Reference'}
+              value={newLinkAnchor}
+              isDisabled={isLoadingExcerpt}
+              onChange={(e) => setNewLinkAnchor(e.target.value)}
+            />
+            <Textfield
+              label="URL"
+              placeholder={isLoadingExcerpt ? 'Loading...' : 'https://example.com/docs'}
+              value={newLinkUrl}
+              isDisabled={isLoadingExcerpt}
+              onChange={(e) => {
+                setNewLinkUrl(e.target.value);
+                // Basic URL validation
+                const url = e.target.value.trim();
+                if (url && !url.match(/^https?:\/\/.+/i)) {
+                  setUrlError('URL must start with http:// or https://');
+                } else {
+                  setUrlError('');
+                }
+              }}
+            />
+            {urlError && (
+              <SectionMessage appearance="error">
+                <Text>{urlError}</Text>
+              </SectionMessage>
+            )}
+            <Text>{' '}</Text>
+            <Button
+              appearance="primary"
+              isDisabled={!newLinkAnchor.trim() || !newLinkUrl.trim() || !!urlError || isLoadingExcerpt}
+              onClick={() => {
+                if (newLinkAnchor.trim() && newLinkUrl.trim() && !urlError) {
+                  setDocumentationLinks([
+                    ...documentationLinks,
+                    { anchor: newLinkAnchor.trim(), url: newLinkUrl.trim() }
+                  ]);
+                  setNewLinkAnchor('');
+                  setNewLinkUrl('');
+                }
+              }}
+            >
+              Add Link
+            </Button>
+
+            <Text>{' '}</Text>
+            <SectionMessage appearance="discovery">
+              <Text>Add documentation links that will appear in all Embed instances using this Source. Links open in a new tab.</Text>
             </SectionMessage>
           </FormSection>
         </TabPanel>

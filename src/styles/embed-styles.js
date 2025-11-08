@@ -75,8 +75,7 @@ export const sectionContentStyle = xcss({
 export const adfContentContainerStyle = xcss({
   width: '99%',
   maxWidth: '99%',
-  overflow: 'hidden',
-  boxSizing: 'border-box'
+  overflow: 'hidden'
 });
 
 /**

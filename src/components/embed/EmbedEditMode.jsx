@@ -19,7 +19,6 @@
  * @param {string} props.selectedExcerptId - ID of currently selected Standard
  * @param {Function} props.handleExcerptSelection - Handler for Standard selection change
  * @param {Object} props.context - Forge context object
- * @param {Object} props.productContext - Forge product context
  * @param {string} props.saveStatus - Current save status ('saving'|'saved'|null)
  * @param {number} props.selectedTabIndex - Currently selected tab index (0=Write, 1=Alternatives, 2=Custom)
  * @param {Function} props.setSelectedTabIndex - Handler to change selected tab
@@ -64,6 +63,7 @@ import { router, view } from '@forge/bridge';
 import { VariableConfigPanel } from '../VariableConfigPanel';
 import { ToggleConfigPanel } from '../ToggleConfigPanel';
 import { CustomInsertionsPanel } from '../CustomInsertionsPanel';
+import { DocumentationLinksDisplay } from './DocumentationLinksDisplay';
 import {
   excerptSelectorStyle,
   previewBoxStyle,
@@ -77,7 +77,6 @@ export function EmbedEditMode({
   selectedExcerptId,
   handleExcerptSelection,
   context,
-  productContext,
   saveStatus,
   selectedTabIndex,
   setSelectedTabIndex,
@@ -139,7 +138,7 @@ export function EmbedEditMode({
                 // Navigate to the source page where this excerpt is defined
                 const pageId = excerpt.sourcePageId || excerpt.pageId;
                 // Use excerpt's space key, or fallback to current space key
-                const spaceKey = excerpt.sourceSpaceKey || context?.extension?.space?.key || productContext?.spaceKey;
+                const spaceKey = excerpt.sourceSpaceKey || context?.extension?.space?.key || context?.spaceKey;
 
                 if (pageId && spaceKey) {
                   // Build the URL manually since we have both pageId and spaceKey
@@ -222,15 +221,18 @@ export function EmbedEditMode({
       </Tabs>
 
       {/* Preview - Always visible below tabs */}
-      <Box xcss={previewBoxStyle}>
-        {isAdf ? (
-          <Box xcss={adfContentContainerStyle}>
-            <AdfRenderer document={previewContent} />
-          </Box>
-        ) : (
-          <Text>{previewContent || 'No content'}</Text>
-        )}
-      </Box>
+      <Stack space="space.100">
+        <DocumentationLinksDisplay documentationLinks={excerpt?.documentationLinks} />
+        <Box xcss={previewBoxStyle}>
+          {isAdf ? (
+            <Box xcss={adfContentContainerStyle}>
+              <AdfRenderer document={previewContent} />
+            </Box>
+          ) : (
+            <Text>{previewContent || 'No content'}</Text>
+          )}
+        </Box>
+      </Stack>
     </Stack>
   );
 }

@@ -123,13 +123,14 @@ const App = () => {
   const [latestRenderedContent, setLatestRenderedContent] = useState(null);
   const [syncedContent, setSyncedContent] = useState(null); // Old Source ADF from last sync for diff comparison
 
-  // Use React Query to fetch excerpt data (only in edit mode)
+  // Use React Query to fetch excerpt data (enabled in both edit and view modes)
+  // We need excerpt metadata (like documentationLinks) in both modes
   const {
     data: excerptFromQuery,
     isLoading: isLoadingExcerpt,
     error: excerptError,
     isFetching: isFetchingExcerpt
-  } = useExcerptData(selectedExcerptId, isEditing);
+  } = useExcerptData(selectedExcerptId, true);
 
   // Use React Query mutation for saving variable values
   const {
@@ -173,6 +174,20 @@ const App = () => {
   // Use excerptFromQuery when available (edit mode), fallback to manual state for view mode
   const excerpt = isEditing ? excerptFromQuery : excerptForViewMode;
 
+  // DEBUG: Log data flow to understand why View Mode doesn't have documentationLinks
+  useEffect(() => {
+    console.log('[embed-display] Mode and Data Sources:', {
+      isEditing,
+      hasExcerptFromQuery: !!excerptFromQuery,
+      hasExcerptForViewMode: !!excerptForViewMode,
+      excerptFromQueryHasDocLinks: !!excerptFromQuery?.documentationLinks,
+      excerptForViewModeHasDocLinks: !!excerptForViewMode?.documentationLinks,
+      finalExcerptHasDocLinks: !!excerpt?.documentationLinks,
+      excerptFromQueryKeys: excerptFromQuery ? Object.keys(excerptFromQuery) : 'null',
+      excerptForViewModeKeys: excerptForViewMode ? Object.keys(excerptForViewMode) : 'null'
+    });
+  }, [isEditing, excerptFromQuery, excerptForViewMode, excerpt]);
+
   // Load excerptId from React Query data
   useEffect(() => {
     if (variableValuesData && variableValuesData.excerptId) {
@@ -194,18 +209,32 @@ const App = () => {
   // We do NOT invalidate on every mode switch - that would defeat caching!
   // The auto-save invalidation is sufficient to keep view mode fresh after edits.
 
-  // In edit mode, process excerpt data from React Query
+  // Process excerpt data from React Query (runs in both Edit and View modes)
+  // View Mode needs this to set excerptForViewMode with documentationLinks
   useEffect(() => {
-    if (!isEditing || !selectedExcerptId || !effectiveLocalId) {
+    if (!selectedExcerptId || !effectiveLocalId) {
       return;
     }
 
     const loadContent = async () => {
+      console.log('[embed-display loadContent] Function called. isEditing:', isEditing, ', hasExcerptFromQuery:', !!excerptFromQuery);
+
       // Wait for React Query to load the excerpt
       if (!excerptFromQuery) {
+        console.log('[embed-display loadContent] Early return - no excerptFromQuery');
         return;
       }
 
+      // VIEW MODE: Just set excerptForViewMode and skip expensive processing
+      // View Mode uses cached content, so we don't need to regenerate it
+      if (!isEditing) {
+        console.log('[embed-display loadContent] View Mode - setting excerptForViewMode only');
+        setExcerptForViewMode(excerptFromQuery);
+        return;
+      }
+
+      // EDIT MODE: Full processing
+      console.log('[embed-display loadContent] Edit Mode - proceeding with full load. excerptFromQuery:', excerptFromQuery);
       setIsRefreshing(true);
 
       try {
@@ -341,7 +370,9 @@ const App = () => {
             const previewContent = getPreviewContent();
             await invoke('saveCachedContent', {
               localId: effectiveLocalId,
-              renderedContent: previewContent
+              renderedContent: previewContent,
+              syncedContentHash: excerpt?.contentHash,
+              syncedContent: excerpt?.content
             });
 
             // Invalidate the cached content query to force refresh when switching to view mode
@@ -582,6 +613,9 @@ const App = () => {
         return;
       }
 
+      // Update the excerpt state so the new data (including documentationLinks) is available
+      setExcerptForViewMode(excerptResult.excerpt);
+
       // Get current variable values, toggle states, custom insertions, and internal notes
       const varsResult = await invoke('getVariableValues', { localId: effectiveLocalId });
       const currentVariableValues = varsResult.success ? varsResult.variableValues : {};
@@ -624,10 +658,12 @@ const App = () => {
       // Update the displayed content
       setContent(freshContent);
 
-      // Cache the updated content
+      // Cache the updated content with new syncedContentHash and syncedContent
       await invoke('saveCachedContent', {
         localId: effectiveLocalId,
-        renderedContent: freshContent
+        renderedContent: freshContent,
+        syncedContentHash: excerptResult.excerpt.contentHash,
+        syncedContent: excerptResult.excerpt.content
       });
 
       // Clear staleness flags
@@ -652,7 +688,6 @@ const App = () => {
         selectedExcerptId={selectedExcerptId}
         handleExcerptSelection={handleExcerptSelection}
         context={context}
-        productContext={productContext}
         saveStatus={saveStatus}
         selectedTabIndex={selectedTabIndex}
         setSelectedTabIndex={setSelectedTabIndex}
@@ -689,6 +724,7 @@ const App = () => {
       latestRenderedContent={latestRenderedContent}
       variableValues={variableValues}
       toggleStates={toggleStates}
+      excerpt={excerpt}
     />
   );
 };

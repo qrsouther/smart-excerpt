@@ -46,6 +46,7 @@ function normalizeJSON(obj) {
  * - category
  * - variables (array of {name, description, example, required})
  * - toggles (array of {name, description})
+ * - documentationLinks (array of {anchor, url})
  *
  * NOT included in hash:
  * - id (immutable)
@@ -62,7 +63,8 @@ export function calculateContentHash(excerpt) {
     name: excerpt.name,
     category: excerpt.category,
     variables: excerpt.variables || [],
-    toggles: excerpt.toggles || []
+    toggles: excerpt.toggles || [],
+    documentationLinks: excerpt.documentationLinks || []
   };
 
   // Normalize the JSON to ensure consistent key ordering at all levels
