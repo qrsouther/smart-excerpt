@@ -1107,10 +1107,10 @@ const App = () => {
               <Text>Paste the contents of multiexcerpt-import-data.json to create Blueprint Standards. This will delete any previously migrated standards.</Text>
 
               <Textfield
-                placeholder='Space Key (e.g., ~5bb22d3a0958e968ce8153a3 or CS)'
+                placeholder='Space Key or ID (e.g., ~5bb22d3a... or 123456)'
                 value={migrationSpaceKey}
                 onChange={(e) => setMigrationSpaceKey(e.target.value)}
-                label="Confluence Space Key (optional - will auto-detect if not provided)"
+                label="Confluence Space Key or ID (optional - will auto-detect if not provided)"
               />
 
               <TextArea

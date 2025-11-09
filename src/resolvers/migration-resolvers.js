@@ -2007,25 +2007,35 @@ export async function importFromParsedJson(req) {
         pageContent += `<br />`;
       }
 
-      // Step 1: Get space ID from space key (API v2 requires numeric spaceId)
-      console.log(`Looking up space ID for key: ${spaceKey}...`);
-      const spaceResponse = await api.asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}`, {
-        headers: { 'Accept': 'application/json' }
-      });
+      // Step 1: Get numeric space ID (API v2 requires numeric spaceId)
+      // Accept either spaceKey (string like "~5bb22d3a..." or "CS") or spaceId (numeric)
+      let spaceId;
 
-      if (!spaceResponse.ok) {
-        const errorText = await spaceResponse.text();
-        console.error(`Failed to lookup space: ${spaceResponse.status} - ${errorText}`);
-        throw new Error(`Failed to lookup space: ${spaceResponse.status} - ${errorText}`);
+      // Check if input is numeric (spaceId provided directly)
+      if (/^\d+$/.test(spaceKey)) {
+        spaceId = spaceKey;
+        console.log(`Using provided space ID: ${spaceId}`);
+      } else {
+        // Look up spaceId from spaceKey
+        console.log(`Looking up space ID for key: ${spaceKey}...`);
+        const spaceResponse = await api.asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}`, {
+          headers: { 'Accept': 'application/json' }
+        });
+
+        if (!spaceResponse.ok) {
+          const errorText = await spaceResponse.text();
+          console.error(`Failed to lookup space: ${spaceResponse.status} - ${errorText}`);
+          throw new Error(`Failed to lookup space: ${spaceResponse.status} - ${errorText}`);
+        }
+
+        const spaceData = await spaceResponse.json();
+        if (!spaceData.results || spaceData.results.length === 0) {
+          throw new Error(`Space not found: ${spaceKey}`);
+        }
+
+        spaceId = spaceData.results[0].id;
+        console.log(`✅ Found space ID: ${spaceId} for key: ${spaceKey}`);
       }
-
-      const spaceData = await spaceResponse.json();
-      if (!spaceData.results || spaceData.results.length === 0) {
-        throw new Error(`Space not found: ${spaceKey}`);
-      }
-
-      const spaceId = spaceData.results[0].id;
-      console.log(`✅ Found space ID: ${spaceId}`);
 
       // Step 2: Create blank page using API v2
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
