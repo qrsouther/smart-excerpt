@@ -610,7 +610,7 @@ export async function convertMultiExcerptsOnPage(req) {
       // Delete each excerpt
       for (const id of toDelete) {
         await storage.delete(`excerpt:${id}`);
-        console.log(`Deleted excerpt: ${id}`);
+        // Removed individual deletion logging to avoid hitting 100-line limit
       }
 
       // Update index
@@ -1823,7 +1823,7 @@ export async function importFromParsedJson(req) {
       // Delete each excerpt
       for (const id of toDelete) {
         await storage.delete(`excerpt:${id}`);
-        console.log(`Deleted excerpt: ${id}`);
+        // Removed individual deletion logging to avoid hitting 100-line limit
       }
 
       // Update index
@@ -1896,7 +1896,7 @@ export async function importFromParsedJson(req) {
           localId
         });
 
-        console.log(`✓ Imported: ${source.name} (ID: ${excerptId})`);
+        // Removed individual import logging to avoid hitting 100-line limit
 
       } catch (err) {
         console.error(`Error importing source "${source.name}":`, err);
