@@ -2007,27 +2007,44 @@ export async function importFromParsedJson(req) {
         pageContent += `<br />`;
       }
 
-      // Create the page using v1 REST API
+      // Step 1: Get space ID from space key (API v2 requires numeric spaceId)
+      console.log(`Looking up space ID for key: ${spaceKey}...`);
+      const spaceResponse = await api.asApp().requestConfluence(route`/wiki/api/v2/spaces?keys=${spaceKey}`, {
+        headers: { 'Accept': 'application/json' }
+      });
+
+      if (!spaceResponse.ok) {
+        const errorText = await spaceResponse.text();
+        console.error(`Failed to lookup space: ${spaceResponse.status} - ${errorText}`);
+        throw new Error(`Failed to lookup space: ${spaceResponse.status} - ${errorText}`);
+      }
+
+      const spaceData = await spaceResponse.json();
+      if (!spaceData.results || spaceData.results.length === 0) {
+        throw new Error(`Space not found: ${spaceKey}`);
+      }
+
+      const spaceId = spaceData.results[0].id;
+      console.log(`✅ Found space ID: ${spaceId}`);
+
+      // Step 2: Create blank page using API v2
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const pageTitle = `Blueprint Standards (Migrated ${timestamp})`;
 
-      const createPageResponse = await api.asApp().requestConfluence(route`/wiki/rest/api/content`, {
+      console.log('Creating blank page with API v2...');
+      const createPageResponse = await api.asApp().requestConfluence(route`/wiki/api/v2/pages`, {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          type: 'page',
+          spaceId: spaceKey,
+          status: 'current',
           title: pageTitle,
-          space: {
-            key: spaceKey
-          },
           body: {
-            storage: {
-              value: pageContent,
-              representation: 'storage'
-            }
+            representation: 'storage',
+            value: '<p>Loading Blueprint Standards...</p>'
           }
         })
       });
@@ -2041,11 +2058,41 @@ export async function importFromParsedJson(req) {
       }
 
       const newPage = await createPageResponse.json();
-      console.log(`Page creation response body:`, JSON.stringify(newPage, null, 2));
-
       const newPageId = newPage.id;
-      console.log(`✅ Created page: ${pageTitle} (ID: ${newPageId})`);
-      console.log(`Page URL should be: /wiki/spaces/${spaceKey}/pages/${newPageId}`);
+      console.log(`✅ Created blank page: ${pageTitle} (ID: ${newPageId})`);
+
+      // Step 2: Update page with full content
+      console.log('Step 2: Updating page with Source macros...');
+      const updatePageResponse = await api.asApp().requestConfluence(route`/wiki/api/v2/pages/${newPageId}`, {
+        method: 'PUT',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          id: newPageId,
+          status: 'current',
+          title: pageTitle,
+          spaceId: spaceKey,
+          body: {
+            representation: 'storage',
+            value: pageContent
+          },
+          version: {
+            number: newPage.version.number + 1,
+            message: 'Added Blueprint Standard Source macros'
+          }
+        })
+      });
+
+      if (!updatePageResponse.ok) {
+        const errorText = await updatePageResponse.text();
+        console.error(`Failed to update page: ${updatePageResponse.status} - ${errorText}`);
+        throw new Error(`Failed to update page: ${updatePageResponse.status} - ${errorText}`);
+      }
+
+      console.log(`✅ Updated page with ${imported.length} Source macros`);
+      console.log(`Page URL: /wiki/spaces/${spaceKey}/pages/${newPageId}`);
 
       // Step 4: Update all excerpts with sourcePageId and sourceLocalId
       for (const excerpt of excerptsToCreate) {
