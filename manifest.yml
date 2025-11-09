@@ -64,6 +64,7 @@ permissions:
   scopes:
     - read:confluence-content.all
     - read:confluence-space.summary
+    - read:space:confluence
     - read:page:confluence
     - write:page:confluence
     - write:confluence-content
