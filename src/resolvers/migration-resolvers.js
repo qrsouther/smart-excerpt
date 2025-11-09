@@ -2002,7 +2002,7 @@ export async function importFromParsedJson(req) {
         pageContent += `<ac:adf-attribute key="text">Blueprint Standard - Source</ac:adf-attribute>`;
         pageContent += `<ac:adf-attribute key="layout">default</ac:adf-attribute>`;
         pageContent += `<ac:adf-attribute key="local-id">${excerpt.localId}</ac:adf-attribute>`;
-        pageContent += `<ac:adf-content>${excerpt.content}</ac:adf-content>`;
+        pageContent += `<ac:adf-content><![CDATA[${excerpt.content}]]></ac:adf-content>`;
         pageContent += `</ac:adf-node></ac:adf-extension>`;
         pageContent += `<br />`;
       }
