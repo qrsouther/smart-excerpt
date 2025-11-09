@@ -110,7 +110,7 @@ const queryClient = new QueryClient({
 const SHOW_MIGRATION_TOOLS = true; // TEMPORARILY ENABLED FOR ONE-TIME BULK IMPORT
 
 // App version (from package.json)
-const APP_VERSION = '7.20.0-debug';
+const APP_VERSION = '7.7.1';
 
 const App = () => {
   // ============================================================================
