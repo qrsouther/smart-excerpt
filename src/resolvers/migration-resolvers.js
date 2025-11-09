@@ -2039,7 +2039,7 @@ export async function importFromParsedJson(req) {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          spaceId: spaceKey,
+          spaceId: spaceId,
           status: 'current',
           title: pageTitle,
           body: {
@@ -2073,7 +2073,7 @@ export async function importFromParsedJson(req) {
           id: newPageId,
           status: 'current',
           title: pageTitle,
-          spaceId: spaceKey,
+          spaceId: spaceId,
           body: {
             representation: 'storage',
             value: pageContent
