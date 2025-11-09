@@ -1796,7 +1796,7 @@ export async function testMultiExcerptPageFetch(req) {
  */
 export async function importFromParsedJson(req) {
   try {
-    const { sources, deleteOldMigrations, spaceKey: providedSpaceKey } = req.payload;
+    const { sources, deleteOldMigrations, spaceKey: providedSpaceKey, createPage = true } = req.payload;
 
     if (!sources || !Array.isArray(sources)) {
       return {
@@ -2037,11 +2037,11 @@ export async function importFromParsedJson(req) {
         console.log(`✅ Found space ID: ${spaceId} for key: ${spaceKey}`);
       }
 
-      // Step 2: Create blank page using API v2
+      // Step 2: Create page with full content in ONE API call (faster than blank+update)
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const pageTitle = `Blueprint Standards (Migrated ${timestamp})`;
 
-      console.log('Creating blank page with API v2...');
+      console.log(`Creating page with ${imported.length} Source macros...`);
       const createPageResponse = await api.asApp().requestConfluence(route`/wiki/api/v2/pages`, {
         method: 'POST',
         headers: {
@@ -2054,12 +2054,10 @@ export async function importFromParsedJson(req) {
           title: pageTitle,
           body: {
             representation: 'storage',
-            value: '<p>Loading Blueprint Standards...</p>'
+            value: pageContent
           }
         })
       });
-
-      console.log(`Page creation response status: ${createPageResponse.status}`);
 
       if (!createPageResponse.ok) {
         const errorText = await createPageResponse.text();
@@ -2069,39 +2067,7 @@ export async function importFromParsedJson(req) {
 
       const newPage = await createPageResponse.json();
       const newPageId = newPage.id;
-      console.log(`✅ Created blank page: ${pageTitle} (ID: ${newPageId})`);
-
-      // Step 2: Update page with full content
-      console.log('Step 2: Updating page with Source macros...');
-      const updatePageResponse = await api.asApp().requestConfluence(route`/wiki/api/v2/pages/${newPageId}`, {
-        method: 'PUT',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          id: newPageId,
-          status: 'current',
-          title: pageTitle,
-          spaceId: spaceId,
-          body: {
-            representation: 'storage',
-            value: pageContent
-          },
-          version: {
-            number: newPage.version.number + 1,
-            message: 'Added Blueprint Standard Source macros'
-          }
-        })
-      });
-
-      if (!updatePageResponse.ok) {
-        const errorText = await updatePageResponse.text();
-        console.error(`Failed to update page: ${updatePageResponse.status} - ${errorText}`);
-        throw new Error(`Failed to update page: ${updatePageResponse.status} - ${errorText}`);
-      }
-
-      console.log(`✅ Updated page with ${imported.length} Source macros`);
+      console.log(`✅ Created page with ${imported.length} Source macros (ID: ${newPageId})`);
       console.log(`Page URL: /wiki/spaces/${spaceKey}/pages/${newPageId}`);
 
       // Step 4: Update all excerpts with sourcePageId and sourceLocalId
