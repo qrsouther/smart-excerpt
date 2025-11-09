@@ -2032,6 +2032,8 @@ export async function importFromParsedJson(req) {
         })
       });
 
+      console.log(`Page creation response status: ${createPageResponse.status}`);
+
       if (!createPageResponse.ok) {
         const errorText = await createPageResponse.text();
         console.error(`Failed to create page: ${createPageResponse.status} - ${errorText}`);
@@ -2039,9 +2041,11 @@ export async function importFromParsedJson(req) {
       }
 
       const newPage = await createPageResponse.json();
-      const newPageId = newPage.id;
+      console.log(`Page creation response body:`, JSON.stringify(newPage, null, 2));
 
+      const newPageId = newPage.id;
       console.log(`✅ Created page: ${pageTitle} (ID: ${newPageId})`);
+      console.log(`Page URL should be: /wiki/spaces/${spaceKey}/pages/${newPageId}`);
 
       // Step 4: Update all excerpts with sourcePageId and sourceLocalId
       for (const excerpt of excerptsToCreate) {
