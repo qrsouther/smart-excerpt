@@ -932,54 +932,74 @@ const App = () => {
     setConversionResult(null);
 
     try {
-      console.log(`Importing ${parsedData.sources.length} Blueprint Standards from JSON...`);
+      console.log(`Starting migration job for ${parsedData.sources.length} Blueprint Standards...`);
 
-      const result = await invoke('importFromParsedJson', {
+      // Start the async job
+      const startResult = await invoke('startMigrationJob', {
         sources: parsedData.sources,
         deleteOldMigrations: true,
         spaceKey: migrationSpaceKey.trim() || null
       });
 
-      console.log('Conversion result:', result);
-
-      if (result.success) {
-        setConversionResult(result);
-
-        let message = `✅ Import completed!\n\n`;
-        message += `• ${result.summary.imported} Blueprint Standard(s) created\n`;
-        if (result.summary.skipped > 0) {
-          message += `• ${result.summary.skipped} skipped\n`;
-        }
-        if (result.summary.pageId) {
-          message += `• Page created: ${result.summary.pageTitle}\n`;
-          message += `• Page ID: ${result.summary.pageId}\n`;
-        }
-        message += `\n`;
-        message += `All Blueprint Standards are now initialized and should appear in the Admin UI table below.`;
-        if (result.pageUrl) {
-          message += `\n\nView the Source macros page:\n${result.pageUrl}`;
-        }
-
-        if (result.skipped && result.skipped.length > 0) {
-          message += `\n\nSkipped:\n`;
-          result.skipped.forEach(s => {
-            message += `  • ${s.name || 'Unknown'} (${s.reason})\n`;
-          });
-        }
-
-        alert(message);
-
-        // Refresh the page to show imported standards
-        window.location.reload();
-
-      } else {
-        alert('Failed to convert: ' + result.error);
+      if (!startResult.success) {
+        alert('Failed to start migration job');
+        setIsConverting(false);
+        return;
       }
 
+      const jobId = startResult.jobId;
+      console.log(`Migration job started: ${jobId}`);
+      alert(`Migration job started (ID: ${jobId})\n\nProcessing ${parsedData.sources.length} standards...\n\nThis page will auto-refresh when complete.`);
+
+      // Poll for job completion
+      const pollInterval = setInterval(async () => {
+        try {
+          const status = await invoke('getMigrationJobStatus', { jobId });
+
+          if (status.status === 'completed') {
+            clearInterval(pollInterval);
+            setIsConverting(false);
+
+            if (status.success) {
+              let message = `✅ Migration completed!\n\n`;
+              message += `• ${status.summary.imported} Blueprint Standard(s) imported\n`;
+              if (status.summary.skipped > 0) {
+                message += `• ${status.summary.skipped} skipped\n`;
+              }
+              if (status.summary.pageId) {
+                message += `• Page created (ID: ${status.summary.pageId})\n`;
+              }
+              message += `\nStandards now appear in the Admin UI table below.`;
+
+              if (status.pageUrl) {
+                message += `\n\nPage: ${status.pageUrl}`;
+              }
+
+              alert(message);
+              window.location.reload();
+            } else {
+              alert(`Migration failed: ${status.error}`);
+            }
+          } else if (status.status === 'failed') {
+            clearInterval(pollInterval);
+            setIsConverting(false);
+            alert(`Migration failed: ${status.error}`);
+          }
+          // else status is 'pending', keep polling
+        } catch (pollError) {
+          console.error('Error polling job status:', pollError);
+        }
+      }, 3000); // Poll every 3 seconds
+
     } catch (error) {
-      console.error('Error converting MultiExcerpt macros:', error);
+      alert('Failed to start migration: ' + error.message);
+      setIsConverting(false);
+      return;
+    }
+
+    } catch (error) {
+      console.error('Error starting migration:', error);
       alert('Error: ' + error.message);
-    } finally {
       setIsConverting(false);
     }
   };

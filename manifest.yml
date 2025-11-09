@@ -34,12 +34,20 @@ modules:
       queue: check-includes-queue
       function: check-includes-worker
 
+    - key: migration-consumer
+      queue: migration-queue
+      function: migration-worker
+
   function:
     - key: resolver
       handler: index.handler
 
     - key: check-includes-worker
       handler: workers/checkIncludesWorker.handler
+      timeoutSeconds: 900
+
+    - key: migration-worker
+      handler: workers/migrationWorker.handler
       timeoutSeconds: 900
 
 resources:

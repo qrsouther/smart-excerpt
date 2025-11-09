@@ -1,5 +1,5 @@
 import Resolver from '@forge/resolver';
-import { storage, startsWith } from '@forge/api';
+import { storage, startsWith, queue } from '@forge/api';
 import api, { route } from '@forge/api';
 import { generateUUID } from './utils.js';
 
@@ -225,6 +225,39 @@ resolver.define('convertMultiExcerptsOnPage', convertMultiExcerptsOnPageResolver
 
 // Import Blueprint Standards directly from parsed JSON (ONE-TIME USE)
 resolver.define('importFromParsedJson', importFromParsedJsonResolver);
+
+// Start async migration job via queue (ONE-TIME USE)
+resolver.define('startMigrationJob', async (req) => {
+  const { sources, deleteOldMigrations, spaceKey } = req.payload;
+  const jobId = generateUUID();
+
+  console.log(`Starting migration job ${jobId} with ${sources.length} sources`);
+
+  // Enqueue the job
+  await queue.push('migration-queue', {
+    sources,
+    deleteOldMigrations,
+    spaceKey,
+    jobId
+  });
+
+  return {
+    success: true,
+    jobId
+  };
+});
+
+// Get migration job status (ONE-TIME USE)
+resolver.define('getMigrationJobStatus', async (req) => {
+  const { jobId } = req.payload;
+  const result = await storage.get(`migration-job:${jobId}`);
+
+  if (!result) {
+    return { status: 'pending' };
+  }
+
+  return result;
+});
 
 // Bulk initialize all excerpts with hardcoded name-UUID mappings (ONE-TIME USE)
 resolver.define('bulkInitializeAllExcerpts', bulkInitializeAllExcerptsResolver);
