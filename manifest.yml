@@ -37,6 +37,7 @@ modules:
   function:
     - key: resolver
       handler: index.handler
+      timeoutSeconds: 300
 
     - key: check-includes-worker
       handler: workers/checkIncludesWorker.handler
