@@ -5,6 +5,7 @@ import ForgeReconciler, {
   Em,
   Button,
   Textfield,
+  TextArea,
   Select,
   Box,
   Modal,
@@ -106,7 +107,7 @@ const queryClient = new QueryClient({
 // 2. Delete this flag
 // 3. Delete migration state variables below (lines ~127-138)
 // 4. Delete migration handler functions (search for "handleScanMultiExcerpt", "handleBulkImport", etc.)
-const SHOW_MIGRATION_TOOLS = false;
+const SHOW_MIGRATION_TOOLS = true; // TEMPORARILY ENABLED FOR ONE-TIME BULK IMPORT
 
 // App version (from package.json)
 const APP_VERSION = '7.20.0-debug';
@@ -173,7 +174,8 @@ const App = () => {
   const [multiExcerptScanResult, setMultiExcerptScanResult] = useState(null);
   const [multiExcerptProgress, setMultiExcerptProgress] = useState(null);
   const [multiExcerptProgressId, setMultiExcerptProgressId] = useState(null);
-  const [importJsonData, setImportJsonData] = useState(null);
+  const [importJsonData, setImportJsonData] = useState('');
+  const [migrationSpaceKey, setMigrationSpaceKey] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
   const [isCreatingMacros, setIsCreatingMacros] = useState(false);
@@ -787,7 +789,8 @@ const App = () => {
         // Add "Migrated from MultiExcerpt" category if it doesn't exist
         const migrationCategory = 'Migrated from MultiExcerpt';
         if (!categories.includes(migrationCategory)) {
-          setCategories(prev => [...prev, migrationCategory]);
+          const updatedCategories = [...categories, migrationCategory];
+          await saveCategoriesMutation.mutateAsync({ categories: updatedCategories });
         }
 
         let message = `✅ Import complete!\n\n`;
@@ -894,18 +897,33 @@ const App = () => {
     }
   };
 
-  // Handle converting MultiExcerpt macros to SmartExcerpt on page
-  const handleConvertMultiExcerpts = async () => {
-    const pageId = '80150529'; // Migrated Content page
+  // Handle importing from parsed JSON
+  const handleImportFromJson = async () => {
+    if (!importJsonData.trim()) {
+      alert('Please paste the JSON data from multiexcerpt-import-data.json');
+      return;
+    }
+
+    let parsedData;
+    try {
+      parsedData = JSON.parse(importJsonData);
+    } catch (err) {
+      alert(`Invalid JSON: ${err.message}`);
+      return;
+    }
+
+    if (!parsedData.sources || !Array.isArray(parsedData.sources)) {
+      alert('Invalid JSON format: Missing "sources" array');
+      return;
+    }
 
     const confirmed = confirm(
-      `Convert all MultiExcerpt macros on the "Migrated Content" page to Blueprint Standard - Source macros?\n\n` +
+      `Import ${parsedData.sources.length} Blueprint Standards from JSON?\n\n` +
       `This will:\n` +
-      `• Find all MultiExcerpt macros on the page\n` +
-      `• Extract their content (preserving all formatting)\n` +
-      `• Replace them with Blueprint Standard - Source macros\n` +
-      `• Link to existing storage entries by name\n\n` +
-      `Continue?`
+      `• DELETE all previously migrated Blueprint Standards\n` +
+      `• Create ${parsedData.sources.length} new Blueprint Standards\n` +
+      `• Store them in the "Migrated from MultiExcerpt" category\n\n` +
+      `⚠️  This operation will delete existing migrated standards. Continue?`
     );
 
     if (!confirmed) return;
@@ -914,23 +932,33 @@ const App = () => {
     setConversionResult(null);
 
     try {
-      console.log(`Converting MultiExcerpt macros on page ${pageId}...`);
+      console.log(`Importing ${parsedData.sources.length} Blueprint Standards from JSON...`);
 
-      const result = await invoke('convertMultiExcerptsOnPage', { pageId });
+      const result = await invoke('importFromParsedJson', {
+        sources: parsedData.sources,
+        deleteOldMigrations: true,
+        spaceKey: migrationSpaceKey.trim() || null
+      });
 
       console.log('Conversion result:', result);
 
       if (result.success) {
         setConversionResult(result);
 
-        let message = `✅ Conversion completed!\n\n`;
-        message += `• ${result.summary.converted} macro(s) converted successfully\n`;
+        let message = `✅ Import completed!\n\n`;
+        message += `• ${result.summary.imported} Blueprint Standard(s) created\n`;
         if (result.summary.skipped > 0) {
-          message += `• ${result.summary.skipped} macro(s) skipped\n`;
+          message += `• ${result.summary.skipped} skipped\n`;
         }
-        message += `• Page ID: ${result.summary.pageId}\n`;
-        message += `• Page version: ${result.summary.pageVersion}\n\n`;
-        message += `View the page to see the converted Blueprint Standard macros.`;
+        if (result.summary.pageId) {
+          message += `• Page created: ${result.summary.pageTitle}\n`;
+          message += `• Page ID: ${result.summary.pageId}\n`;
+        }
+        message += `\n`;
+        message += `All Blueprint Standards are now initialized and should appear in the Admin UI table below.`;
+        if (result.pageUrl) {
+          message += `\n\nView the Source macros page:\n${result.pageUrl}`;
+        }
 
         if (result.skipped && result.skipped.length > 0) {
           message += `\n\nSkipped:\n`;
@@ -940,6 +968,9 @@ const App = () => {
         }
 
         alert(message);
+
+        // Refresh the page to show imported standards
+        window.location.reload();
 
       } else {
         alert('Failed to convert: ' + result.error);
@@ -1067,94 +1098,46 @@ const App = () => {
         </Inline>
       </Box>
 
-      {/* Bulk Import Section (hidden via feature flag) */}
+      {/* ONE-TIME MIGRATION: Import from parsed JSON */}
       {SHOW_MIGRATION_TOOLS && (
         <Box xcss={sectionMarginStyles}>
           <SectionMessage appearance="information">
             <Stack space="space.200">
-              <Text><Strong>📥 Import MultiExcerpt Sources</Strong></Text>
-              <Text>Paste the JSON content from the Chrome Extension export below, then click Load JSON.</Text>
+              <Text><Strong>🔄 Import from MultiExcerpt JSON</Strong></Text>
+              <Text>Paste the contents of multiexcerpt-import-data.json to create Blueprint Standards. This will delete any previously migrated standards.</Text>
 
               <Textfield
-                placeholder='Paste JSON content here... {"exportedAt": "...", "sources": [...]}'
-                value={jsonTextInput}
-                onChange={(e) => setJsonTextInput(e.target.value)}
+                placeholder='Space Key (e.g., ~5bb22d3a0958e968ce8153a3 or CS)'
+                value={migrationSpaceKey}
+                onChange={(e) => setMigrationSpaceKey(e.target.value)}
+                label="Confluence Space Key (optional - will auto-detect if not provided)"
+              />
+
+              <TextArea
+                placeholder='Paste JSON from multiexcerpt-import-data.json here...'
+                value={importJsonData}
+                onChange={(e) => setImportJsonData(e.target.value)}
+                resize="vertical"
+                minimumRows={8}
               />
 
               <Inline space="space.200" alignBlock="center">
                 <Button
-                  appearance="default"
-                  onClick={handleJsonParse}
-                  isDisabled={!jsonTextInput.trim()}
-                >
-                  📋 Load JSON
-                </Button>
-
-                {importJsonData && (
-                  <Text><Strong>✅ {importJsonData.sourceCount} source(s) loaded</Strong></Text>
-                )}
-              </Inline>
-
-              <Inline space="space.200" alignBlock="center">
-                <Button
                   appearance="primary"
-                  onClick={handleBulkImport}
-                  isDisabled={!importJsonData || isImporting}
+                  onClick={handleImportFromJson}
+                  isDisabled={isConverting || !importJsonData.trim()}
                 >
-                  {isImporting ? 'Importing...' : '⬆️ Import Sources'}
+                  {isConverting ? 'Importing...' : '📥 Import Blueprint Standards'}
                 </Button>
 
-                {importResult && (
+                {conversionResult && (
                   <Text>
-                    <Strong>✅ Imported {importResult.summary.imported} of {importResult.summary.total}</Strong>
+                    <Strong>✅ Imported {conversionResult.summary.imported} standard(s)</Strong>
                   </Text>
                 )}
               </Inline>
 
-              {/* Create Source Macros Button */}
-              {excerpts.some(e => e.category === 'Migrated from MultiExcerpt') && (
-                <Fragment>
-                  <Text>{' '}</Text>
-                  <Text><Strong>Step 2: Create Source Macros</Strong></Text>
-                  <Text>Once imported, create the actual Source macros on your Migrated Content page.</Text>
-
-                  <Inline space="space.200" alignBlock="center">
-                    <Button
-                      appearance="primary"
-                      onClick={handleCreateSourceMacros}
-                      isDisabled={isCreatingMacros}
-                    >
-                      {isCreatingMacros ? 'Creating Macros...' : '📄 Create Source Macros on Page'}
-                    </Button>
-
-                    {macroCreationResult && (
-                      <Text>
-                        <Strong>✅ Created {macroCreationResult.summary.created} macro(s)</Strong>
-                      </Text>
-                    )}
-                  </Inline>
-
-                  <Text>{' '}</Text>
-                  <Text><Strong>Step 3: Convert MultiExcerpt Macros (Alternative)</Strong></Text>
-                  <Text>If you've pasted MultiExcerpt macros onto the page, convert them to Blueprint Standard macros.</Text>
-
-                  <Inline space="space.200" alignBlock="center">
-                    <Button
-                      appearance="primary"
-                      onClick={handleConvertMultiExcerpts}
-                      isDisabled={isConverting}
-                    >
-                      {isConverting ? 'Converting...' : '🔄 Convert MultiExcerpts on Page'}
-                    </Button>
-
-                    {conversionResult && (
-                      <Text>
-                        <Strong>✅ Converted {conversionResult.summary.converted} macro(s)</Strong>
-                      </Text>
-                    )}
-                  </Inline>
-                </Fragment>
-              )}
+              <Text><Em>This will create storage entries, a new page with Source macros, and make them immediately available.</Em></Text>
             </Stack>
           </SectionMessage>
         </Box>

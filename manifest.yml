@@ -66,5 +66,6 @@ permissions:
     - read:confluence-space.summary
     - read:page:confluence
     - write:page:confluence
+    - write:confluence-content
     - search:confluence
     - storage:app

@@ -431,7 +431,11 @@ export async function createSourceMacrosOnPage(req) {
 
     // Forge app IDs (from manifest and installation)
     const appId = 'be1ff96b-d44d-4975-98d3-25b80a813bdd';
-    const environmentId = 'ae38f536-b4c8-4dfa-a1c9-62026d61b4f9'; // Development environment
+
+    // Get environment ID from context (production vs development)
+    // This ensures macros work in the environment where they're created
+    const environmentId = req.context?.installContext?.split('/')[1] || 'ae38f536-b4c8-4dfa-a1c9-62026d61b4f9';
+    console.log(`Creating macros with environment ID: ${environmentId}`);
 
     for (const excerpt of targetExcerpts) {
       try {
@@ -448,17 +452,13 @@ export async function createSourceMacrosOnPage(req) {
           // Clean MultiExcerpt-specific macros from the content
           const cleanedContent = cleanMultiExcerptMacros(excerpt.originalStorageContent);
 
-          // Validate that the XML is well-formed after cleaning
+          // Validate that the XML is well-formed after cleaning (WARNING ONLY, don't skip)
           const structuredMacroOpen = (cleanedContent.match(/<ac:structured-macro/g) || []).length;
           const structuredMacroClose = (cleanedContent.match(/<\/ac:structured-macro>/g) || []).length;
 
           if (structuredMacroOpen !== structuredMacroClose) {
-            console.warn(`Skipping excerpt "${excerpt.name}" - still has ${structuredMacroOpen} opening and ${structuredMacroClose} closing structured-macro tags after cleaning`);
-            skippedMacros.push({
-              name: excerpt.name,
-              reason: `Malformed XML - ${structuredMacroOpen} opening, ${structuredMacroClose} closing tags (after cleaning)`
-            });
-            continue; // Skip this excerpt
+            console.warn(`WARNING: Excerpt "${excerpt.name}" has ${structuredMacroOpen} opening and ${structuredMacroClose} closing structured-macro tags (may contain nested macros - proceeding anyway)`);
+            // Don't skip - nested macros (panel, expand, etc.) can cause this, and Confluence API will validate
           }
 
           macroBodyContent = cleanedContent;
@@ -471,14 +471,14 @@ export async function createSourceMacrosOnPage(req) {
 
         // Create Source macro in Forge ADF format
         newContent += `<ac:adf-extension><ac:adf-node type="bodied-extension">`;
-        newContent += `<ac:adf-attribute key="extension-key">${appId}/${environmentId}/static/smart-excerpt-source</ac:adf-attribute>`;
+        newContent += `<ac:adf-attribute key="extension-key">${appId}/${environmentId}/static/blueprint-standard-source</ac:adf-attribute>`;
         newContent += `<ac:adf-attribute key="extension-type">com.atlassian.ecosystem</ac:adf-attribute>`;
         newContent += `<ac:adf-attribute key="parameters">`;
         newContent += `<ac:adf-parameter key="local-id">${localId}</ac:adf-parameter>`;
-        newContent += `<ac:adf-parameter key="extension-id">ari:cloud:ecosystem::extension/${appId}/${environmentId}/static/smart-excerpt-source</ac:adf-parameter>`;
-        newContent += `<ac:adf-parameter key="extension-title">SmartExcerpt (Development)</ac:adf-parameter>`;
+        newContent += `<ac:adf-parameter key="extension-id">ari:cloud:ecosystem::extension/${appId}/${environmentId}/static/blueprint-standard-source</ac:adf-parameter>`;
+        newContent += `<ac:adf-parameter key="extension-title">Blueprint Standard - Source</ac:adf-parameter>`;
         newContent += `<ac:adf-parameter key="layout">bodiedExtension</ac:adf-parameter>`;
-        newContent += `<ac:adf-parameter key="forge-environment">DEVELOPMENT</ac:adf-parameter>`;
+        newContent += `<ac:adf-parameter key="forge-environment">PRODUCTION</ac:adf-parameter>`;
         newContent += `<ac:adf-parameter key="render">native</ac:adf-parameter>`;
         newContent += `<ac:adf-parameter key="guest-params">`;
         newContent += `<ac:adf-parameter key="excerpt-id">${excerpt.id}</ac:adf-parameter>`;
@@ -488,7 +488,7 @@ export async function createSourceMacrosOnPage(req) {
         newContent += `<ac:adf-parameter key="toggles"><ac:adf-parameter-value /></ac:adf-parameter>`;
         newContent += `</ac:adf-parameter>`;
         newContent += `</ac:adf-attribute>`;
-        newContent += `<ac:adf-attribute key="text">SmartExcerpt (Development)</ac:adf-attribute>`;
+        newContent += `<ac:adf-attribute key="text">Blueprint Standard - Source</ac:adf-attribute>`;
         newContent += `<ac:adf-attribute key="layout">default</ac:adf-attribute>`;
         newContent += `<ac:adf-attribute key="local-id">${localId}</ac:adf-attribute>`;
         newContent += `<ac:adf-content>${macroBodyContent}</ac:adf-content>`;
@@ -583,7 +583,7 @@ export async function createSourceMacrosOnPage(req) {
  */
 export async function convertMultiExcerptsOnPage(req) {
   try {
-    const { pageId } = req.payload;
+    const { pageId, deleteOldMigrations } = req.payload;
 
     if (!pageId) {
       return {
@@ -592,7 +592,35 @@ export async function convertMultiExcerptsOnPage(req) {
       };
     }
 
-    console.log(`Converting MultiExcerpt macros to SmartExcerpt on page ${pageId}...`);
+    console.log(`Converting MultiExcerpt macros to Blueprint Standards on page ${pageId}...`);
+
+    // Step 1: Delete all existing "Migrated from MultiExcerpt" excerpts if requested
+    if (deleteOldMigrations) {
+      console.log('Deleting all previously migrated excerpts...');
+      const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
+      const toDelete = [];
+
+      for (const excerptSummary of excerptIndex.excerpts) {
+        const excerpt = await storage.get(`excerpt:${excerptSummary.id}`);
+        if (excerpt && excerpt.category === 'Migrated from MultiExcerpt') {
+          toDelete.push(excerpt.id);
+        }
+      }
+
+      // Delete each excerpt
+      for (const id of toDelete) {
+        await storage.delete(`excerpt:${id}`);
+        console.log(`Deleted excerpt: ${id}`);
+      }
+
+      // Update index
+      const updatedIndex = {
+        excerpts: excerptIndex.excerpts.filter(e => !toDelete.includes(e.id))
+      };
+      await storage.set('excerpt-index', updatedIndex);
+
+      console.log(`Deleted ${toDelete.length} old migrated excerpts`);
+    }
 
     // Fetch the page
     const pageResponse = await api.asApp().requestConfluence(
@@ -614,19 +642,6 @@ export async function convertMultiExcerptsOnPage(req) {
 
     console.log(`Current page version: ${pageVersion}`);
 
-    // Get all excerpts from "Migrated from MultiExcerpt" category
-    const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
-    const excerptsByName = {};
-
-    for (const excerptSummary of excerptIndex.excerpts) {
-      const excerpt = await storage.get(`excerpt:${excerptSummary.id}`);
-      if (excerpt && excerpt.category === 'Migrated from MultiExcerpt') {
-        excerptsByName[excerpt.name] = excerpt;
-      }
-    }
-
-    console.log(`Loaded ${Object.keys(excerptsByName).length} excerpts from storage`);
-
     // Find all multiexcerpt-macro instances
     const multiexcerptRegex = /<ac:structured-macro ac:name="multiexcerpt-macro"[^>]*>(.*?)<\/ac:structured-macro>/gs;
     const matches = [...currentContent.matchAll(multiexcerptRegex)];
@@ -646,7 +661,11 @@ export async function convertMultiExcerptsOnPage(req) {
 
     // Forge app IDs
     const appId = 'be1ff96b-d44d-4975-98d3-25b80a813bdd';
-    const environmentId = 'ae38f536-b4c8-4dfa-a1c9-62026d61b4f9';
+    const environmentId = req.context?.installContext?.split('/')[1] || 'ae38f536-b4c8-4dfa-a1c9-62026d61b4f9';
+    console.log(`Using environment ID: ${environmentId}`);
+
+    // Get excerpt index to add new excerpts
+    const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
 
     // Process each MultiExcerpt macro
     for (const match of matches) {
@@ -665,7 +684,7 @@ export async function convertMultiExcerptsOnPage(req) {
         const excerptName = nameMatch[1];
         console.log(`Processing: ${excerptName}`);
 
-        // Decode HTML entities in the name for matching
+        // Decode HTML entities in the name
         const decodedName = excerptName
           .replace(/&amp;/g, '&')
           .replace(/&lt;/g, '<')
@@ -674,72 +693,103 @@ export async function convertMultiExcerptsOnPage(req) {
           .replace(/&#39;/g, "'")
           .replace(/&nbsp;/g, ' ');
 
-        // Find matching excerpt in storage (try both encoded and decoded names)
-        let excerpt = excerptsByName[excerptName] || excerptsByName[decodedName];
-        if (!excerpt) {
-          console.warn(`No matching excerpt found in storage for: ${excerptName} (or decoded: ${decodedName})`);
-          skipped.push({ name: excerptName, reason: 'Not found in storage' });
-          continue;
-        }
-
         // Extract the rich-text-body content
-        // Try to find rich-text-body, if not found, macro might be empty
-        const bodyMatch = macroContent.match(/<ac:rich-text-body>([\s\S]*)<\/ac:rich-text-body>/);
+        const bodyMatch = macroContent.match(/<ac:rich-text-body>([\s\S]*?)<\/ac:rich-text-body>/);
         let bodyContent;
 
         if (!bodyMatch) {
-          // Check if macro is self-closing or has no body
-          console.warn(`No rich-text-body found for: ${excerptName}, checking if empty...`);
-          // If no rich-text-body, use empty paragraph
+          console.warn(`No rich-text-body found for: ${excerptName}, using empty paragraph`);
           bodyContent = '<p />';
         } else {
           bodyContent = bodyMatch[1];
         }
 
-        // Generate unique localId
+        // Unescape HTML entities in body content
+        let cleanedBody = bodyContent
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')
+          .replace(/&nbsp;/g, ' ')
+          .replace(/&rsquo;/g, "'")
+          .replace(/&lsquo;/g, "'")
+          .replace(/&rdquo;/g, '"')
+          .replace(/&ldquo;/g, '"');
+
+        // Detect variables {{variableName}}
+        const variableMatches = cleanedBody.match(/\{\{([^}]+)\}\}/g) || [];
+        const variables = [...new Set(variableMatches)].map(v => {
+          const varName = v.replace(/[{}]/g, '');
+          return {
+            name: varName,
+            label: varName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
+            description: `Auto-detected variable: ${varName}`,
+            required: false
+          };
+        });
+
+        // Create new excerpt
+        const excerptId = generateUUID();
         const localId = generateUUID();
+
+        const newExcerpt = {
+          id: excerptId,
+          name: decodedName,
+          content: cleanedBody,
+          category: 'Migrated from MultiExcerpt',
+          variables: variables,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          sourcePageId: pageId,
+          sourceLocalId: localId
+        };
+
+        // Save excerpt to storage
+        await storage.set(`excerpt:${excerptId}`, newExcerpt);
+
+        // Add to index
+        excerptIndex.excerpts.push({
+          id: excerptId,
+          name: decodedName,
+          category: 'Migrated from MultiExcerpt'
+        });
+
+        console.log(`Created new excerpt: ${excerptId} for "${decodedName}"`);
 
         // Escape XML special characters in excerpt name for attributes
         const escapedName = excerptName.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         const escapedCategory = 'Migrated from MultiExcerpt';
 
-        // Build SmartExcerpt Source ADF macro
-        let smartExcerptMacro = `<ac:adf-extension><ac:adf-node type="bodied-extension">`;
-        smartExcerptMacro += `<ac:adf-attribute key="extension-key">${appId}/${environmentId}/static/smart-excerpt-source</ac:adf-attribute>`;
-        smartExcerptMacro += `<ac:adf-attribute key="extension-type">com.atlassian.ecosystem</ac:adf-attribute>`;
-        smartExcerptMacro += `<ac:adf-attribute key="parameters">`;
-        smartExcerptMacro += `<ac:adf-parameter key="local-id">${localId}</ac:adf-parameter>`;
-        smartExcerptMacro += `<ac:adf-parameter key="extension-id">ari:cloud:ecosystem::extension/${appId}/${environmentId}/static/smart-excerpt-source</ac:adf-parameter>`;
-        smartExcerptMacro += `<ac:adf-parameter key="extension-title">SmartExcerpt (Development)</ac:adf-parameter>`;
-        smartExcerptMacro += `<ac:adf-parameter key="layout">bodiedExtension</ac:adf-parameter>`;
-        smartExcerptMacro += `<ac:adf-parameter key="forge-environment">DEVELOPMENT</ac:adf-parameter>`;
-        smartExcerptMacro += `<ac:adf-parameter key="render">native</ac:adf-parameter>`;
-        smartExcerptMacro += `<ac:adf-parameter key="guest-params">`;
-        smartExcerptMacro += `<ac:adf-parameter key="excerpt-id">${excerpt.id}</ac:adf-parameter>`;
-        smartExcerptMacro += `<ac:adf-parameter key="excerpt-name">${escapedName}</ac:adf-parameter>`;
-        smartExcerptMacro += `<ac:adf-parameter key="category">${escapedCategory}</ac:adf-parameter>`;
-        smartExcerptMacro += `<ac:adf-parameter key="variables"><ac:adf-parameter-value /></ac:adf-parameter>`;
-        smartExcerptMacro += `<ac:adf-parameter key="toggles"><ac:adf-parameter-value /></ac:adf-parameter>`;
-        smartExcerptMacro += `</ac:adf-parameter>`;
-        smartExcerptMacro += `</ac:adf-attribute>`;
-        smartExcerptMacro += `<ac:adf-attribute key="text">SmartExcerpt (Development)</ac:adf-attribute>`;
-        smartExcerptMacro += `<ac:adf-attribute key="layout">default</ac:adf-attribute>`;
-        smartExcerptMacro += `<ac:adf-attribute key="local-id">${localId}</ac:adf-attribute>`;
-        smartExcerptMacro += `<ac:adf-content>${bodyContent}</ac:adf-content>`;
-        smartExcerptMacro += `</ac:adf-node></ac:adf-extension>`;
+        // Build Blueprint Standard Source ADF macro
+        let blueprintMacro = `<ac:adf-extension><ac:adf-node type="bodied-extension">`;
+        blueprintMacro += `<ac:adf-attribute key="extension-key">${appId}/${environmentId}/static/blueprint-standard-source</ac:adf-attribute>`;
+        blueprintMacro += `<ac:adf-attribute key="extension-type">com.atlassian.ecosystem</ac:adf-attribute>`;
+        blueprintMacro += `<ac:adf-attribute key="parameters">`;
+        blueprintMacro += `<ac:adf-parameter key="local-id">${localId}</ac:adf-parameter>`;
+        blueprintMacro += `<ac:adf-parameter key="extension-id">ari:cloud:ecosystem::extension/${appId}/${environmentId}/static/blueprint-standard-source</ac:adf-parameter>`;
+        blueprintMacro += `<ac:adf-parameter key="extension-title">Blueprint Standard - Source</ac:adf-parameter>`;
+        blueprintMacro += `<ac:adf-parameter key="layout">bodiedExtension</ac:adf-parameter>`;
+        blueprintMacro += `<ac:adf-parameter key="forge-environment">PRODUCTION</ac:adf-parameter>`;
+        blueprintMacro += `<ac:adf-parameter key="render">native</ac:adf-parameter>`;
+        blueprintMacro += `<ac:adf-parameter key="guest-params">`;
+        blueprintMacro += `<ac:adf-parameter key="excerpt-id">${excerptId}</ac:adf-parameter>`;
+        blueprintMacro += `<ac:adf-parameter key="excerpt-name">${escapedName}</ac:adf-parameter>`;
+        blueprintMacro += `<ac:adf-parameter key="category">${escapedCategory}</ac:adf-parameter>`;
+        blueprintMacro += `<ac:adf-parameter key="variables"><ac:adf-parameter-value /></ac:adf-parameter>`;
+        blueprintMacro += `<ac:adf-parameter key="toggles"><ac:adf-parameter-value /></ac:adf-parameter>`;
+        blueprintMacro += `</ac:adf-parameter>`;
+        blueprintMacro += `</ac:adf-attribute>`;
+        blueprintMacro += `<ac:adf-attribute key="text">Blueprint Standard - Source</ac:adf-attribute>`;
+        blueprintMacro += `<ac:adf-attribute key="layout">default</ac:adf-attribute>`;
+        blueprintMacro += `<ac:adf-attribute key="local-id">${localId}</ac:adf-attribute>`;
+        blueprintMacro += `<ac:adf-content>${bodyContent}</ac:adf-content>`;
+        blueprintMacro += `</ac:adf-node></ac:adf-extension>`;
 
-        // Replace the MultiExcerpt macro with SmartExcerpt macro
-        newContent = newContent.replace(fullMacro, smartExcerptMacro);
-
-        // Update excerpt metadata with page info
-        excerpt.sourcePageId = pageId;
-        excerpt.sourceLocalId = localId;
-        excerpt.updatedAt = new Date().toISOString();
-        await storage.set(`excerpt:${excerpt.id}`, excerpt);
+        // Replace the MultiExcerpt macro with Blueprint Standard macro
+        newContent = newContent.replace(fullMacro, blueprintMacro);
 
         converted.push({
           name: excerptName,
-          excerptId: excerpt.id,
+          excerptId: excerptId,
           localId
         });
 
@@ -750,6 +800,9 @@ export async function convertMultiExcerptsOnPage(req) {
         skipped.push({ reason: macroError.message });
       }
     }
+
+    // Save updated excerpt index
+    await storage.set('excerpt-index', excerptIndex);
 
     // Update the page with converted content
     console.log(`Updating page with ${converted.length} converted macros...`);
@@ -1625,4 +1678,416 @@ export async function bulkInitializeAllExcerpts(req) {
     failed: results.length - successCount,
     results
   };
+}
+
+/**
+ * TEST FUNCTION: Fetch a page and analyze MultiExcerpt macro content availability
+ *
+ * This is a diagnostic function to check if the Confluence API returns the actual
+ * content body of MultiExcerpt macros, or just metadata.
+ *
+ * @param {Object} req - Request object with pageId
+ * @returns {Object} Analysis of what content is available
+ */
+export async function testMultiExcerptPageFetch(req) {
+  try {
+    const { pageId } = req.payload;
+
+    console.log(`[TEST] Fetching page ${pageId} to analyze MultiExcerpt content...`);
+
+    // Fetch page in storage format (XML representation)
+    const response = await api.asUser().requestConfluence(
+      route`/wiki/rest/api/content/${pageId}?expand=body.storage,version`
+    );
+
+    const data = await response.json();
+
+    console.log('[TEST] Page fetched successfully');
+    console.log('[TEST] Page title:', data.title);
+    console.log('[TEST] Page version:', data.version.number);
+
+    const storageContent = data.body?.storage?.value;
+
+    if (!storageContent) {
+      return {
+        success: false,
+        error: 'No storage content found in API response'
+      };
+    }
+
+    console.log('[TEST] Storage content length:', storageContent.length);
+
+    // Find all MultiExcerpt macros in the content
+    const multiExcerptPattern = /<ac:structured-macro[^>]*ac:name="multiexcerpt-macro"[^>]*>/g;
+    const matches = storageContent.match(multiExcerptPattern);
+
+    const macroCount = matches ? matches.length : 0;
+    console.log('[TEST] Found', macroCount, 'MultiExcerpt macros');
+
+    // Extract the first macro for detailed analysis
+    let firstMacroAnalysis = null;
+    if (macroCount > 0) {
+      // Find first macro with its full content
+      const firstMacroStart = storageContent.indexOf('<ac:structured-macro');
+      const firstMacroWithName = storageContent.indexOf('ac:name="multiexcerpt-macro"', firstMacroStart);
+
+      // Find the opening tag end
+      const openingTagEnd = storageContent.indexOf('>', firstMacroWithName);
+
+      // Find the closing tag
+      const closingTag = '</ac:structured-macro>';
+      let closingTagStart = storageContent.indexOf(closingTag, openingTagEnd);
+
+      if (closingTagStart !== -1) {
+        const macroContent = storageContent.substring(firstMacroStart, closingTagStart + closingTag.length);
+
+        // Extract macro name parameter
+        const nameMatch = macroContent.match(/<ac:parameter ac:name="name">([^<]+)<\/ac:parameter>/);
+        const macroName = nameMatch ? nameMatch[1] : 'Unknown';
+
+        // Check for rich-text-body
+        const hasRichTextBody = macroContent.includes('<ac:rich-text-body>');
+        const richTextBodyMatch = macroContent.match(/<ac:rich-text-body>([\s\S]*?)<\/ac:rich-text-body>/);
+        const bodyContent = richTextBodyMatch ? richTextBodyMatch[1] : null;
+
+        firstMacroAnalysis = {
+          name: macroName,
+          hasRichTextBody,
+          bodyContentLength: bodyContent ? bodyContent.length : 0,
+          bodyContentPreview: bodyContent ? bodyContent.substring(0, 200) : null,
+          fullMacroLength: macroContent.length,
+          fullMacroPreview: macroContent.substring(0, 500)
+        };
+
+        console.log('[TEST] First macro analysis:');
+        console.log('  - Name:', macroName);
+        console.log('  - Has rich-text-body:', hasRichTextBody);
+        console.log('  - Body content length:', bodyContent ? bodyContent.length : 0);
+      }
+    }
+
+    return {
+      success: true,
+      pageId,
+      pageTitle: data.title,
+      storageContentLength: storageContent.length,
+      multiExcerptCount: macroCount,
+      firstMacroAnalysis,
+      // Return a snippet of the raw storage content for manual inspection
+      storageContentSnippet: storageContent.substring(0, 2000),
+      verdict: firstMacroAnalysis?.hasRichTextBody
+        ? 'GOOD: API returns macro body content - automated import is possible!'
+        : 'BAD: API does not include macro body content - manual paste required'
+    };
+
+  } catch (error) {
+    console.error('[TEST] Error fetching page:', error);
+    return {
+      success: false,
+      error: error.message,
+      stack: error.stack
+    };
+  }
+}
+
+/**
+ * Import Blueprint Standards directly from parsed JSON
+ * This avoids regex parsing of nested XML which causes nesting issues
+ */
+export async function importFromParsedJson(req) {
+  try {
+    const { sources, deleteOldMigrations, spaceKey: providedSpaceKey } = req.payload;
+
+    if (!sources || !Array.isArray(sources)) {
+      return {
+        success: false,
+        error: 'Invalid sources data: expected array'
+      };
+    }
+
+    console.log(`Importing ${sources.length} Blueprint Standards from parsed JSON...`);
+
+    // Step 1: Delete all existing "Migrated from MultiExcerpt" excerpts if requested
+    if (deleteOldMigrations) {
+      console.log('Deleting all previously migrated excerpts...');
+      const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
+      const toDelete = [];
+
+      for (const excerptSummary of excerptIndex.excerpts) {
+        const excerpt = await storage.get(`excerpt:${excerptSummary.id}`);
+        if (excerpt && excerpt.category === 'Migrated from MultiExcerpt') {
+          toDelete.push(excerpt.id);
+        }
+      }
+
+      // Delete each excerpt
+      for (const id of toDelete) {
+        await storage.delete(`excerpt:${id}`);
+        console.log(`Deleted excerpt: ${id}`);
+      }
+
+      // Update index
+      const updatedIndex = {
+        excerpts: excerptIndex.excerpts.filter(e => !toDelete.includes(e.id))
+      };
+      await storage.set('excerpt-index', updatedIndex);
+
+      console.log(`Deleted ${toDelete.length} old migrated excerpts`);
+    }
+
+    // Step 2: Create new excerpts from JSON data and prepare for page creation
+    const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
+    const imported = [];
+    const skipped = [];
+    const excerptsToCreate = []; // Store excerpt data for page creation
+
+    for (const source of sources) {
+      try {
+        // Skip if no content or name
+        if (!source.name || !source.name.trim()) {
+          console.warn('Skipping source with no name');
+          skipped.push({ name: 'Unknown', reason: 'No name provided' });
+          continue;
+        }
+
+        if (!source.content || source.content.trim().length === 0) {
+          console.warn(`Skipping source "${source.name}" - no content`);
+          skipped.push({ name: source.name, reason: 'No content' });
+          continue;
+        }
+
+        // Generate new excerpt ID and local ID
+        const excerptId = generateUUID();
+        const localId = generateUUID();
+
+        // Create excerpt with name and "Migrated from MultiExcerpt" category
+        const newExcerpt = {
+          id: excerptId,
+          name: source.name,
+          content: source.content,
+          category: 'Migrated from MultiExcerpt', // Always use this category
+          variables: source.variables || [],
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+          // sourcePageId and sourceLocalId will be set after page creation
+        };
+
+        // Save to storage (will be updated with page info later)
+        await storage.set(`excerpt:${excerptId}`, newExcerpt);
+
+        // Add to index
+        excerptIndex.excerpts.push({
+          id: excerptId,
+          name: source.name,
+          category: 'Migrated from MultiExcerpt'
+        });
+
+        // Store for page creation
+        excerptsToCreate.push({
+          excerptId,
+          localId,
+          name: source.name,
+          content: source.content
+        });
+
+        imported.push({
+          id: excerptId,
+          name: source.name,
+          localId
+        });
+
+        console.log(`✓ Imported: ${source.name} (ID: ${excerptId})`);
+
+      } catch (err) {
+        console.error(`Error importing source "${source.name}":`, err);
+        skipped.push({ name: source.name, reason: err.message });
+      }
+    }
+
+    // Save updated index
+    await storage.set('excerpt-index', excerptIndex);
+
+    console.log(`✅ Storage import complete: ${imported.length} imported, ${skipped.length} skipped`);
+
+    // Step 3: Create a new page with all Source macros
+    if (imported.length > 0) {
+      console.log(`Creating new page with ${imported.length} Source macros...`);
+
+      const appId = 'be1ff96b-d44d-4975-98d3-25b80a813bdd';
+      const environmentId = req.context?.installContext?.split('/')[1] || 'ae38f536-b4c8-4dfa-a1c9-62026d61b4f9';
+
+      // Get space key: use provided, fallback to auto-detection
+      let spaceKey = providedSpaceKey;
+
+      if (spaceKey) {
+        console.log(`Using provided space key: ${spaceKey}`);
+      } else {
+        console.log('No space key provided, attempting auto-detection...');
+
+        // Try to get current user's personal space
+        try {
+          const userResponse = await api.asApp().requestConfluence(route`/wiki/rest/api/user/current`, {
+            headers: { 'Accept': 'application/json' }
+          });
+
+          if (userResponse.ok) {
+            const userData = await userResponse.json();
+            // Personal space key is usually ~accountId
+            if (userData.accountId) {
+              spaceKey = `~${userData.accountId}`;
+              console.log(`Auto-detected personal space: ${spaceKey}`);
+            }
+          }
+        } catch (err) {
+          console.warn('Could not get user info:', err);
+        }
+
+        // If still no space, try to get any accessible space
+        if (!spaceKey) {
+          console.log('Trying to find any accessible space...');
+          const spacesResponse = await api.asApp().requestConfluence(route`/wiki/rest/api/space?limit=10`, {
+            headers: { 'Accept': 'application/json' }
+          });
+
+          if (spacesResponse.ok) {
+            const spacesData = await spacesResponse.json();
+            console.log(`Found ${spacesData.results?.length || 0} spaces`);
+            if (spacesData.results && spacesData.results.length > 0) {
+              // Try to find personal space first
+              const personalSpace = spacesData.results.find(s => s.type === 'personal');
+              spaceKey = personalSpace ? personalSpace.key : spacesData.results[0].key;
+              console.log(`Using space: ${spaceKey} (type: ${personalSpace ? 'personal' : 'team'})`);
+            }
+          }
+        }
+
+        if (!spaceKey) {
+          throw new Error('No space found to create page in. Please provide a space key or ensure you have access to at least one Confluence space.');
+        }
+      }
+
+      console.log(`Creating page in space: ${spaceKey}`);
+
+      // Build page content with all Source macros
+      let pageContent = `<p><strong>Blueprint Standards - Migrated from MultiExcerpt</strong></p>`;
+      pageContent += `<p>This page contains ${imported.length} Blueprint Standard Source macros imported from MultiExcerpt.</p>`;
+      pageContent += `<p><em>Created: ${new Date().toISOString()}</em></p><hr />`;
+
+      for (const excerpt of excerptsToCreate) {
+        // Escape XML special characters in name
+        const escapedName = excerpt.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+        // Add section header
+        pageContent += `<h3>${escapedName}</h3>`;
+
+        // Build Source macro
+        pageContent += `<ac:adf-extension><ac:adf-node type="bodied-extension">`;
+        pageContent += `<ac:adf-attribute key="extension-key">${appId}/${environmentId}/static/blueprint-standard-source</ac:adf-attribute>`;
+        pageContent += `<ac:adf-attribute key="extension-type">com.atlassian.ecosystem</ac:adf-attribute>`;
+        pageContent += `<ac:adf-attribute key="parameters">`;
+        pageContent += `<ac:adf-parameter key="local-id">${excerpt.localId}</ac:adf-parameter>`;
+        pageContent += `<ac:adf-parameter key="extension-id">ari:cloud:ecosystem::extension/${appId}/${environmentId}/static/blueprint-standard-source</ac:adf-parameter>`;
+        pageContent += `<ac:adf-parameter key="extension-title">Blueprint Standard - Source</ac:adf-parameter>`;
+        pageContent += `<ac:adf-parameter key="layout">bodiedExtension</ac:adf-parameter>`;
+        pageContent += `<ac:adf-parameter key="forge-environment">PRODUCTION</ac:adf-parameter>`;
+        pageContent += `<ac:adf-parameter key="render">native</ac:adf-parameter>`;
+        pageContent += `<ac:adf-parameter key="guest-params">`;
+        pageContent += `<ac:adf-parameter key="excerpt-id">${excerpt.excerptId}</ac:adf-parameter>`;
+        pageContent += `<ac:adf-parameter key="excerpt-name">${escapedName}</ac:adf-parameter>`;
+        pageContent += `<ac:adf-parameter key="category">Migrated from MultiExcerpt</ac:adf-parameter>`;
+        pageContent += `<ac:adf-parameter key="variables"><ac:adf-parameter-value /></ac:adf-parameter>`;
+        pageContent += `<ac:adf-parameter key="toggles"><ac:adf-parameter-value /></ac:adf-parameter>`;
+        pageContent += `</ac:adf-parameter>`;
+        pageContent += `</ac:adf-attribute>`;
+        pageContent += `<ac:adf-attribute key="text">Blueprint Standard - Source</ac:adf-attribute>`;
+        pageContent += `<ac:adf-attribute key="layout">default</ac:adf-attribute>`;
+        pageContent += `<ac:adf-attribute key="local-id">${excerpt.localId}</ac:adf-attribute>`;
+        pageContent += `<ac:adf-content>${excerpt.content}</ac:adf-content>`;
+        pageContent += `</ac:adf-node></ac:adf-extension>`;
+        pageContent += `<br />`;
+      }
+
+      // Create the page using v1 REST API
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const pageTitle = `Blueprint Standards (Migrated ${timestamp})`;
+
+      const createPageResponse = await api.asApp().requestConfluence(route`/wiki/rest/api/content`, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          type: 'page',
+          title: pageTitle,
+          space: {
+            key: spaceKey
+          },
+          body: {
+            storage: {
+              value: pageContent,
+              representation: 'storage'
+            }
+          }
+        })
+      });
+
+      if (!createPageResponse.ok) {
+        const errorText = await createPageResponse.text();
+        console.error(`Failed to create page: ${createPageResponse.status} - ${errorText}`);
+        throw new Error(`Failed to create page: ${createPageResponse.status} - ${errorText}`);
+      }
+
+      const newPage = await createPageResponse.json();
+      const newPageId = newPage.id;
+
+      console.log(`✅ Created page: ${pageTitle} (ID: ${newPageId})`);
+
+      // Step 4: Update all excerpts with sourcePageId and sourceLocalId
+      for (const excerpt of excerptsToCreate) {
+        const storedExcerpt = await storage.get(`excerpt:${excerpt.excerptId}`);
+        if (storedExcerpt) {
+          storedExcerpt.sourcePageId = newPageId;
+          storedExcerpt.sourceLocalId = excerpt.localId;
+          storedExcerpt.updatedAt = new Date().toISOString();
+          await storage.set(`excerpt:${excerpt.excerptId}`, storedExcerpt);
+        }
+      }
+
+      console.log(`✅ Updated ${excerptsToCreate.length} excerpts with page info`);
+
+      return {
+        success: true,
+        summary: {
+          total: sources.length,
+          imported: imported.length,
+          skipped: skipped.length,
+          pageId: newPageId,
+          pageTitle: pageTitle
+        },
+        imported,
+        skipped,
+        pageUrl: `${req.context?.siteUrl}/wiki/spaces/${spaceKey}/pages/${newPageId}`
+      };
+    }
+
+    return {
+      success: true,
+      summary: {
+        total: sources.length,
+        imported: imported.length,
+        skipped: skipped.length
+      },
+      imported,
+      skipped
+    };
+
+  } catch (error) {
+    console.error('Error importing from JSON:', error);
+    return {
+      success: false,
+      error: error.message,
+      stack: error.stack
+    };
+  }
 }

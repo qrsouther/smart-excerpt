@@ -88,7 +88,9 @@ import {
   bulkImportSources as bulkImportSourcesResolver,
   createSourceMacrosOnPage as createSourceMacrosOnPageResolver,
   convertMultiExcerptsOnPage as convertMultiExcerptsOnPageResolver,
-  bulkInitializeAllExcerpts as bulkInitializeAllExcerptsResolver
+  importFromParsedJson as importFromParsedJsonResolver,
+  bulkInitializeAllExcerpts as bulkInitializeAllExcerptsResolver,
+  testMultiExcerptPageFetch as testMultiExcerptPageFetchResolver
 } from './resolvers/migration-resolvers.js';
 
 const resolver = new Resolver();
@@ -221,8 +223,14 @@ resolver.define('createSourceMacrosOnPage', createSourceMacrosOnPageResolver);
 // Convert MultiExcerpt macros to SmartExcerpt macros on a page (ONE-TIME USE)
 resolver.define('convertMultiExcerptsOnPage', convertMultiExcerptsOnPageResolver);
 
+// Import Blueprint Standards directly from parsed JSON (ONE-TIME USE)
+resolver.define('importFromParsedJson', importFromParsedJsonResolver);
+
 // Bulk initialize all excerpts with hardcoded name-UUID mappings (ONE-TIME USE)
 resolver.define('bulkInitializeAllExcerpts', bulkInitializeAllExcerptsResolver);
+
+// Test function: Fetch a page and analyze MultiExcerpt content availability (DIAGNOSTIC)
+resolver.define('testMultiExcerptPageFetch', testMultiExcerptPageFetchResolver);
 
 // ============================================================================
 // END OF MIGRATION RESOLVERS - DELETE ABOVE SECTION AFTER PRODUCTION MIGRATION
