@@ -2,17 +2,21 @@
  * EmbedViewMode Component
  *
  * Renders the Embed in view mode (read-only) with cached content.
- * Displays Update Available banner if Source has changed since last sync.
+ * Shows subtle indicator while checking for updates, then progressive disclosure
+ * of update banner when user clicks "Review Update" button.
  *
  * Features:
  * - Renders cached ADF or plain text content
- * - Shows UpdateAvailableBanner when stale
+ * - Shows subtle "Checking..." indicator during staleness check
+ * - Shows green "Review Update" button when stale content detected
+ * - Progressive disclosure: banner only appears when user clicks Review button
  * - Cleans ADF for proper rendering
  * - Handles loading states
  *
  * @param {Object} props
  * @param {Object|string} props.content - Cached content to display (ADF or text)
  * @param {boolean} props.isStale - Whether Source content has changed
+ * @param {boolean} props.isCheckingStaleness - Whether staleness check is running
  * @param {boolean} props.showDiffView - Whether diff view is visible
  * @param {Function} props.setShowDiffView - Toggle diff view
  * @param {Function} props.handleUpdateToLatest - Update to latest content
@@ -25,21 +29,24 @@
  * @returns {JSX.Element} - View mode JSX
  */
 
-import React, { Fragment } from 'react';
+import React, { Fragment, useState } from 'react';
 import {
   Text,
   Box,
   AdfRenderer,
-  Stack
+  Stack,
+  xcss
 } from '@forge/react';
 import { cleanAdfForRenderer } from '../../utils/adf-rendering-utils';
 import { UpdateAvailableBanner } from './UpdateAvailableBanner';
 import { DocumentationLinksDisplay } from './DocumentationLinksDisplay';
+import { StalenessCheckIndicator } from './StalenessCheckIndicator';
 import { adfContentContainerStyle } from '../../styles/embed-styles';
 
 export function EmbedViewMode({
   content,
   isStale,
+  isCheckingStaleness,
   showDiffView,
   setShowDiffView,
   handleUpdateToLatest,
@@ -50,6 +57,14 @@ export function EmbedViewMode({
   toggleStates,
   excerpt
 }) {
+  // State for progressive disclosure - only show banner when user clicks Review button
+  const [showUpdateBanner, setShowUpdateBanner] = useState(false);
+
+  // Handler for when user clicks "Review Update" button on indicator
+  const handleReviewClick = () => {
+    setShowUpdateBanner(true);
+  };
+
   // Loading state
   if (!content) {
     return <Text>Loading content...</Text>;
@@ -67,6 +82,38 @@ export function EmbedViewMode({
 
     return (
       <Stack space="space.200">
+        {showUpdateBanner && (
+          <UpdateAvailableBanner
+            isStale={isStale}
+            showDiffView={showDiffView}
+            setShowDiffView={setShowDiffView}
+            handleUpdateToLatest={handleUpdateToLatest}
+            isUpdating={isUpdating}
+            syncedContent={syncedContent}
+            latestRenderedContent={latestRenderedContent}
+            variableValues={variableValues}
+            toggleStates={toggleStates}
+          />
+        )}
+        <DocumentationLinksDisplay documentationLinks={excerpt?.documentationLinks} />
+        <Box xcss={xcss({ position: 'relative' })}>
+          <StalenessCheckIndicator
+            isCheckingStaleness={isCheckingStaleness}
+            isStale={isStale}
+            onReviewClick={handleReviewClick}
+          />
+          <Box xcss={adfContentContainerStyle}>
+            <AdfRenderer document={cleaned} />
+          </Box>
+        </Box>
+      </Stack>
+    );
+  }
+
+  // Plain text content
+  return (
+    <Stack space="space.200">
+      {showUpdateBanner && (
         <UpdateAvailableBanner
           isStale={isStale}
           showDiffView={showDiffView}
@@ -78,35 +125,21 @@ export function EmbedViewMode({
           variableValues={variableValues}
           toggleStates={toggleStates}
         />
-        <DocumentationLinksDisplay documentationLinks={excerpt?.documentationLinks} />
-        <Box xcss={adfContentContainerStyle}>
-          <AdfRenderer document={cleaned} />
-        </Box>
-      </Stack>
-    );
-  }
-
-  // Plain text content
-  return (
-    <Stack space="space.200">
-      <UpdateAvailableBanner
-        isStale={isStale}
-        showDiffView={showDiffView}
-        setShowDiffView={setShowDiffView}
-        handleUpdateToLatest={handleUpdateToLatest}
-        isUpdating={isUpdating}
-        syncedContent={syncedContent}
-        latestRenderedContent={latestRenderedContent}
-        variableValues={variableValues}
-        toggleStates={toggleStates}
-      />
+      )}
       <DocumentationLinksDisplay documentationLinks={excerpt?.documentationLinks} />
-      <Box xcss={adfContentContainerStyle}>
-        {content && typeof content === 'object' && content.type === 'doc' ? (
-          <AdfRenderer document={content} />
-        ) : (
-          <Text>{content}</Text>
-        )}
+      <Box xcss={xcss({ position: 'relative' })}>
+        <StalenessCheckIndicator
+          isCheckingStaleness={isCheckingStaleness}
+          isStale={isStale}
+          onReviewClick={handleReviewClick}
+        />
+        <Box xcss={adfContentContainerStyle}>
+          {content && typeof content === 'object' && content.type === 'doc' ? (
+            <AdfRenderer document={content} />
+          ) : (
+            <Text>{content}</Text>
+          )}
+        </Box>
       </Box>
     </Stack>
   );

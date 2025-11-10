@@ -113,7 +113,7 @@ Content management system with reusable content blocks and variable substitution
 
 ## 🔧 Refactoring Progress (main branch)
 
-**Current Version:** 7.12.0
+**Current Version:** 7.15.0
 **Status:** ALL PHASES COMPLETE ✅ (Phases 1-7) - Merged to main
 
 This branch contains a major refactoring effort to modularize the monolithic `index.js` file into maintainable, organized resolver modules.
@@ -461,7 +461,7 @@ Each row contains:
 
 ## ✨ Features
 
-### Current Features (v7.12.0)
+### Current Features (v7.15.0)
 
 ✅ **ID-Based References** - UUID-based excerpt identification for rename-safe references
 
@@ -479,7 +479,7 @@ Each row contains:
 
 ✅ **Automatic Updates** - Includes update when Source excerpts are edited
 
-✅ **Staleness Detection** - Visual notifications when Source content has been updated since Include last synced
+✅ **Staleness Detection** - Progressive disclosure: subtle "Checking..." indicator during staleness check, prominent green "Review Update" button when updates available, full banner with diff view on user request
 
 ✅ **Diff View** - Side-by-side comparison of current cached content vs latest Source content with all tags visible
 
@@ -771,12 +771,23 @@ Internal Notes are designed to work with external content filtering for Salesfor
 - Collapsible panel for clean presentation
 
 ### Staleness Detection & Diff View
-When viewing a published page with Include macros, the app automatically detects if the Source excerpt has been updated since the Include was last synced:
+When viewing a published page with Include macros, the app automatically detects if the Source excerpt has been updated since the Include was last synced using a progressive disclosure pattern for optimal UX:
 
-**Update Available Banner:**
-- Green success banner appears when Source has been updated
-- Displays prominent "Update Available" heading
-- Shows descriptive text about the update
+**Progressive Disclosure Flow:**
+1. **Checking Phase (0-500ms):** Subtle gray monospace indicator appears in top-right corner showing "Checking for Source updates..." with spinner
+2. **Update Detected:** If Source has changed, indicator transforms into prominent green "Review Update" button
+3. **User Action:** Clicking "Review Update" reveals the full Update Available banner with diff view and update actions
+4. **Up-to-Date:** If Source unchanged, indicator disappears after check completes
+
+**Why Progressive Disclosure:**
+- Non-jarring user experience - no sudden banner appearances
+- Users control when to see update details
+- Subtle checking indicator doesn't distract from content
+- Green "Review" button is impossible to miss when updates are available
+
+**Update Available Banner (shown on user request):**
+- Green success banner with "Update Available" heading
+- Descriptive text about the update
 - Two action buttons: "Update" (primary) and "View Diff" (secondary)
 
 **How It Works (Hash-Based Detection):**
@@ -1079,6 +1090,7 @@ forge install --upgrade
 
 ## 📝 Development Log
 
+**v7.15.0** - Progressive Disclosure Staleness UI: Implemented subtle "Checking..." indicator during staleness check (8px gray monospace with spinner in top-right corner), added prominent green "Review Update" button when updates detected, implemented progressive disclosure pattern where UpdateAvailableBanner only appears on user request (not automatically), added jittered staleness check (0-500ms random delay) to prevent thundering herd when pages have many Embeds, created StalenessCheckIndicator component with position-relative wrapper for proper indicator placement
 **v4.300.1** - MultiExcerpt Migration: Added bulk excerpt initialization with excerpt-index support, cleaned up failed sync code (~173 lines removed), added migration reference scripts (clone-macros.js, migrate-content.js, migrate-macros.js, fix-excerpt-ids.js), created UUID mapping CSV for 147 migrated excerpts, enabled "View Source" functionality via sourcePageId, successfully migrated test page from MultiExcerpt to SmartExcerpt
 **v4.208.0** - Check All Includes Feature: Comprehensive Include verification system with real-time progress tracking (visual progress bar, ETA calculation, page-by-page status updates), CSV export of all Include instances with full metadata (page URLs, variable values, toggle states, rendered content), automatic cleanup of orphaned Include entries, broken reference detection, and staleness reporting
 **v4.300.0** - Comprehensive Admin UI: Added advanced search & filtering, excerpt usage reporting with variable/toggle display, bulk operations (mass category updates, push to all/specific pages), orphaned Source/Include detection with active checking and cleanup, category management UI (add/edit/delete/reorder), heading anchor navigation, usage deduplication, and timestamp tracking

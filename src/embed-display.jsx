@@ -51,6 +51,9 @@ import {
   useCachedContent
 } from './hooks/embed-hooks';
 
+// Import lazy loading hook
+import { useIntersectionObserver } from './hooks/use-intersection-observer';
+
 // Import UI components
 import { VariableConfigPanel } from './components/VariableConfigPanel';
 import { ToggleConfigPanel } from './components/ToggleConfigPanel';
@@ -116,12 +119,23 @@ const App = () => {
   const [selectedTabIndex, setSelectedTabIndex] = useState(0); // Track active tab (0=Write, 1=Alternatives, 2=Free Write)
   // View mode staleness detection state
   const [isStale, setIsStale] = useState(false);
+  const [isCheckingStaleness, setIsCheckingStaleness] = useState(false); // Tracks when staleness check is running
   const [sourceLastModified, setSourceLastModified] = useState(null);
   const [includeLastSynced, setIncludeLastSynced] = useState(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [showDiffView, setShowDiffView] = useState(false);
   const [latestRenderedContent, setLatestRenderedContent] = useState(null);
   const [syncedContent, setSyncedContent] = useState(null); // Old Source ADF from last sync for diff comparison
+
+  // Lazy loading - DISABLED for now due to Forge UI limitations
+  // Forge UI components don't expose real DOM nodes, so IntersectionObserver doesn't work
+  // TODO: Investigate alternative lazy loading approach compatible with Forge UI
+  const [containerRef, isVisible] = useIntersectionObserver({
+    threshold: 0.1,
+    rootMargin: '200px',
+    triggerOnce: true,
+    enabled: false // DISABLED - Forge UI doesn't support DOM refs for IntersectionObserver
+  });
 
   // Use React Query to fetch excerpt data (enabled in both edit and view modes)
   // We need excerpt metadata (like documentationLinks) in both modes
@@ -174,20 +188,6 @@ const App = () => {
   // Use excerptFromQuery when available (edit mode), fallback to manual state for view mode
   const excerpt = isEditing ? excerptFromQuery : excerptForViewMode;
 
-  // DEBUG: Log data flow to understand why View Mode doesn't have documentationLinks
-  useEffect(() => {
-    console.log('[embed-display] Mode and Data Sources:', {
-      isEditing,
-      hasExcerptFromQuery: !!excerptFromQuery,
-      hasExcerptForViewMode: !!excerptForViewMode,
-      excerptFromQueryHasDocLinks: !!excerptFromQuery?.documentationLinks,
-      excerptForViewModeHasDocLinks: !!excerptForViewMode?.documentationLinks,
-      finalExcerptHasDocLinks: !!excerpt?.documentationLinks,
-      excerptFromQueryKeys: excerptFromQuery ? Object.keys(excerptFromQuery) : 'null',
-      excerptForViewModeKeys: excerptForViewMode ? Object.keys(excerptForViewMode) : 'null'
-    });
-  }, [isEditing, excerptFromQuery, excerptForViewMode, excerpt]);
-
   // Load excerptId from React Query data
   useEffect(() => {
     if (variableValuesData && variableValuesData.excerptId) {
@@ -217,24 +217,19 @@ const App = () => {
     }
 
     const loadContent = async () => {
-      console.log('[embed-display loadContent] Function called. isEditing:', isEditing, ', hasExcerptFromQuery:', !!excerptFromQuery);
-
       // Wait for React Query to load the excerpt
       if (!excerptFromQuery) {
-        console.log('[embed-display loadContent] Early return - no excerptFromQuery');
         return;
       }
 
       // VIEW MODE: Just set excerptForViewMode and skip expensive processing
       // View Mode uses cached content, so we don't need to regenerate it
       if (!isEditing) {
-        console.log('[embed-display loadContent] View Mode - setting excerptForViewMode only');
         setExcerptForViewMode(excerptFromQuery);
         return;
       }
 
       // EDIT MODE: Full processing
-      console.log('[embed-display loadContent] Edit Mode - proceeding with full load. excerptFromQuery:', excerptFromQuery);
       setIsRefreshing(true);
 
       try {
@@ -395,23 +390,32 @@ const App = () => {
     return () => clearTimeout(timeoutId);
   }, [variableValues, toggleStates, customInsertions, internalNotes, isEditing, effectiveLocalId, selectedExcerptId, excerpt]);
 
-  // Check for staleness in view mode
+  // Check for staleness in view mode immediately after render, with jitter for performance
+  // Starts as soon as content is available, jitter spreads out requests across multiple Embeds
   useEffect(() => {
+    // Skip staleness check in edit mode or if missing data
     if (isEditing || !content || !selectedExcerptId || !effectiveLocalId) {
       return;
     }
 
+    // Add small random jitter (0-500ms) to spread out checks when page has many Embeds
+    // This prevents thundering herd while still starting check immediately after render
+    const jitter = Math.random() * 500; // 0-500ms
+
     const checkStaleness = async () => {
+      setIsCheckingStaleness(true); // Start checking
       try {
         // Get excerpt metadata to check contentHash
         const excerptResult = await invoke('getExcerpt', { excerptId: selectedExcerptId });
         if (!excerptResult.success || !excerptResult.excerpt) {
+          setIsCheckingStaleness(false);
           return;
         }
 
         // Get variable values to check syncedContentHash
         const varsResult = await invoke('getVariableValues', { localId: effectiveLocalId });
         if (!varsResult.success) {
+          setIsCheckingStaleness(false);
           return;
         }
 
@@ -450,12 +454,21 @@ const App = () => {
           setVariableValues(varsResult.variableValues || {});
           setToggleStates(varsResult.toggleStates || {});
         }
+
+        setIsCheckingStaleness(false); // Check complete
       } catch (err) {
         console.error('[Include] Staleness check error:', err);
+        setIsCheckingStaleness(false); // Check complete (with error)
       }
     };
 
-    checkStaleness();
+    // Start staleness check with jitter to spread out requests
+    const timeoutId = setTimeout(() => {
+      checkStaleness();
+    }, jitter);
+
+    // Cleanup timeout on unmount or dependency change
+    return () => clearTimeout(timeoutId);
   }, [content, isEditing, selectedExcerptId, effectiveLocalId]);
 
   // Handler for excerpt selection from Select (must be defined before early returns)
@@ -533,6 +546,12 @@ const App = () => {
     if (!excerpt) return content;
 
     let previewContent = excerpt.content;
+
+    // Handle null/undefined content
+    if (!previewContent) {
+      return content || '';
+    }
+
     const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
     if (isAdf) {
@@ -569,6 +588,12 @@ const App = () => {
     if (!excerpt) return content;
 
     let previewContent = excerpt.content;
+
+    // Handle null/undefined content
+    if (!previewContent) {
+      return content || '';
+    }
+
     const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
     if (isAdf) {
@@ -716,6 +741,7 @@ const App = () => {
     <EmbedViewMode
       content={content}
       isStale={isStale}
+      isCheckingStaleness={isCheckingStaleness}
       showDiffView={showDiffView}
       setShowDiffView={setShowDiffView}
       handleUpdateToLatest={handleUpdateToLatest}
