@@ -46,7 +46,8 @@ import {
   useCheckAllIncludesMutation,
   usePushUpdatesToPageMutation,
   usePushUpdatesToAllMutation,
-  useAllUsageCountsQuery
+  useAllUsageCountsQuery,
+  useCreateTestPageMutation
 } from './hooks/admin-hooks';
 
 // Import utility functions
@@ -58,6 +59,9 @@ import {
   sortExcerpts,
   calculateStalenessStatus
 } from './utils/admin-utils';
+
+// Import components
+import { MigrationModal } from './components/MigrationModal';
 
 // Import admin UI components
 import { ExcerptListSidebar } from './components/admin/ExcerptListSidebar';
@@ -139,6 +143,7 @@ const App = () => {
   const checkAllIncludesMutation = useCheckAllIncludesMutation();
   const pushToPageMutation = usePushUpdatesToPageMutation();
   const pushToAllMutation = usePushUpdatesToAllMutation();
+  const createTestPageMutation = useCreateTestPageMutation();
 
   // Fetch all usage counts (for sorting)
   const { data: usageCounts = {} } = useAllUsageCountsQuery();
@@ -174,7 +179,7 @@ const App = () => {
   const [multiExcerptScanResult, setMultiExcerptScanResult] = useState(null);
   const [multiExcerptProgress, setMultiExcerptProgress] = useState(null);
   const [multiExcerptProgressId, setMultiExcerptProgressId] = useState(null);
-  const [importJsonData, setImportJsonData] = useState('');
+  const [migrationPageId, setMigrationPageId] = useState('');
   const [migrationSpaceKey, setMigrationSpaceKey] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
@@ -188,6 +193,9 @@ const App = () => {
   const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [newCategoryName, setNewCategoryName] = useState('');
+
+  // Migration Modal UI
+  const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
 
   // Convert excerptsError to string for display
   const error = excerptsError ? String(excerptsError.message || 'Unknown error') : null;
@@ -335,10 +343,15 @@ const App = () => {
       message += `• ${result.activeCount} active Standard(s)\n`;
       message += `• ${result.orphanedSources.length} orphaned Standard(s)`;
 
+      if (result.contentConversionsCount > 0) {
+        message += `\n\n🔄 Format conversion:\n`;
+        message += `• ${result.contentConversionsCount} Standard(s) converted from Storage Format to ADF JSON`;
+      }
+
       if (result.staleEntriesRemoved > 0) {
         message += `\n\n🧹 Cleanup complete:\n`;
         message += `• ${result.staleEntriesRemoved} stale Embed entry/entries removed`;
-      } else {
+      } else if (result.contentConversionsCount === 0) {
         message += `\n\n✨ No stale Embed entries found`;
       }
 
@@ -347,6 +360,34 @@ const App = () => {
     } catch (err) {
       console.error('[REACT-QUERY-ADMIN] Check Sources error:', err);
       alert('Error checking sources: ' + err.message);
+    }
+  };
+
+  const handleCreateTestPage = async () => {
+    try {
+      console.log('[REACT-QUERY-ADMIN] 🧪 Creating test page with 148 Embeds...');
+      const result = await createTestPageMutation.mutateAsync({ pageId: '84803640' });
+
+      const message = `✅ Test page created successfully!\n\n` +
+        `• Page ID: ${result.pageId}\n` +
+        `• Embed count: ${result.embedCount}\n` +
+        `• Ready for performance testing`;
+
+      console.log(message);
+      alert(message);
+    } catch (err) {
+      console.error('[REACT-QUERY-ADMIN] Create Test Page error:', err);
+      alert('Error creating test page: ' + err.message);
+    }
+  };
+
+  const handleCheckFormat = async (excerptName) => {
+    try {
+      const result = await invoke('getOneExcerptData', { excerptName });
+      alert(result.message || 'Check forge logs for output');
+    } catch (err) {
+      console.error('[REACT-QUERY-ADMIN] Check Format error:', err);
+      alert('Error: ' + err.message);
     }
   };
 
@@ -897,113 +938,6 @@ const App = () => {
     }
   };
 
-  // Handle importing from parsed JSON
-  const handleImportFromJson = async () => {
-    if (!importJsonData.trim()) {
-      alert('Please paste the JSON data from multiexcerpt-import-data.json');
-      return;
-    }
-
-    let parsedData;
-    try {
-      parsedData = JSON.parse(importJsonData);
-    } catch (err) {
-      alert(`Invalid JSON: ${err.message}`);
-      return;
-    }
-
-    if (!parsedData.sources || !Array.isArray(parsedData.sources)) {
-      alert('Invalid JSON format: Missing "sources" array');
-      return;
-    }
-
-    const confirmed = confirm(
-      `Import ${parsedData.sources.length} Blueprint Standards from JSON?\n\n` +
-      `This will:\n` +
-      `• DELETE all previously migrated Blueprint Standards\n` +
-      `• Create ${parsedData.sources.length} new Blueprint Standards\n` +
-      `• Store them in the "Migrated from MultiExcerpt" category\n\n` +
-      `⚠️  This operation will delete existing migrated standards. Continue?`
-    );
-
-    if (!confirmed) return;
-
-    setIsConverting(true);
-    setConversionResult(null);
-
-    try {
-      console.log(`Starting migration job for ${parsedData.sources.length} Blueprint Standards...`);
-
-      // Start the async job
-      const startResult = await invoke('startMigrationJob', {
-        sources: parsedData.sources,
-        deleteOldMigrations: true,
-        spaceKey: migrationSpaceKey.trim() || null
-      });
-
-      if (!startResult.success) {
-        alert('Failed to start migration job');
-        setIsConverting(false);
-        return;
-      }
-
-      const jobId = startResult.jobId;
-      console.log(`Migration job started: ${jobId}`);
-      alert(`Migration job started (ID: ${jobId})\n\nProcessing ${parsedData.sources.length} standards...\n\nThis page will auto-refresh when complete.`);
-
-      // Poll for job completion
-      const pollInterval = setInterval(async () => {
-        try {
-          const status = await invoke('getMigrationJobStatus', { jobId });
-
-          if (status.status === 'completed') {
-            clearInterval(pollInterval);
-            setIsConverting(false);
-
-            if (status.success) {
-              let message = `✅ Migration completed!\n\n`;
-              message += `• ${status.summary.imported} Blueprint Standard(s) imported\n`;
-              if (status.summary.skipped > 0) {
-                message += `• ${status.summary.skipped} skipped\n`;
-              }
-              if (status.summary.pageId) {
-                message += `• Page created (ID: ${status.summary.pageId})\n`;
-              }
-              message += `\nStandards now appear in the Admin UI table below.`;
-
-              if (status.pageUrl) {
-                message += `\n\nPage: ${status.pageUrl}`;
-              }
-
-              alert(message);
-              window.location.reload();
-            } else {
-              alert(`Migration failed: ${status.error}`);
-            }
-          } else if (status.status === 'failed') {
-            clearInterval(pollInterval);
-            setIsConverting(false);
-            alert(`Migration failed: ${status.error}`);
-          }
-          // else status is 'pending', keep polling
-        } catch (pollError) {
-          console.error('Error polling job status:', pollError);
-        }
-      }, 3000); // Poll every 3 seconds
-
-    } catch (error) {
-      alert('Failed to start migration: ' + error.message);
-      setIsConverting(false);
-      return;
-    }
-
-    } catch (error) {
-      console.error('Error starting migration:', error);
-      alert('Error: ' + error.message);
-      setIsConverting(false);
-    }
-  };
-
   // Lazy load usage data for a specific excerpt
   // NOTE: loadUsageForExcerpt is now handled by useExcerptUsageQuery hook
   // Each component that needs usage data calls the hook with the excerptId
@@ -1049,119 +983,25 @@ const App = () => {
     <Fragment>
       {/* Page Header */}
       <Box xcss={sectionSeparatorStyles}>
-        <Inline space="space.200" alignBlock="center" spread="space-between">
-          <Text><Strong>Blueprint Standards Admin v{APP_VERSION}</Strong></Text>
-          <Button
-            appearance="primary"
-            onClick={() => setIsCategoryModalOpen(true)}
-          >
-            Manage Categories
-          </Button>
-        </Inline>
+        <Text><Strong>Blueprint Standards Admin v{APP_VERSION}</Strong></Text>
       </Box>
 
-      {/* Top Toolbar - Filters and Actions */}
+      {/* Top Toolbar - Action Buttons */}
       <Box xcss={sectionMarginStyles}>
-        <Inline space="space.200" alignBlock="center" spread="space-between">
-          {/* Left side - bulk initialization button (hidden via feature flag) */}
-          {SHOW_MIGRATION_TOOLS && (
-            <Box>
-              <Button
-                appearance="warning"
-                isDisabled={isInitializing}
-                onClick={async () => {
-                  if (!confirm('Initialize all 147 excerpts? This will set their names based on the CSV mapping.')) {
-                    return;
-                  }
-
-                  setIsInitializing(true);
-                  try {
-                    const result = await invoke('bulkInitializeAllExcerpts', {});
-                    console.log('Bulk init result:', result);
-                    alert(`Success! Initialized ${result.successful} out of ${result.total} Blueprint Standards.`);
-
-                    // Refresh the page to show updated names
-                    window.location.reload();
-                  } catch (error) {
-                    console.error('Bulk init error:', error);
-                    alert(`Error: ${error.message}`);
-                  } finally {
-                    setIsInitializing(false);
-                  }
-                }}
-              >
-                Bulk Initialize All Standards
-              </Button>
-            </Box>
-          )}
-
-          {/* Right side - filters and buttons */}
-          <AdminToolbar
-            searchTerm={searchTerm}
-            setSearchTerm={setSearchTerm}
-            categoryFilter={categoryFilter}
-            setCategoryFilter={setCategoryFilter}
-            sortBy={sortBy}
-            setSortBy={setSortBy}
-            categories={categories}
-            onCheckAllSources={handleCheckAllSources}
-            isCheckingAllSources={checkAllSourcesMutation.isPending}
-            onCheckAllIncludes={handleCheckAllIncludes}
-            isCheckingIncludes={includesProgress !== null}
-            lastVerificationTime={lastVerificationTime}
-            formatTimestamp={formatTimestamp}
-            selectStyles={selectStyles}
-            showMigrationTools={SHOW_MIGRATION_TOOLS}
-            onScanMultiExcerpt={handleScanMultiExcerptIncludes}
-            isScanningMultiExcerpt={isScanningMultiExcerpt}
-          />
-        </Inline>
+        <AdminToolbar
+          onOpenMigrationModal={() => setIsMigrationModalOpen(true)}
+          showMigrationTools={SHOW_MIGRATION_TOOLS}
+          onOpenCategoryModal={() => setIsCategoryModalOpen(true)}
+          onCheckAllSources={handleCheckAllSources}
+          isCheckingAllSources={checkAllSourcesMutation.isPending}
+          onCheckAllIncludes={handleCheckAllIncludes}
+          isCheckingIncludes={includesProgress !== null}
+          lastVerificationTime={lastVerificationTime}
+          formatTimestamp={formatTimestamp}
+          onCreateTestPage={handleCreateTestPage}
+          isCreatingTestPage={createTestPageMutation.isPending}
+        />
       </Box>
-
-      {/* ONE-TIME MIGRATION: Import from parsed JSON */}
-      {SHOW_MIGRATION_TOOLS && (
-        <Box xcss={sectionMarginStyles}>
-          <SectionMessage appearance="information">
-            <Stack space="space.200">
-              <Text><Strong>🔄 Import from MultiExcerpt JSON</Strong></Text>
-              <Text>Paste the contents of multiexcerpt-import-data.json to create Blueprint Standards. This will delete any previously migrated standards.</Text>
-
-              <Textfield
-                placeholder='Space Key or ID (e.g., ~5bb22d3a... or 123456)'
-                value={migrationSpaceKey}
-                onChange={(e) => setMigrationSpaceKey(e.target.value)}
-                label="Confluence Space Key or ID (optional - will auto-detect if not provided)"
-              />
-
-              <TextArea
-                placeholder='Paste JSON from multiexcerpt-import-data.json here...'
-                value={importJsonData}
-                onChange={(e) => setImportJsonData(e.target.value)}
-                resize="vertical"
-                minimumRows={8}
-              />
-
-              <Inline space="space.200" alignBlock="center">
-                <Button
-                  appearance="primary"
-                  onClick={handleImportFromJson}
-                  isDisabled={isConverting || !importJsonData.trim()}
-                >
-                  {isConverting ? 'Importing...' : '📥 Import Blueprint Standards'}
-                </Button>
-
-                {conversionResult && (
-                  <Text>
-                    <Strong>✅ Imported {conversionResult.summary.imported} standard(s)</Strong>
-                  </Text>
-                )}
-              </Inline>
-
-              <Text><Em>This will create storage entries, a new page with Source macros, and make them immediately available.</Em></Text>
-            </Stack>
-          </SectionMessage>
-        </Box>
-      )}
 
       {/* Progress Bar for Check All Includes */}
       <CheckAllProgressBar
@@ -1229,18 +1069,21 @@ const App = () => {
         <ExcerptListSidebar
           sortedExcerpts={sortedExcerpts}
           searchTerm={searchTerm}
+          setSearchTerm={setSearchTerm}
           categoryFilter={categoryFilter}
+          setCategoryFilter={setCategoryFilter}
+          sortBy={sortBy}
+          setSortBy={setSortBy}
+          categories={categories}
           selectedExcerptForDetails={selectedExcerptForDetails}
           setSelectedExcerptForDetails={setSelectedExcerptForDetails}
           xcss={leftSidebarStyles}
+          selectStyles={selectStyles}
         />
 
         {/* Middle Section - Excerpt Details with Inline Editing */}
         <Box xcss={middleSectionStyles}>
           {(() => {
-            console.log('Middle section rendering, selectedExcerptForDetails:', selectedExcerptForDetails?.name);
-            console.log('Full excerpt object:', selectedExcerptForDetails);
-
             if (!selectedExcerptForDetails) {
               return (
                 <Box>
@@ -1251,7 +1094,6 @@ const App = () => {
 
             try {
               const usage = selectedExcerptUsage || [];
-              console.log('Usage data for excerpt:', usage.length, 'entries');
 
               const hasVariables = Array.isArray(selectedExcerptForDetails.variables) && selectedExcerptForDetails.variables.length > 0;
               const hasToggles = Array.isArray(selectedExcerptForDetails.toggles) && selectedExcerptForDetails.toggles.length > 0;
@@ -1323,6 +1165,12 @@ const App = () => {
                           onClick={() => setShowPreviewModal(selectedExcerptForDetails.id)}
                         >
                           Preview Content
+                        </Button>
+                        <Button
+                          appearance="subtle"
+                          onClick={() => handleCheckFormat(selectedExcerptForDetails.name)}
+                        >
+                          🔍 Check Format (Logs)
                         </Button>
                         <Button
                           appearance="default"
@@ -1504,14 +1352,6 @@ const App = () => {
                         const excerptLastModified = new Date(selectedExcerptForDetails.updatedAt || 0);
                         const includeLastSynced = ref.lastSynced ? new Date(ref.lastSynced) : new Date(0);
                         const isStale = excerptLastModified > includeLastSynced;
-
-                        console.log(`📊 Status check for ${ref.pageTitle}:`, {
-                          excerptUpdatedAt: selectedExcerptForDetails.updatedAt,
-                          includeLastSynced: ref.lastSynced,
-                          excerptLastModified: excerptLastModified.toISOString(),
-                          includeLastSyncedDate: includeLastSynced.toISOString(),
-                          isStale
-                        });
 
                         rowCells.push({
                           key: 'status',
@@ -1985,6 +1825,13 @@ const App = () => {
         setShowPreviewModal={setShowPreviewModal}
         excerpts={excerpts}
         previewBoxStyle={previewBoxStyle}
+      />
+
+      {/* Migration Tools Modal */}
+      <MigrationModal
+        isOpen={isMigrationModalOpen}
+        onClose={() => setIsMigrationModalOpen(false)}
+        defaultPageId="99909654"
       />
     </Fragment>
   );

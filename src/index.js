@@ -1,6 +1,7 @@
 import Resolver from '@forge/resolver';
-import { storage, startsWith, queue } from '@forge/api';
+import { storage, startsWith } from '@forge/api';
 import api, { route } from '@forge/api';
+import { Queue } from '@forge/events';
 import { generateUUID } from './utils.js';
 
 // Import utility functions from modular files
@@ -90,7 +91,15 @@ import {
   convertMultiExcerptsOnPage as convertMultiExcerptsOnPageResolver,
   importFromParsedJson as importFromParsedJsonResolver,
   bulkInitializeAllExcerpts as bulkInitializeAllExcerptsResolver,
-  testMultiExcerptPageFetch as testMultiExcerptPageFetchResolver
+  populateSourceContent as populateSourceContentResolver,
+  testMultiExcerptPageFetch as testMultiExcerptPageFetchResolver,
+  migrateStep1CloneMacros as migrateStep1CloneMacrosResolver,
+  migrateStep2MigrateContent as migrateStep2MigrateContentResolver,
+  migrateStep3FixExcerptIds as migrateStep3FixExcerptIdsResolver,
+  createTestEmbedsPage as createTestEmbedsPageResolver,
+  dumpFirstSourceMacro as dumpFirstSourceMacroResolver,
+  getOneExcerptData as getOneExcerptDataResolver,
+  diagnosePageAdfStructure as diagnosePageAdfStructureResolver
 } from './resolvers/migration-resolvers.js';
 
 const resolver = new Resolver();
@@ -233,12 +242,21 @@ resolver.define('startMigrationJob', async (req) => {
 
   console.log(`Starting migration job ${jobId} with ${sources.length} sources`);
 
-  // Enqueue the job
-  await queue.push('migration-queue', {
-    sources,
-    deleteOldMigrations,
-    spaceKey,
-    jobId
+  // Initialize job status in storage
+  await storage.set(`migration-job:${jobId}`, {
+    status: 'pending',
+    queuedAt: new Date().toISOString()
+  });
+
+  // Enqueue the job using Queue class
+  const queue = new Queue({ key: 'migration-queue' });
+  await queue.push({
+    body: {
+      sources,
+      deleteOldMigrations,
+      spaceKey,
+      jobId
+    }
   });
 
   return {
@@ -261,9 +279,501 @@ resolver.define('getMigrationJobStatus', async (req) => {
 
 // Bulk initialize all excerpts with hardcoded name-UUID mappings (ONE-TIME USE)
 resolver.define('bulkInitializeAllExcerpts', bulkInitializeAllExcerptsResolver);
+resolver.define('populateSourceContent', populateSourceContentResolver);
+
+// UI-based migration steps (NO API TOKENS REQUIRED)
+resolver.define('migrateStep1CloneMacros', migrateStep1CloneMacrosResolver);
+resolver.define('migrateStep2MigrateContent', migrateStep2MigrateContentResolver);
+resolver.define('migrateStep3FixExcerptIds', migrateStep3FixExcerptIdsResolver);
+
+// Performance testing: Create test page with 148 Embeds (TESTING ONLY)
+resolver.define('createTestEmbedsPage', createTestEmbedsPageResolver);
+
+// Diagnostic: Dump first Source macro XML structure (DIAGNOSTIC)
+resolver.define('dumpFirstSourceMacro', dumpFirstSourceMacroResolver);
+
+// Diagnostic: Get one excerpt's data from storage (DIAGNOSTIC)
+resolver.define('getOneExcerptData', getOneExcerptDataResolver);
+
+// Diagnostic: Analyze page ADF structure to understand macro layout (DIAGNOSTIC)
+resolver.define('diagnosePageAdfStructure', diagnosePageAdfStructureResolver);
 
 // Test function: Fetch a page and analyze MultiExcerpt content availability (DIAGNOSTIC)
 resolver.define('testMultiExcerptPageFetch', testMultiExcerptPageFetchResolver);
+
+// Delete test migration pages (ONE-TIME CLEANUP)
+resolver.define('deleteTestMigrationPages', async (req) => {
+  const { spaceKey } = req.payload;
+
+  try {
+    // Use CQL search to find pages with "Blueprint Standard -" in title
+    // Use single quotes for CQL values and escape properly
+    const cql = `type=page AND space.key='${spaceKey}' AND title~'Blueprint Standard'`;
+    const searchResponse = await api.asApp().requestConfluence(
+      route`/wiki/rest/api/content/search?cql=${encodeURIComponent(cql)}&limit=100`
+    );
+
+    if (!searchResponse.ok) {
+      const errorText = await searchResponse.text();
+      return { success: false, error: `Search failed: ${searchResponse.status} - ${errorText}` };
+    }
+
+    const searchData = await searchResponse.json();
+    const pagesToDelete = searchData.results || [];
+
+    console.log(`Found ${pagesToDelete.length} test pages to delete`);
+
+    const deleted = [];
+    const errors = [];
+
+    for (const page of pagesToDelete) {
+      try {
+        const deleteResponse = await api.asApp().requestConfluence(
+          route`/wiki/api/v2/pages/${page.id}`,
+          { method: 'DELETE' }
+        );
+
+        if (deleteResponse.ok) {
+          deleted.push(page.id);
+          console.log(`Deleted page ${page.id}: ${page.title}`);
+        } else {
+          errors.push({ pageId: page.id, title: page.title, error: deleteResponse.status });
+        }
+      } catch (err) {
+        errors.push({ pageId: page.id, title: page.title, error: err.message });
+      }
+    }
+
+    return {
+      success: true,
+      deleted: deleted.length,
+      errors: errors.length,
+      deletedPages: deleted,
+      errorPages: errors
+    };
+
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Start ADF Migration: Fetch page, extract MultiExcerpt macros, convert to ADF, create pages (ONE-TIME USE)
+resolver.define('startAdfMigration', async (req) => {
+  const { sourcePageId, spaceKey } = req.payload;
+  const jobId = generateUUID();
+
+  console.log(`Starting ADF migration job ${jobId} for page ${sourcePageId}`);
+
+  try {
+    // Initialize job status in storage
+    await storage.set(`migration-job:${jobId}`, {
+      status: 'pending',
+      queuedAt: new Date().toISOString(),
+      sourcePageId,
+      spaceKey
+    });
+
+    // Enqueue the ADF migration job
+    const queue = new Queue({ key: 'migration-queue' });
+    await queue.push({
+      body: {
+        jobId,
+        sourcePageId,
+        spaceKey,
+        jobType: 'adf-migration'  // Distinguish from old migration type
+      }
+    });
+
+    return {
+      success: true,
+      jobId
+    };
+  } catch (error) {
+    console.error(`Failed to start ADF migration job:`, error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// Delete all migrated sources from storage (ONE-TIME USE CLEANUP)
+resolver.define('deleteAllMigratedSources', async (req) => {
+  const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
+  const toDelete = [];
+
+  for (const excerptSummary of excerptIndex.excerpts) {
+    const excerpt = await storage.get(`excerpt:${excerptSummary.id}`);
+    if (excerpt && excerpt.category === 'Migrated from MultiExcerpt') {
+      toDelete.push(excerpt.id);
+      await storage.delete(`excerpt:${excerpt.id}`);
+    }
+  }
+
+  // Update index to remove deleted excerpts
+  const updatedIndex = {
+    excerpts: excerptIndex.excerpts.filter(e => !toDelete.includes(e.id))
+  };
+  await storage.set('excerpt-index', updatedIndex);
+
+  return {
+    success: true,
+    deleted: toDelete.length,
+    deletedIds: toDelete
+  };
+});
+
+/**
+ * Extract Forge extension metadata template from a working Blueprint Standard Source page
+ * This metadata includes all the extensionProperties, environment info, etc. that Forge needs
+ */
+async function extractForgeMetadataTemplate(workingPageId) {
+  try {
+    const response = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${workingPageId}?body-format=atlas_doc_format`
+    );
+    const page = await response.json();
+    const adf = JSON.parse(page.body.atlas_doc_format.value);
+
+    // Find the bodiedExtension node (Blueprint Standard Source macro)
+    const extension = adf.content.find(node => node.type === 'bodiedExtension');
+    if (!extension || !extension.attrs) {
+      throw new Error('No bodiedExtension found in working page');
+    }
+
+    // Extract the template metadata we need to reuse
+    return {
+      extensionKey: extension.attrs.extensionKey,
+      extensionId: extension.attrs.parameters.extensionId,
+      extensionTitle: extension.attrs.parameters.extensionTitle,
+      text: extension.attrs.text,
+      extensionProperties: extension.attrs.parameters.extensionProperties,
+      forgeEnvironment: extension.attrs.parameters.forgeEnvironment,
+      render: extension.attrs.parameters.render
+    };
+  } catch (error) {
+    console.error('Failed to extract Forge metadata template:', error);
+    throw error;
+  }
+}
+
+/**
+ * Transform MultiExcerpt ADF to Blueprint Standard Source ADF
+ * Uses Forge metadata template extracted from a working page
+ */
+function transformToBlueprintStandardAdf(multiExcerptAdf, excerptId, excerptName, category, localId, forgeMetadata) {
+  // Extract the inner content from the MultiExcerpt bodiedExtension
+  const innerContent = multiExcerptAdf.content[0].content;
+
+  // Build Blueprint Standard Source macro ADF structure with complete Forge metadata
+  return {
+    type: 'doc',
+    content: [{
+      type: 'bodiedExtension',
+      attrs: {
+        layout: 'default',
+        extensionType: 'com.atlassian.ecosystem',
+        extensionKey: forgeMetadata.extensionKey,  // Full path with environment ID
+        text: forgeMetadata.text,  // "Blueprint Standard - Source"
+        parameters: {
+          layout: 'bodiedExtension',
+          guestParams: {
+            variables: [],  // Detect from content later if needed
+            excerptId: excerptId,
+            toggles: [],  // Detect from content later if needed
+            category: category || 'General',
+            excerptName: excerptName
+          },
+          forgeEnvironment: forgeMetadata.forgeEnvironment,
+          extensionProperties: forgeMetadata.extensionProperties,
+          localId: localId,
+          extensionId: forgeMetadata.extensionId,
+          render: forgeMetadata.render,
+          extensionTitle: forgeMetadata.extensionTitle
+        },
+        localId: localId
+      },
+      content: innerContent  // Use the converted content from MultiExcerpt
+    }],
+    version: 1
+  };
+}
+
+// Test content conversion with hardcoded example and transform to Blueprint Standard (DIAGNOSTIC)
+resolver.define('testHardcodedConversion', async (req) => {
+  const content = '<ac:structured-macro ac:name="multiexcerpt-macro" ac:schema-version="1" data-layout="default" ac:local-id="985f5450-4cdf-4d0b-a03d-600f8df78455" ac:macro-id="d1f16605-d998-4b76-a585-5c62b68285f2"><ac:parameter ac:name="hidden">false</ac:parameter><ac:parameter ac:name="name">Test0</ac:parameter><ac:parameter ac:name="fallback">false</ac:parameter><ac:rich-text-body><p>{{client}} 12345.</p></ac:rich-text-body></ac:structured-macro>';
+
+  console.log('Testing hardcoded MultiExcerpt conversion + transformation');
+  console.log('Input length:', content.length);
+
+  try {
+    // Step 0: Extract Forge metadata template from a working page
+    console.log('Step 0: Extracting Forge metadata template from working page...');
+    const forgeMetadata = await extractForgeMetadataTemplate('64880643');
+    console.log('Step 0: Forge metadata extracted:', JSON.stringify(forgeMetadata, null, 2));
+
+    // Step 1: Convert MultiExcerpt storage to ADF
+    const response = await api.asApp().requestConfluence(
+      route`/wiki/rest/api/contentbody/convert/atlas_doc_format`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          value: content,
+          representation: 'storage'
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Conversion failed:', errorText);
+      return {
+        success: false,
+        error: `Conversion failed: ${response.status}`,
+        details: errorText
+      };
+    }
+
+    const conversionResult = await response.json();
+    console.log('Step 1: Conversion result:', JSON.stringify(conversionResult, null, 2));
+
+    // Parse the stringified ADF from the value property
+    const multiExcerptAdf = JSON.parse(conversionResult.value);
+    console.log('Step 1b: Parsed MultiExcerpt ADF:', JSON.stringify(multiExcerptAdf, null, 2));
+
+    // Step 2: Transform to Blueprint Standard ADF with complete Forge metadata
+    const blueprintAdf = transformToBlueprintStandardAdf(
+      multiExcerptAdf,
+      '01ea4f7a-265c-4972-8e70-de92a50d4d6e',  // Test excerpt ID
+      'Test0',  // Test excerpt name
+      'Test Category',  // Category
+      generateUUID(),  // Generate new local ID for the Source macro
+      forgeMetadata  // Complete Forge metadata from working page
+    );
+
+    console.log('Step 2: Blueprint Standard ADF:', JSON.stringify(blueprintAdf, null, 2));
+
+    // Step 3: Create a test page with the Blueprint Standard ADF
+    const spaceId = '163842'; // Your space ID
+    const pageTitle = `Blueprint Standard Test - ${new Date().toISOString()}`;
+
+    console.log('Step 3: Creating test page...');
+
+    const createPageResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          spaceId: spaceId,
+          status: 'current',
+          title: pageTitle,
+          body: {
+            representation: 'atlas_doc_format',
+            value: JSON.stringify(blueprintAdf)  // Stringify the ADF
+          }
+        })
+      }
+    );
+
+    if (!createPageResponse.ok) {
+      const errorText = await createPageResponse.text();
+      console.error('Page creation failed:', errorText);
+      return {
+        success: false,
+        step: 'page_creation',
+        error: `Page creation failed: ${createPageResponse.status}`,
+        details: errorText,
+        blueprintAdf: blueprintAdf
+      };
+    }
+
+    const newPage = await createPageResponse.json();
+    console.log('Step 3: Page created successfully!', newPage.id);
+
+    return {
+      success: true,
+      input: content,
+      forgeMetadata: forgeMetadata,
+      multiExcerptAdf: multiExcerptAdf,
+      blueprintAdf: blueprintAdf,
+      pageId: newPage.id,
+      pageUrl: `/wiki/spaces/~5bb22d3a0958e968ce8153a3/pages/${newPage.id}`
+    };
+
+  } catch (error) {
+    console.error('Conversion error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// Compare working vs broken page ADF (DIAGNOSTIC)
+resolver.define('comparePageAdf', async (req) => {
+  const { workingPageId, brokenPageId } = req.payload;
+
+  try {
+    // Fetch working page ADF
+    const workingResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${workingPageId}?body-format=atlas_doc_format`
+    );
+    const workingPage = await workingResponse.json();
+
+    // Fetch broken page ADF
+    const brokenResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${brokenPageId}?body-format=atlas_doc_format`
+    );
+    const brokenPage = await brokenResponse.json();
+
+    console.log('Working page ADF:', workingPage.body.atlas_doc_format.value);
+    console.log('Broken page ADF:', brokenPage.body.atlas_doc_format.value);
+
+    return {
+      success: true,
+      workingAdf: JSON.parse(workingPage.body.atlas_doc_format.value),
+      brokenAdf: JSON.parse(brokenPage.body.atlas_doc_format.value)
+    };
+
+  } catch (error) {
+    console.error('Comparison error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// Test content conversion with direct input (DIAGNOSTIC)
+resolver.define('testDirectConversion', async (req) => {
+  const { content } = req.payload;
+
+  console.log('Testing direct conversion');
+  console.log('Input length:', content.length);
+
+  try {
+    const response = await api.asApp().requestConfluence(
+      route`/wiki/rest/api/contentbody/convert/atlas_doc_format`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          value: content,
+          representation: 'storage'
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Conversion failed:', errorText);
+      return {
+        success: false,
+        error: `Conversion failed: ${response.status}`,
+        details: errorText
+      };
+    }
+
+    const result = await response.json();
+    console.log('Conversion successful!');
+    console.log('Result:', JSON.stringify(result, null, 2));
+
+    return {
+      success: true,
+      input: content,
+      output: result
+    };
+
+  } catch (error) {
+    console.error('Conversion error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
+
+// Test content conversion API by name (DIAGNOSTIC)
+resolver.define('testContentConversionByName', async (req) => {
+  const { name } = req.payload;
+
+  // Find excerpt by name
+  const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
+  const excerptSummary = excerptIndex.excerpts.find(e => e.name === name);
+
+  if (!excerptSummary) {
+    return { success: false, error: `Excerpt not found with name: ${name}` };
+  }
+
+  // Get full excerpt from storage
+  const excerpt = await storage.get(`excerpt:${excerptSummary.id}`);
+  if (!excerpt) {
+    return { success: false, error: 'Excerpt not found in storage' };
+  }
+
+  console.log(`Testing conversion for: ${name}`);
+  console.log('Original content length:', excerpt.content.length);
+  console.log('First 200 chars:', excerpt.content.substring(0, 200));
+
+  try {
+    // Call Confluence conversion API
+    const response = await api.asApp().requestConfluence(
+      route`/wiki/rest/api/contentbody/convert/atlas_doc_format`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          value: excerpt.content,
+          representation: 'storage'
+        })
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Conversion failed:', errorText);
+      return {
+        success: false,
+        error: `Conversion failed: ${response.status}`,
+        details: errorText,
+        originalContent: excerpt.content
+      };
+    }
+
+    const result = await response.json();
+    console.log('Converted to ADF successfully');
+    console.log('ADF result:', JSON.stringify(result).substring(0, 200));
+
+    return {
+      success: true,
+      excerptName: name,
+      excerptId: excerptSummary.id,
+      original: excerpt.content,
+      converted: result
+    };
+
+  } catch (error) {
+    console.error('Conversion error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+});
 
 // ============================================================================
 // END OF MIGRATION RESOLVERS - DELETE ABOVE SECTION AFTER PRODUCTION MIGRATION

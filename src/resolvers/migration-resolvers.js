@@ -875,7 +875,86 @@ export async function convertMultiExcerptsOnPage(req) {
 export async function bulkInitializeAllExcerpts(req) {
   console.log('🚀 Starting bulk initialization of all excerpts...');
 
-  const mappings = [
+  // Get page ID from request payload (defaults to 99909654 for backward compatibility)
+  const PAGE_ID = req.payload?.pageId || '99909654';
+  console.log(`📡 Fetching page ${PAGE_ID}...`);
+
+  const pageResponse = await api.asApp().requestConfluence(
+    route`/wiki/api/v2/pages/${PAGE_ID}?body-format=storage`,
+    { headers: { 'Accept': 'application/json' } }
+  );
+
+  if (!pageResponse.ok) {
+    throw new Error(`Failed to fetch page: ${pageResponse.status}`);
+  }
+
+  const pageData = await pageResponse.json();
+  const storageContent = pageData.body.storage.value;
+  console.log(`✓ Page fetched (version ${pageData.version.number})`);
+
+  // Extract all Blueprint Standard Source macros
+  console.log('🔍 Extracting Blueprint Standard Source macros...');
+  const macroRegex = /<ac:adf-extension><ac:adf-node type="bodied-extension">[\s\S]*?blueprint-standard-source[\s\S]*?<\/ac:adf-node><\/ac:adf-extension>/g;
+
+  const mappings = [];
+  let match;
+  while ((match = macroRegex.exec(storageContent)) !== null) {
+    const macroXml = match[0];
+
+    // Extract excerpt-id
+    const idMatch = macroXml.match(/<ac:adf-parameter key="excerpt-id">([^<]+)<\/ac:adf-parameter>/);
+    const excerptId = idMatch ? idMatch[1] : null;
+
+    // Extract excerpt-name
+    const nameMatch = macroXml.match(/<ac:adf-parameter key="excerpt-name">([^<]+)<\/ac:adf-parameter>/);
+    const excerptName = nameMatch ? nameMatch[1] : null;
+
+    // Extract local-id (Confluence's unique macro instance ID)
+    const localIdMatch = macroXml.match(/<ac:adf-attribute key="local-id">([^<]+)<\/ac:adf-attribute>/);
+    const localId = localIdMatch ? localIdMatch[1] : null;
+
+    // Extract content from <ac:adf-content> tag (contains Storage Format XML)
+    const contentMatch = macroXml.match(/<ac:adf-content>([\s\S]*?)<\/ac:adf-content>/);
+    let content = null;
+    let variables = [];
+
+    if (contentMatch) {
+      // Content is in Storage Format XML, store it as-is
+      content = contentMatch[1];
+
+      // Extract variables from content (look for {{variableName}} patterns)
+      const variableRegex = /\{\{([^}]+)\}\}/g;
+      const variableSet = new Set();
+      let varMatch;
+      while ((varMatch = variableRegex.exec(content)) !== null) {
+        variableSet.add(varMatch[1]);
+      }
+      variables = Array.from(variableSet).map(name => ({
+        name,
+        defaultValue: '',
+        description: ''
+      }));
+    } else {
+      console.warn(`⚠️ No content found for ${excerptName}`);
+    }
+
+    // Skip the template macro (Test0 or SmartExcerpt0)
+    if (excerptId && excerptName && excerptName !== 'Test0' && excerptName !== 'SmartExcerpt0') {
+      mappings.push({
+        uuid: excerptId,
+        name: excerptName,
+        category: 'General',
+        localId: localId,
+        content: content,
+        variables: variables
+      });
+    }
+  }
+
+  console.log(`✓ Found ${mappings.length} Blueprint Standard Source macros to initialize`);
+
+  // Old hardcoded mappings (kept for reference, commented out)
+  /*const mappings = [
   {
     "name": "[ALL] Fundamentals - Key dates, Stack model",
     "uuid": "a698f73f-c913-4350-988e-629181026bd8",
@@ -1611,12 +1690,20 @@ export async function bulkInitializeAllExcerpts(req) {
     "uuid": "9ea7f532-5bb9-4ba3-adb8-f7719b8fae68",
     "category": "General"
   }
-];
+];*/
 
   const results = [];
 
-  for (const { uuid, name, category } of mappings) {
+  for (const { uuid, name, category, localId, content, variables } of mappings) {
     try {
+      // Generate content hash for staleness detection
+      let contentHash = null;
+      if (content) {
+        const crypto = require('crypto');
+        // Content is Storage Format XML string, use it directly
+        contentHash = crypto.createHash('sha256').update(content).digest('hex');
+      }
+
       // Get existing excerpt from Forge storage
       let excerpt = await storage.get(`excerpt:${uuid}`);
 
@@ -1626,26 +1713,32 @@ export async function bulkInitializeAllExcerpts(req) {
           id: uuid,
           name: name,
           category: category || 'General',
-          content: null,
-          variables: [],
+          content: content,
+          variables: variables,
           toggles: [],
-          sourcePageId: '80150529',  // All excerpts are on this page
+          sourcePageId: PAGE_ID,  // All excerpts are on this page
+          sourceLocalId: localId,  // Confluence's unique macro instance ID
+          contentHash: contentHash,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
         };
-        console.log(`✓ Created new excerpt: ${name}`);
+        console.log(`✓ Created new excerpt: ${name} (localId: ${localId}, ${variables.length} variables, ${content ? 'with content' : 'no content'})`);
       } else {
         // Update existing excerpt
         excerpt.name = name;
         excerpt.category = category || excerpt.category || 'General';
-        excerpt.sourcePageId = '80150529';  // All excerpts are on this page
+        excerpt.content = content;
+        excerpt.variables = variables;
+        excerpt.sourcePageId = PAGE_ID;  // All excerpts are on this page
+        excerpt.sourceLocalId = localId;  // Update the local ID
+        excerpt.contentHash = contentHash;
         excerpt.updatedAt = new Date().toISOString();
-        console.log(`✓ Updated existing excerpt: ${name}`);
+        console.log(`✓ Updated existing excerpt: ${name} (localId: ${localId}, ${variables.length} variables, ${content ? 'with content' : 'no content'})`);
       }
 
       // Save to storage
       await storage.set(`excerpt:${uuid}`, excerpt);
-      results.push({ uuid, name, success: true });
+      results.push({ uuid, name, success: true, variables: variables.length, hasContent: !!content });
 
     } catch (error) {
       console.error(`✗ Error initializing ${name}:`, error);
@@ -2116,5 +2209,948 @@ export async function importFromParsedJson(req) {
       error: error.message,
       stack: error.stack
     };
+  }
+}
+
+/**
+ * UI-Based Migration Functions
+ * 
+ * These functions replicate the logic from scripts/*.js but run within Forge,
+ * eliminating the need for API tokens and external Node.js scripts.
+ */
+
+/**
+ * Step 1: Clone Blueprint Standard Source Macros
+ * 
+ * Clones a single template Blueprint Standard Source macro N times,
+ * once for each MultiExcerpt macro found on the page.
+ */
+export async function migrateStep1CloneMacros(req) {
+  const { pageId } = req.payload;
+  
+  console.log(`[Step 1] Starting macro cloning for page ${pageId}...`);
+
+  try {
+    // Fetch page storage
+    console.log('Fetching page storage...');
+    const pageResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${pageId}?body-format=storage`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+
+    if (!pageResponse.ok) {
+      const errorText = await pageResponse.text();
+      throw new Error(`Failed to fetch page: ${pageResponse.status} - ${errorText}`);
+    }
+
+    const pageData = await pageResponse.json();
+    const storageContent = pageData.body.storage.value;
+    const currentVersion = pageData.version.number;
+    console.log(`✓ Page fetched (version ${currentVersion})`);
+
+    // Extract MultiExcerpt names
+    console.log('Extracting MultiExcerpt names...');
+    const nameRegex = /<ac:structured-macro ac:name="multiexcerpt-macro"[^>]*>[\s\S]*?<ac:parameter ac:name="name">([^<]+)<\/ac:parameter>/g;
+    const multiExcerptNames = [];
+    let match;
+    while ((match = nameRegex.exec(storageContent)) !== null) {
+      multiExcerptNames.push(match[1]);
+    }
+    console.log(`✓ Found ${multiExcerptNames.length} MultiExcerpt macros`);
+
+    if (multiExcerptNames.length === 0) {
+      return {
+        success: false,
+        error: 'No MultiExcerpt macros found on this page'
+      };
+    }
+
+    // Find Blueprint Standard Source template
+    console.log('Finding Blueprint Standard Source macro template...');
+    const blueprintRegex = /<ac:adf-extension><ac:adf-node type="bodied-extension">[\s\S]*?blueprint-standard-source[\s\S]*?<\/ac:adf-node><\/ac:adf-extension>/;
+    const templateMatch = storageContent.match(blueprintRegex);
+
+    if (!templateMatch) {
+      return {
+        success: false,
+        error: 'No Blueprint Standard Source macro found! Please create one manually first.'
+      };
+    }
+
+    const blueprintTemplate = templateMatch[0];
+    console.log('✓ Found Blueprint Standard Source macro template');
+
+    // Clone and update names
+    console.log('Cloning Blueprint Standard Source macros...');
+    const clonedMacros = multiExcerptNames.map(name => {
+      return blueprintTemplate.replace(
+        /(<ac:adf-parameter key="excerpt-name">)(.*?)(<\/ac:adf-parameter>)/,
+        `$1${name}$3`
+      );
+    });
+    console.log(`✓ Created ${clonedMacros.length} cloned macros`);
+
+    // Insert clones into storage
+    console.log('Inserting clones into page storage...');
+    const insertPosition = storageContent.indexOf(blueprintTemplate) + blueprintTemplate.length;
+    const updatedStorage =
+      storageContent.slice(0, insertPosition) +
+      '\n' + clonedMacros.join('\n') + '\n' +
+      storageContent.slice(insertPosition);
+    console.log('✓ Macros inserted into storage');
+
+    // Update page
+    console.log('Updating page via API...');
+    const updateResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${pageId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          id: pageId,
+          status: 'current',
+          title: pageData.title,
+          body: {
+            representation: 'storage',
+            value: updatedStorage
+          },
+          version: {
+            number: currentVersion + 1,
+            message: 'Cloned Blueprint Standard Source macros via UI migration tool'
+          }
+        })
+      }
+    );
+
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      throw new Error(`Failed to update page: ${updateResponse.status} - ${errorText}`);
+    }
+
+    console.log('✓ Page updated successfully!');
+
+    return {
+      success: true,
+      clonedCount: clonedMacros.length,
+      message: `Successfully cloned ${clonedMacros.length} Blueprint Standard Source macros`
+    };
+
+  } catch (error) {
+    console.error('[Step 1] Error:', error);
+    return {
+      success: false,
+      error: error.message,
+      stack: error.stack
+    };
+  }
+}
+
+/**
+ * Step 2: Migrate Content from MultiExcerpt to Blueprint Standard
+ * 
+ * Copies the body content from each MultiExcerpt macro into its
+ * corresponding Blueprint Standard Source macro (matched by name).
+ */
+export async function migrateStep2MigrateContent(req) {
+  const { pageId } = req.payload;
+  
+  console.log(`[Step 2] Starting content migration for page ${pageId}...`);
+
+  try {
+    // Fetch page storage
+    console.log('Fetching page storage...');
+    const pageResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${pageId}?body-format=storage`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+
+    if (!pageResponse.ok) {
+      const errorText = await pageResponse.text();
+      throw new Error(`Failed to fetch page: ${pageResponse.status} - ${errorText}`);
+    }
+
+    const pageData = await pageResponse.json();
+    const storageContent = pageData.body.storage.value;
+    const currentVersion = pageData.version.number;
+    console.log(`✓ Page fetched (version ${currentVersion})`);
+
+    // Extract MultiExcerpt macros with content
+    console.log('Extracting MultiExcerpt macros...');
+    const multiExcerpts = [];
+    const macroStartRegex = /<ac:structured-macro ac:name="multiexcerpt-macro"[\s\S]*?<ac:parameter ac:name="name">([^<]+)<\/ac:parameter>[\s\S]*?<ac:rich-text-body>/g;
+
+    let startMatch;
+    while ((startMatch = macroStartRegex.exec(storageContent)) !== null) {
+      const name = startMatch[1];
+      const bodyStart = macroStartRegex.lastIndex;
+
+      // Find matching closing tag with depth counting
+      let depth = 1;
+      let pos = bodyStart;
+      let bodyEnd = -1;
+
+      while (pos < storageContent.length && depth > 0) {
+        const nextOpen = storageContent.indexOf('<ac:rich-text-body>', pos);
+        const nextClose = storageContent.indexOf('</ac:rich-text-body>', pos);
+
+        if (nextClose === -1) break;
+
+        if (nextOpen !== -1 && nextOpen < nextClose) {
+          depth++;
+          pos = nextOpen + 19;
+        } else {
+          depth--;
+          if (depth === 0) {
+            bodyEnd = nextClose;
+          }
+          pos = nextClose + 20;
+        }
+      }
+
+      if (bodyEnd !== -1) {
+        const content = storageContent.substring(bodyStart, bodyEnd);
+        multiExcerpts.push({ name, content });
+      }
+    }
+
+    console.log(`✓ Found ${multiExcerpts.length} MultiExcerpt macros with content`);
+
+    if (multiExcerpts.length === 0) {
+      return {
+        success: false,
+        error: 'No MultiExcerpt macros with content found on this page'
+      };
+    }
+
+    // Create content map
+    const contentMap = new Map();
+    multiExcerpts.forEach(me => {
+      contentMap.set(me.name, me.content);
+    });
+
+    // Update Blueprint Standard Source macros
+    console.log('Updating Blueprint Standard Source content...');
+    const blueprintRegex = /<ac:adf-extension><ac:adf-node type="bodied-extension">[\s\S]*?<ac:adf-parameter key="excerpt-name">([^<]+)<\/ac:adf-parameter>[\s\S]*?<ac:adf-content>([\s\S]*?)<\/ac:adf-content>[\s\S]*?<\/ac:adf-node><\/ac:adf-extension>/g;
+
+    let updatedCount = 0;
+    const updatedStorage = storageContent.replace(blueprintRegex, (match, excerptName, currentContent) => {
+      const newContent = contentMap.get(excerptName);
+
+      if (newContent) {
+        updatedCount++;
+        if (updatedCount % 10 === 0) {
+          console.log(`  ✓ Updated ${updatedCount} macros...`);
+        }
+        return match.replace(
+          /(<ac:adf-content>)([\s\S]*?)(<\/ac:adf-content>)/,
+          `$1${newContent}$3`
+        );
+      }
+      return match;
+    });
+
+    console.log(`✓ Updated ${updatedCount} Blueprint Standard Source macros`);
+
+    // Update page
+    console.log('Updating page via API...');
+    const updateResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${pageId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          id: pageId,
+          status: 'current',
+          title: pageData.title,
+          body: {
+            representation: 'storage',
+            value: updatedStorage
+          },
+          version: {
+            number: currentVersion + 1,
+            message: 'Migrated content from MultiExcerpt to Blueprint Standard Source macros via UI migration tool'
+          }
+        })
+      }
+    );
+
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      throw new Error(`Failed to update page: ${updateResponse.status} - ${errorText}`);
+    }
+
+    console.log('✓ Page updated successfully!');
+
+    return {
+      success: true,
+      updatedCount,
+      message: `Successfully migrated content for ${updatedCount} Blueprint Standard Source macros`
+    };
+
+  } catch (error) {
+    console.error('[Step 2] Error:', error);
+    return {
+      success: false,
+      error: error.message,
+      stack: error.stack
+    };
+  }
+}
+
+/**
+ * Step 3: Fix Excerpt IDs
+ * 
+ * Generates a unique UUID for each Blueprint Standard Source macro.
+ * This is required for the Edit modal to work correctly.
+ */
+export async function migrateStep3FixExcerptIds(req) {
+  const { pageId } = req.payload;
+  
+  console.log(`[Step 3] Starting excerpt ID fix for page ${pageId}...`);
+
+  try {
+    // Fetch page storage
+    console.log('Fetching page storage...');
+    const pageResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${pageId}?body-format=storage`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+
+    if (!pageResponse.ok) {
+      const errorText = await pageResponse.text();
+      throw new Error(`Failed to fetch page: ${pageResponse.status} - ${errorText}`);
+    }
+
+    const pageData = await pageResponse.json();
+    const storageContent = pageData.body.storage.value;
+    const currentVersion = pageData.version.number;
+    console.log(`✓ Page fetched (version ${currentVersion})`);
+
+    // Update excerpt IDs
+    console.log('Generating unique IDs for each Blueprint Standard Source...');
+    const macroRegex = /<ac:adf-extension><ac:adf-node type="bodied-extension">[\s\S]*?blueprint-standard-source[\s\S]*?<\/ac:adf-node><\/ac:adf-extension>/g;
+
+    let updateCount = 0;
+    const updatedStorage = storageContent.replace(macroRegex, (macroMatch) => {
+      // Extract excerpt-name
+      const nameMatch = macroMatch.match(/<ac:adf-parameter key="excerpt-name">([^<]+)<\/ac:adf-parameter>/);
+      const excerptName = nameMatch ? nameMatch[1] : 'Unknown';
+
+      // Skip template macros
+      if (excerptName === 'SmartExcerpt0' || excerptName === 'Test0') {
+        return macroMatch;
+      }
+
+      // Generate new UUID
+      const newId = generateUUID();
+
+      // Replace excerpt-id
+      const updatedMacro = macroMatch.replace(
+        /(<ac:adf-parameter key="excerpt-id">)([^<]+)(<\/ac:adf-parameter>)/,
+        `$1${newId}$3`
+      );
+
+      updateCount++;
+      if (updateCount % 10 === 0) {
+        console.log(`  ✓ Updated ${updateCount} macros...`);
+      }
+
+      return updatedMacro;
+    });
+
+    console.log(`✓ Generated ${updateCount} unique IDs`);
+
+    // Update page
+    console.log('Updating page via API...');
+    const updateResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${pageId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          id: pageId,
+          status: 'current',
+          title: pageData.title,
+          body: {
+            representation: 'storage',
+            value: updatedStorage
+          },
+          version: {
+            number: currentVersion + 1,
+            message: 'Fixed excerpt IDs for Blueprint Standard Source macros via UI migration tool'
+          }
+        })
+      }
+    );
+
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      throw new Error(`Failed to update page: ${updateResponse.status} - ${errorText}`);
+    }
+
+    console.log('✓ Page updated successfully!');
+
+    return {
+      success: true,
+      updatedCount: updateCount,
+      message: `Successfully generated unique IDs for ${updateCount} Blueprint Standard Source macros`
+    };
+
+  } catch (error) {
+    console.error('[Step 3] Error:', error);
+    return {
+      success: false,
+      error: error.message,
+      stack: error.stack
+    };
+  }
+}
+
+/**
+ * Create Test Page with 148 Embed Macros
+ *
+ * Performance testing tool that creates a page with 148 Embed macros,
+ * each referencing one of the migrated Sources with random variable values.
+ */
+export async function createTestEmbedsPage(req) {
+  try {
+    console.log('🚀 Starting test page creation with 148 Embed macros...');
+
+    // Get page ID from request
+    const targetPageId = req.payload?.pageId || '84803640';
+    console.log(`📋 Target page ID: ${targetPageId}`);
+
+    // Random word generators for test data
+    const adjectives = ['Red', 'Blue', 'Fast', 'Slow', 'Big', 'Small', 'Hot', 'Cold', 'New', 'Old'];
+    const nouns = ['Cat', 'Dog', 'Car', 'Tree', 'House', 'Book', 'Phone', 'Table', 'Chair', 'Window'];
+    const dates = ['2024-01-15', '2024-02-20', '2024-03-10', '2024-04-05', '2024-05-25'];
+    const venues = ['Stadium Alpha', 'Arena Beta', 'Center Gamma', 'Park Delta'];
+
+    function randomWord() {
+      const words = [...adjectives, ...nouns];
+      return words[Math.floor(Math.random() * words.length)];
+    }
+
+    function randomTwoWords() {
+      return `${randomWord()} ${randomWord()}`;
+    }
+
+    function randomDate() {
+      return dates[Math.floor(Math.random() * dates.length)];
+    }
+
+    function randomVenue() {
+      return venues[Math.floor(Math.random() * venues.length)];
+    }
+
+    function generateRandomValue(variableName) {
+      // Try to generate contextually appropriate random values
+      if (variableName.includes('date')) return randomDate();
+      if (variableName.includes('venue')) return randomVenue();
+      if (variableName.includes('league') || variableName.includes('vertical')) return randomWord();
+
+      // Default: 1-2 random words
+      return Math.random() > 0.5 ? randomWord() : randomTwoWords();
+    }
+
+    // Step 1: Fetch all excerpts from storage
+    console.log('📡 Fetching all excerpts from storage...');
+    const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
+    console.log(`✓ Found ${excerptIndex.excerpts.length} excerpts`);
+
+    if (excerptIndex.excerpts.length === 0) {
+      throw new Error('No excerpts found in storage. Run bulk initialization first.');
+    }
+
+    // Step 2: Load full excerpt data for each (to get variables)
+    console.log('📋 Loading full excerpt data...');
+    const excerpts = [];
+    for (const summary of excerptIndex.excerpts) {
+      const excerpt = await storage.get(`excerpt:${summary.id}`);
+      if (excerpt) {
+        excerpts.push(excerpt);
+      }
+    }
+    console.log(`✓ Loaded ${excerpts.length} full excerpts`);
+
+    // Step 3: Generate Embed macros
+    console.log('🏗️ Generating Embed macros...');
+    const embedMacros = [];
+
+    for (let i = 0; i < excerpts.length; i++) {
+      const excerpt = excerpts[i];
+      const localId = crypto.randomUUID();
+
+      // Generate random variable values
+      const variableValues = {};
+      if (excerpt.variables && excerpt.variables.length > 0) {
+        excerpt.variables.forEach(variable => {
+          variableValues[variable.name] = generateRandomValue(variable.name);
+        });
+      }
+
+      // Create the Embed macro in Confluence storage format
+      const variableValuesJson = JSON.stringify(variableValues).replace(/"/g, '&quot;');
+
+      const embedMacro = `<ac:adf-extension><ac:adf-node type="extension"><ac:adf-attribute key="extension-type">com.atlassian.ecosystem</ac:adf-attribute><ac:adf-attribute key="extension-key">blueprint-standard-embed</ac:adf-attribute><ac:adf-attribute key="layout">default</ac:adf-attribute><ac:adf-attribute key="local-id">${localId}</ac:adf-attribute><ac:adf-parameter key="excerpt-id">${excerpt.id}</ac:adf-parameter><ac:adf-parameter key="__bodyContent"><guest-params><parameter name="excerpt-id">${excerpt.id}</parameter><parameter name="variable-values">${variableValuesJson}</parameter></guest-params></ac:adf-parameter></ac:adf-node></ac:adf-extension>`;
+
+      embedMacros.push(embedMacro);
+
+      if ((i + 1) % 20 === 0) {
+        console.log(`  ✓ Created ${i + 1}/${excerpts.length} Embeds...`);
+      }
+    }
+
+    console.log(`✓ Generated ${embedMacros.length} Embed macros`);
+
+    // Step 4: Create page content
+    console.log('📝 Assembling page content...');
+    const pageContent = `<h1>🧪 Performance Test: ${embedMacros.length} Blueprint Standard Embeds</h1>
+<p>This page contains <strong>${embedMacros.length} Embed macros</strong> for performance testing.</p>
+<p><em>Created: ${new Date().toISOString()}</em></p>
+<p>This is 3x the realistic maximum to test caching and rendering performance.</p>
+<hr/>
+<h2>Test Embeds Below:</h2>
+${embedMacros.map(m => `<p>${m}</p>`).join('\n')}`;
+
+    console.log(`✓ Page content assembled (${Math.round(pageContent.length / 1024)} KB)`);
+
+    // Step 5: Fetch current page to get version
+    console.log(`📡 Fetching page ${targetPageId}...`);
+    const pageResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${targetPageId}`,
+      {
+        headers: { 'Accept': 'application/json' }
+      }
+    );
+
+    if (!pageResponse.ok) {
+      throw new Error(`Failed to fetch page: ${pageResponse.status}`);
+    }
+
+    const pageData = await pageResponse.json();
+    console.log(`✓ Page fetched (version ${pageData.version.number})`);
+
+    // Step 6: Update the page
+    console.log('🚀 Updating page with Embed macros...');
+    const updateResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${targetPageId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          id: targetPageId,
+          status: 'current',
+          title: `🧪 Performance Test: ${embedMacros.length} Embeds`,
+          spaceId: pageData.spaceId,
+          body: {
+            representation: 'storage',
+            value: pageContent
+          },
+          version: {
+            number: pageData.version.number + 1,
+            message: `Added ${embedMacros.length} test Embed macros for performance testing`
+          }
+        })
+      }
+    );
+
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      throw new Error(`Failed to update page: ${updateResponse.status} - ${errorText}`);
+    }
+
+    console.log('✓ Page updated successfully!');
+
+    return {
+      success: true,
+      pageId: targetPageId,
+      embedCount: embedMacros.length,
+      message: `Successfully created test page with ${embedMacros.length} Embed macros! Check page ${targetPageId}`
+    };
+
+  } catch (error) {
+    console.error('❌ Error creating test page:', error);
+    return {
+      success: false,
+      error: error.message,
+      stack: error.stack
+    };
+  }
+}
+
+/**
+ * Diagnostic function to dump the first Source macro XML structure
+ */
+export async function dumpFirstSourceMacro(req) {
+  try {
+    const PAGE_ID = req.payload?.pageId || '99909654';
+    console.log(`📡 Fetching page ${PAGE_ID}...`);
+
+    const pageResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${PAGE_ID}?body-format=storage`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+
+    const pageData = await pageResponse.json();
+    const storageContent = pageData.body.storage.value;
+
+    // Find first Source macro
+    const macroRegex = /<ac:adf-extension><ac:adf-node type="bodied-extension">[\s\S]*?blueprint-standard-source[\s\S]*?<\/ac:adf-node><\/ac:adf-extension>/;
+    const match = storageContent.match(macroRegex);
+
+    if (match) {
+      const macroXml = match[0];
+      console.log('========== First Source Macro XML ==========');
+      console.log(macroXml);
+      console.log('========== End Macro XML ==========');
+
+      return {
+        success: true,
+        macroXml: macroXml,
+        length: macroXml.length
+      };
+    } else {
+      return {
+        success: false,
+        error: 'No Source macro found'
+      };
+    }
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Populate content for all migrated Sources by fetching ADF from their pages
+ * Converts Storage Format XML to ADF JSON format for proper rendering
+ */
+export async function populateSourceContent(req) {
+  try {
+    console.log('📥 Starting content population for migrated Sources...');
+
+    // Get all excerpts from the index
+    const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
+
+    // Group excerpts by page to minimize API calls
+    const excerptsByPage = new Map(); // pageId -> [excerpts]
+
+    for (const excerptSummary of excerptIndex.excerpts) {
+      const excerpt = await storage.get(`excerpt:${excerptSummary.id}`);
+      if (!excerpt) continue;
+
+      // Only process excerpts that have sourcePageId and sourceLocalId
+      if (excerpt.sourcePageId && excerpt.sourceLocalId) {
+        if (!excerptsByPage.has(excerpt.sourcePageId)) {
+          excerptsByPage.set(excerpt.sourcePageId, []);
+        }
+        excerptsByPage.get(excerpt.sourcePageId).push(excerpt);
+      }
+    }
+
+    console.log(`Found ${excerptsByPage.size} unique pages with Source macros`);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    // Fetch each page in ADF format and extract content
+    for (const [pageId, pageExcerpts] of excerptsByPage.entries()) {
+      try {
+        console.log(`Fetching page ${pageId} with ${pageExcerpts.length} Sources...`);
+
+        // Fetch page in atlas_doc_format (ADF) to get proper ADF structure
+        const response = await api.asApp().requestConfluence(
+          route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`,
+          { headers: { 'Accept': 'application/json' } }
+        );
+
+        const pageData = await response.json();
+        const adfBody = pageData?.body?.atlas_doc_format?.value;
+
+        if (!adfBody) {
+          console.warn(`⚠️ No ADF body found for page ${pageId}`);
+          failCount += pageExcerpts.length;
+          continue;
+        }
+
+        // Parse ADF to find each Source macro
+        const adfDoc = typeof adfBody === 'string' ? JSON.parse(adfBody) : adfBody;
+
+        // Find all bodiedExtension nodes (Source macros) in the ADF
+        const findExtensions = (node, extensions = []) => {
+          if (node.type === 'bodiedExtension' && node.attrs?.extensionKey?.includes('blueprint-standard-source')) {
+            extensions.push(node);
+          }
+          if (node.content) {
+            for (const child of node.content) {
+              findExtensions(child, extensions);
+            }
+          }
+          return extensions;
+        };
+
+        const extensionNodes = findExtensions(adfDoc);
+        console.log(`Found ${extensionNodes.length} Source macro extension nodes`);
+
+        // Match each excerpt to its extension node by localId
+        for (const excerpt of pageExcerpts) {
+          const extensionNode = extensionNodes.find(node =>
+            node.attrs?.localId === excerpt.sourceLocalId
+          );
+
+          if (extensionNode && extensionNode.content) {
+            // The content is the ADF inside the bodiedExtension
+            const bodyContent = {
+              type: 'doc',
+              version: 1,
+              content: extensionNode.content
+            };
+
+            // Extract variables from ADF content
+            const variables = extractVariablesFromAdf(bodyContent);
+
+            // Generate content hash
+            const crypto = require('crypto');
+            const contentHash = crypto.createHash('sha256').update(JSON.stringify(bodyContent)).digest('hex');
+
+            // Update excerpt
+            excerpt.content = bodyContent;
+            excerpt.variables = variables;
+            excerpt.contentHash = contentHash;
+            excerpt.updatedAt = new Date().toISOString();
+
+            await storage.set(`excerpt:${excerpt.id}`, excerpt);
+
+            console.log(`✅ Populated content for: ${excerpt.name} (${variables.length} variables)`);
+            successCount++;
+          } else {
+            console.warn(`⚠️ No extension node found for ${excerpt.name} (localId: ${excerpt.sourceLocalId})`);
+            failCount++;
+          }
+        }
+      } catch (error) {
+        console.error(`Error processing page ${pageId}:`, error);
+        failCount += pageExcerpts.length;
+      }
+    }
+
+    const message = `✅ Content population complete!\n\n` +
+      `• Successfully populated: ${successCount}\n` +
+      `• Failed: ${failCount}`;
+
+    console.log(message);
+
+    return {
+      success: true,
+      successCount,
+      failCount,
+      message
+    };
+  } catch (error) {
+    console.error('Error in populateSourceContent:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Helper function to extract variables from ADF content
+ */
+function extractVariablesFromAdf(adfDoc) {
+  const variables = new Set();
+  const variableRegex = /\{\{([^}]+)\}\}/g;
+
+  const extractFromNode = (node) => {
+    // Check text content
+    if (node.text) {
+      let match;
+      while ((match = variableRegex.exec(node.text)) !== null) {
+        variables.add(match[1]);
+      }
+    }
+
+    // Recurse into content
+    if (node.content) {
+      for (const child of node.content) {
+        extractFromNode(child);
+      }
+    }
+  };
+
+  extractFromNode(adfDoc);
+
+  return Array.from(variables).map(name => ({
+    name,
+    defaultValue: '',
+    description: ''
+  }));
+}
+
+/**
+ * Diagnostic: Get one excerpt from storage and log its structure
+ */
+export async function getOneExcerptData(req) {
+  try {
+    const { excerptName } = req.payload || {};
+
+    // Get the excerpt index
+    const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
+
+    if (excerptIndex.excerpts.length === 0) {
+      return { success: false, error: 'No excerpts in index' };
+    }
+
+    // Find excerpt by name if provided, otherwise use first one
+    let targetExcerptId;
+    if (excerptName) {
+      const found = excerptIndex.excerpts.find(e => e.name === excerptName);
+      if (found) {
+        targetExcerptId = found.id;
+      } else {
+        return { success: false, error: `No excerpt found with name: ${excerptName}` };
+      }
+    } else {
+      targetExcerptId = excerptIndex.excerpts[0].id;
+    }
+
+    const excerpt = await storage.get(`excerpt:${targetExcerptId}`);
+
+    // Log to forge logs for easy viewing
+    console.log('========== EXCERPT DIAGNOSTIC ==========');
+    console.log('Name:', excerpt?.name);
+    console.log('Content Type:', excerpt?.content ? typeof excerpt.content : 'null');
+    console.log('Is Object:', excerpt?.content && typeof excerpt.content === 'object');
+    if (excerpt?.content && typeof excerpt.content === 'object') {
+      console.log('Object Keys:', Object.keys(excerpt.content));
+      console.log('Full Content (first 500 chars):', JSON.stringify(excerpt.content).substring(0, 500));
+    } else {
+      console.log('Content (first 500 chars):', String(excerpt?.content || '').substring(0, 500));
+    }
+    console.log('========================================');
+
+    return {
+      success: true,
+      message: `Check forge logs for excerpt data: ${excerpt?.name}`
+    };
+  } catch (error) {
+    console.error('Error in getOneExcerptData:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Diagnostic: Check page ADF structure to understand why macros aren't found
+ */
+export async function diagnosePageAdfStructure(req) {
+  try {
+    const { pageId } = req.payload || {};
+
+    if (!pageId) {
+      return { success: false, error: 'pageId required' };
+    }
+
+    console.log(`========== PAGE ADF DIAGNOSTIC (Page ${pageId}) ==========`);
+
+    // Fetch page in ADF format
+    const response = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`,
+      {
+        headers: {
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      console.log('❌ Failed to fetch page');
+      return { success: false, error: 'Failed to fetch page' };
+    }
+
+    const pageData = await response.json();
+    const adfBody = pageData?.body?.atlas_doc_format?.value;
+
+    if (!adfBody) {
+      console.log('❌ No ADF body found');
+      return { success: false, error: 'No ADF body' };
+    }
+
+    const adfDoc = typeof adfBody === 'string' ? JSON.parse(adfBody) : adfBody;
+
+    // Find all nodes recursively and log their types
+    const nodeTypes = new Map(); // type -> count
+    const extensionKeys = new Set();
+    const localIds = [];
+
+    const analyzeNode = (node, depth = 0) => {
+      if (!node || typeof node !== 'object') return;
+
+      // Count node types
+      if (node.type) {
+        nodeTypes.set(node.type, (nodeTypes.get(node.type) || 0) + 1);
+      }
+
+      // Track extensions
+      if (node.type === 'bodiedExtension' || node.type === 'extension') {
+        if (node.attrs?.extensionKey) {
+          extensionKeys.add(node.attrs.extensionKey);
+        }
+        if (node.attrs?.localId) {
+          localIds.push({
+            type: node.type,
+            extensionKey: node.attrs.extensionKey,
+            localId: node.attrs.localId,
+            hasContent: !!node.content
+          });
+        }
+      }
+
+      // Recurse
+      if (node.content) {
+        for (const child of node.content) {
+          analyzeNode(child, depth + 1);
+        }
+      }
+    };
+
+    analyzeNode(adfDoc);
+
+    console.log('\n📊 Node Types Found:');
+    for (const [type, count] of nodeTypes.entries()) {
+      console.log(`  - ${type}: ${count}`);
+    }
+
+    console.log('\n🔌 Extension Keys Found:');
+    for (const key of extensionKeys) {
+      console.log(`  - ${key}`);
+    }
+
+    console.log(`\n🆔 Extension Nodes with LocalIDs (${localIds.length} total):`);
+    localIds.slice(0, 5).forEach(item => {
+      console.log(`  - Type: ${item.type}, Key: ${item.extensionKey}, LocalID: ${item.localId}, HasContent: ${item.hasContent}`);
+    });
+    if (localIds.length > 5) {
+      console.log(`  ... and ${localIds.length - 5} more`);
+    }
+
+    console.log('========================================\n');
+
+    return {
+      success: true,
+      message: `Found ${nodeTypes.size} node types, ${extensionKeys.size} extension types, ${localIds.length} extensions with localIds. Check forge logs for details.`
+    };
+  } catch (error) {
+    console.error('Error in diagnosePageAdfStructure:', error);
+    return { success: false, error: error.message };
   }
 }

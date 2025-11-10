@@ -335,3 +335,26 @@ export const useAllUsageCountsQuery = () => {
     gcTime: 1000 * 60 * 10, // 10 minutes
   });
 };
+
+/**
+ * Hook for creating test page with 148 Embeds
+ *
+ * Creates a test page with all 148 Source macros embedded with random variable values
+ * for performance testing (3x realistic maximum load).
+ *
+ * @returns {Object} React Query mutation result
+ */
+export const useCreateTestPageMutation = () => {
+  return useMutation({
+    mutationFn: async ({ pageId }) => {
+      const result = await invoke('createTestEmbedsPage', { pageId });
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to create test page');
+      }
+      return result;
+    },
+    onError: (error) => {
+      console.error('[REACT-QUERY-ADMIN] Create Test Page failed:', error);
+    }
+  });
+};

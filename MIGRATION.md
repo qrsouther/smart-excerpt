@@ -4,298 +4,262 @@ This guide provides step-by-step instructions for migrating MultiExcerpt macros 
 
 ## Overview
 
-The migration process involves:
-1. Fetching page data from Confluence API
-2. Parsing MultiExcerpt macro content
-3. Bulk importing into Blueprint Standards
-4. Verification and testing
+The migration process uses ADF (Atlassian Document Format) transformation to create editable Blueprint Standard Source macros on Confluence pages.
 
-## Prerequisites
+**Process:**
+1. Extract Forge metadata template from working Blueprint Standard Source page
+2. For each MultiExcerpt standard:
+   - Convert storage format XML → ADF using Confluence API
+   - Transform MultiExcerpt ADF → Blueprint Standard ADF with Forge metadata
+   - Create Confluence page with transformed ADF
+3. Result: Editable Source macros on real pages
 
-- Node.js installed
-- Access to Confluence page with MultiExcerpt macros
+**Key Benefits:**
+- Source macros are editable in Confluence (on pages, not just in storage)
+- Uses Confluence's conversion API (handles malformed XML gracefully)
+- Complete Forge metadata ensures macros load correctly
+- One-step automated migration
+
+**Requirements:**
 - Admin access to Blueprint Standards app
+- At least one working Blueprint Standard Source macro on a page (for template extraction)
+- Imported MultiExcerpt standards already in storage (115 standards with excerptIds/names/content)
+- Space to store 115 new pages
 
-## Step-by-Step Migration Process
+---
 
-### Step 1: Fetch Page Data from Confluence API
+## Migration Process
 
-1. Navigate to your Confluence page containing MultiExcerpt macros in a web browser
-2. Get the page ID from the URL (e.g., `4115071216` in `https://seatgeek.atlassian.net/wiki/spaces/cs/pages/4115071216`)
-3. Open a new browser tab and navigate to:
-   ```
-   https://[your-domain].atlassian.net/wiki/rest/api/content/[PAGE_ID]?expand=body.storage,version
-   ```
-   Replace `[your-domain]` with your Atlassian domain and `[PAGE_ID]` with your page ID
+### Quick Start
 
-4. Save the JSON response to a file:
-   - The browser will display raw JSON
-   - Right-click → "Save As..." or copy the entire JSON
-   - Save as `/Users/[your-username]/Downloads/[PAGE_ID].json`
+**Prerequisites:**
+- Admin access to Blueprint Standards app
+- At least one working Blueprint Standard Source macro on a page (for metadata template extraction)
+- MultiExcerpt standards imported into storage (115 standards with excerptIds, names, and content)
 
-**Example:**
+**Steps:**
+
+1. **Trigger Migration Job**
+   - Open Blueprint Standards Admin page
+   - Click "Start ADF Migration" button
+   - Migration worker processes all 115 standards in background (900s timeout)
+
+2. **Monitor Progress**
+   - Check forge logs: `forge logs --environment production`
+   - Wait for completion message (typically 5-10 minutes for 115 standards)
+
+3. **Verify Results**
+   - Check created pages in your Confluence space
+   - Verify macros load without "Error loading the extension"
+   - Test editing a few Source macros
+
+**What Happens Behind the Scenes:**
+
 ```
-https://seatgeek.atlassian.net/wiki/rest/api/content/4115071216?expand=body.storage,version
-→ Save as: /Users/quinnsouther/Downloads/4115071216.json
-```
-
-### Step 2: Parse MultiExcerpt Macros
-
-Run the parser script to extract all MultiExcerpt macros from the JSON file:
-
-```bash
-node parse-multiexcerpts.js /Users/[your-username]/Downloads/[PAGE_ID].json
-```
-
-**What the parser does:**
-- Extracts macro names from `<ac:parameter ac:name="name">` tags
-- Extracts macro bodies from `<ac:rich-text-body>` tags
-- Auto-detects variables using pattern `{{variableName}}`
-- Categorizes macros by prefix: `[ALL]`, `[NFL]`, `[NBA]`, etc.
-- Generates import data JSON
-
-**Output:**
-- Console log showing all extracted macros
-- Generated file: `/Users/[your-username]/Downloads/multiexcerpt-import-data.json`
-
-**Example output:**
-```
-[PARSER] Extraction complete!
-Total macros found: 147
-========================================
-
-Category breakdown:
-  - All Clients: 79 macros
-  - General: 56 macros
-  - NFL: 5 macros
-  - NBA: 4 macros
-  - Golf: 3 macros
-
-Total variables across all macros: 85
-
-✅ Parse complete! Next step: Run bulk import script.
+For each MultiExcerpt standard in storage:
+  1. Extract Forge metadata template (once, reused for all)
+  2. Convert storage XML → ADF (Confluence API)
+  3. Transform ADF structure (MultiExcerpt → Blueprint Standard)
+  4. Create page with ADF (REST API v2)
+  5. Track success/failures
 ```
 
-### Step 3: Review Import Data
+**Expected Results:**
+- 115 new pages created with Blueprint Standard Source macros
+- All macros editable and functional
+- Content preserved from original MultiExcerpts
+- Variables/categories maintained
 
-Before importing, review the generated import data:
+### Technical Implementation Details
 
-```bash
-cat /Users/[your-username]/Downloads/multiexcerpt-import-data.json | head -100
+**Key Functions (src/index.js):**
+
+1. **`extractForgeMetadataTemplate(workingPageId)`** (lines 308-336)
+   - Fetches ADF from a working Blueprint Standard Source page
+   - Extracts reusable Forge metadata (extensionKey, extensionId, extensionProperties, etc.)
+   - Called once at start of migration, template reused for all standards
+
+2. **`transformToBlueprintStandardAdf(multiExcerptAdf, excerptId, excerptName, category, localId, forgeMetadata)`** (lines 342-378)
+   - Takes MultiExcerpt ADF and transforms it to Blueprint Standard ADF structure
+   - Wraps custom parameters in `guestParams` object
+   - Includes complete Forge metadata from template
+   - Returns ADF ready for page creation
+
+**Migration Worker Process (workers/migrationWorker.js):**
+
+```javascript
+// Pseudo-code of migration logic:
+
+1. Extract Forge metadata template from page 64880643 (once)
+
+2. For each standard in storage:
+   a. Get standard content (storage format XML)
+
+   b. Convert to ADF via Confluence API:
+      POST /wiki/rest/api/contentbody/convert/atlas_doc_format
+      Body: { value: content, representation: 'storage' }
+
+   c. Parse response JSON: multiExcerptAdf = JSON.parse(response.value)
+
+   d. Transform ADF structure:
+      transformToBlueprintStandardAdf(
+        multiExcerptAdf,
+        standard.excerptId,
+        standard.excerptName,
+        standard.category,
+        generateUUID(),
+        forgeMetadata
+      )
+
+   e. Create page via REST API v2:
+      POST /wiki/api/v2/pages
+      Body: {
+        spaceId: '163842',
+        title: `Blueprint Standard - ${standard.excerptName}`,
+        body: {
+          representation: 'atlas_doc_format',
+          value: JSON.stringify(blueprintAdf)
+        }
+      }
+
+   f. Track result (success/error)
+
+3. Return migration summary
 ```
 
-**Verify:**
-- Macro names are correct
-- Content bodies are present (not empty)
-- Variables are detected properly
-- Categories are assigned correctly
+**ADF Structure Comparison:**
 
-**Common issues:**
-- Empty content bodies: Some MultiExcerpt macros may be placeholders (will be skipped)
-- HTML entities: Parser handles `&amp;`, `&lt;`, `&gt;`, `&nbsp;`, etc.
-- Nested macros: Storage format preserves all nested macro structures
-
-### Step 4: Prepare for Bulk Import
-
-The import data is ready to use with the existing `bulkImportSources` resolver. The JSON structure matches what the resolver expects:
-
+MultiExcerpt ADF (from conversion API):
 ```json
 {
-  "sourcePageId": "4115071216",
-  "sourcePageTitle": "Best Practice Templates...",
-  "extractedAt": "2025-01-08T...",
-  "macroCount": 147,
-  "macros": [
-    {
-      "name": "[ALL] Fundamentals - Key dates, Stack model",
-      "content": "<p>{{para-fundamentals-intro}}</p><table>...",
-      "variables": [
-        {
-          "name": "para-fundamentals-intro",
-          "label": "Para Fundamentals Intro",
-          "description": "Auto-detected variable: para-fundamentals-intro",
-          "required": false
-        }
-      ],
-      "category": "All Clients"
-    }
-  ]
+  "type": "doc",
+  "content": [{
+    "type": "bodiedExtension",
+    "attrs": {
+      "extensionKey": "com.atlassian.confluence.plugins.confluence-multiexcerpt:multiexcerpt-macro",
+      "parameters": { "name": "Test0", "hidden": "false" }
+    },
+    "content": [/* actual content */]
+  }]
 }
 ```
 
-### Step 5: Execute Bulk Import
-
-#### Option A: Via Admin UI (Recommended)
-
-1. Open Blueprint Standards Admin page in Confluence
-2. Navigate to the "Migration" section (if available)
-3. Click "Bulk Import from JSON"
-4. Paste the contents of `multiexcerpt-import-data.json`
-5. Click "Import"
-6. Monitor progress and review results
-
-#### Option B: Via Developer Console
-
-1. Open Blueprint Standards Admin page
-2. Open browser DevTools console (F12)
-3. Run the following code:
-
-```javascript
-// Load the import data
-const importData = await fetch('/Users/[your-username]/Downloads/multiexcerpt-import-data.json')
-  .then(r => r.json());
-
-// Call the bulkImportSources resolver
-const result = await invoke('bulkImportSources', {
-  sources: importData.macros,
-  destinationPageId: null // Or specify a page ID
-});
-
-console.log('Import results:', result);
-```
-
-**Expected output:**
-```javascript
+Blueprint Standard ADF (after transformation):
+```json
 {
-  success: true,
-  summary: {
-    total: 147,
-    imported: 115,
-    errors: 0
-  },
-  imported: [ /* array of imported macros */ ],
-  errors: []
+  "type": "doc",
+  "content": [{
+    "type": "bodiedExtension",
+    "attrs": {
+      "extensionKey": "be1ff96b-d44d-4975-98d3-25b80a813bdd/bbebcb82-f8af-4cd4-8ddb-38c88a94d142/static/blueprint-standard-source",
+      "text": "Blueprint Standard - Source",
+      "parameters": {
+        "layout": "bodiedExtension",
+        "guestParams": {
+          "excerptId": "01ea4f7a-265c-4972-8e70-de92a50d4d6e",
+          "excerptName": "Test0",
+          "category": "General",
+          "variables": [],
+          "toggles": []
+        },
+        "forgeEnvironment": "PRODUCTION",
+        "extensionProperties": {/* extensive Forge app metadata */},
+        "extensionId": "ari:cloud:ecosystem::extension/...",
+        "render": "native",
+        "extensionTitle": "Blueprint Standard - Source"
+      }
+    },
+    "content": [/* actual content - preserved from MultiExcerpt */]
+  }]
 }
 ```
 
-### Step 6: Verify Import
+**Why This Works:**
 
-1. Navigate to Blueprint Standards Admin page
-2. Verify that all macros appear in the list
-3. Check category assignments
-4. Test a few macros by inserting them on a test page
-5. Verify variables are properly detected
+1. **Forge Metadata Extraction**: All Blueprint Standard Source macros share the same environment-level metadata. By extracting from one working macro, we get the template that works for all.
 
-**Verification checklist:**
-- [ ] All 115 macros with content are imported (32 empty skipped)
-- [ ] Categories match original MultiExcerpt categories
-- [ ] Variables are detected and configurable
-- [ ] Content renders correctly in Embed macros
-- [ ] Search/filter works in Admin UI
+2. **Confluence Conversion API**: Handles malformed XML gracefully. Original MultiExcerpt storage format may have unclosed tags or entity issues - the API normalizes it to valid ADF.
 
-### Step 7: Post-Migration Cleanup
+3. **ADF Transformation**: We preserve the content (innerContent) from the converted MultiExcerpt, but wrap it with proper Forge extension metadata so Confluence knows how to load the macro.
 
-After successful migration:
+4. **REST API v2**: Modern endpoint that accepts ADF directly via `atlas_doc_format` representation.
 
-1. **Test thoroughly** - Insert various Blueprint Standards on test pages
-2. **Document any issues** - Note any rendering problems or missing content
-3. **Update old pages** - Replace MultiExcerpt macros with Blueprint Standards Embeds
-4. **Archive migration files** - Keep JSON exports for reference
+**Error Handling:**
+
+- Conversion failures: Logged with standard name, original content preserved in error report
+- Page creation failures: Logged with standard name, ADF preserved for debugging
+- Metadata extraction failure: Stops migration immediately (all macros need template)
+
+---
 
 ## Troubleshooting
 
-### Issue: Parser finds 0 macros
+### Issue: Migration job fails immediately
 
-**Cause:** Incorrect regex or JSON format
-
-**Solution:**
-- Verify JSON file contains `<ac:structured-macro ac:name="multiexcerpt-macro">`
-- Check that JSON was saved correctly (not truncated)
-- Try re-fetching from REST API
-
-### Issue: Import fails with "Invalid sources data"
-
-**Cause:** JSON format doesn't match expected structure
+**Cause:** Cannot extract Forge metadata template from working page
 
 **Solution:**
-- Verify `multiexcerpt-import-data.json` has `macros` array
-- Check that each macro has `name` and `content` fields
-- Validate JSON syntax with `node -c parse-multiexcerpts.js`
+- Verify page ID 64880643 exists and has a Blueprint Standard Source macro
+- Check the macro loads correctly (no "Error loading the extension")
+- Update `extractForgeMetadataTemplate()` call with correct page ID if needed
 
-### Issue: Macros imported but content is empty
+### Issue: Conversion API fails for some standards
 
-**Cause:** MultiExcerpt macros had no body content (placeholders)
-
-**Solution:**
-- Review skipped macros in import results
-- Manually populate content for placeholder macros
-- Re-import specific macros after adding content
-
-### Issue: Variables not detected
-
-**Cause:** Variable syntax doesn't match `{{variableName}}`
+**Cause:** Malformed storage format XML in original MultiExcerpt content
 
 **Solution:**
-- Check original MultiExcerpt for variable format
-- Update parser regex if different syntax is used
-- Manually add variables via Admin UI after import
+- Check forge logs for specific standard names that failed
+- Review original MultiExcerpt content for unclosed tags or invalid XML
+- Fix storage format XML manually in storage, then retry migration for that standard
 
-## Scripts Reference
+### Issue: Pages created but macros show "Error loading the extension"
 
-### parse-multiexcerpts.js
+**Cause:** Missing or incorrect Forge metadata in transformed ADF
 
-**Purpose:** Extract MultiExcerpt macros from Confluence REST API JSON
+**Solution:**
+- Verify the working page used for template extraction has correct metadata
+- Check that `forgeMetadata` object includes all required fields:
+  - extensionKey (full path with environment ID)
+  - extensionId
+  - extensionTitle
+  - extensionProperties
+  - forgeEnvironment
+  - render
+- Re-run migration after fixing metadata extraction
 
-**Usage:**
-```bash
-node parse-multiexcerpts.js /path/to/pageId.json
-```
+### Issue: Created pages are not editable
 
-**Input:** Confluence REST API JSON with `body.storage.value`
+**Cause:** ADF structure is incorrect or missing content
 
-**Output:**
-- Console log of all extracted macros
-- `/Users/[username]/Downloads/multiexcerpt-import-data.json`
+**Solution:**
+- Verify the page ADF contains a valid `bodiedExtension` node
+- Check that the content array is not empty
+- Compare with working page ADF structure using `comparePageAdf` resolver
+- Verify `guestParams` includes excerptId and excerptName
 
-**Key Features:**
-- Regex-based XML parsing
-- HTML entity decoding
-- Variable auto-detection (`{{var}}` pattern)
-- Category assignment by macro name prefix
-- Skips macros with empty content
+### Issue: Migration worker times out
 
-### bulk-import-multiexcerpts.js
+**Cause:** Processing 115 standards takes longer than 900s timeout
 
-**Purpose:** Simulate and test bulk import process
+**Solution:**
+- Check forge logs to see how many standards were processed before timeout
+- Note which standards succeeded (logged in worker)
+- Manually trigger migration again, skipping already-migrated standards
+- Consider increasing worker timeout in manifest.yml if needed
 
-**Usage:**
-```bash
-node bulk-import-multiexcerpts.js
-```
-
-**Input:** `/Users/[username]/Downloads/multiexcerpt-import-data.json`
-
-**Output:**
-- Console log of import simulation
-- `/Users/[username]/Downloads/multiexcerpt-import-results.json`
-
-**Note:** This is a simulation script. Actual import uses `bulkImportSources` resolver.
-
-## Migration Checklist
-
-Use this checklist to track your migration progress:
-
-- [ ] Step 1: Fetch page data from Confluence API
-- [ ] Step 2: Parse MultiExcerpt macros
-- [ ] Step 3: Review import data
-- [ ] Step 4: Prepare for bulk import
-- [ ] Step 5: Execute bulk import
-- [ ] Step 6: Verify import
-- [ ] Step 7: Post-migration cleanup
-- [ ] Test Blueprint Standards on test pages
-- [ ] Replace old MultiExcerpt macros
-- [ ] Archive migration files
+---
 
 ## Additional Resources
 
 - **Confluence REST API Docs:** https://developer.atlassian.com/cloud/confluence/rest/v1/api-group-content/
+- **ADF Format Docs:** https://developer.atlassian.com/cloud/confluence/adf/
 - **Storage Format Docs:** https://confluence.atlassian.com/doc/confluence-storage-format-790796544.html
-- **Blueprint Standards Admin:** `/wiki/spaces/[your-space]/pages/[admin-page-id]`
+- **Forge Events API:** https://developer.atlassian.com/platform/forge/events-reference/
 
 ## Support
 
 For issues or questions:
 1. Review this migration guide
 2. Check troubleshooting section
-3. Review import results JSON
-4. Contact Blueprint Standards team
+3. Review forge logs for detailed error messages
+4. Contact development team

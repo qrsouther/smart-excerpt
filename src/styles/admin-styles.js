@@ -54,19 +54,20 @@ export const previewBoxStyle = xcss({
 
 /**
  * Select dropdown sizing
- * Wider than default to accommodate longer labels
+ * Compact width to fit within sidebar
  */
 export const selectStyles = xcss({
-  minWidth: '200px'
+  width: '100%',
+  maxWidth: '180px'
 });
 
 /**
  * Left sidebar layout
- * Takes up 10% of viewport width for category navigation
+ * Takes up 15% of viewport width for category navigation and filters
  */
 export const leftSidebarStyles = xcss({
-  width: '10%',
-  minWidth: '150px',
+  width: '15%',
+  minWidth: '200px',
   paddingInlineEnd: 'space.200',
   padding: 'space.200',
   borderColor: 'color.border',
@@ -77,10 +78,10 @@ export const leftSidebarStyles = xcss({
 
 /**
  * Middle section layout
- * Takes up 90% of viewport width when right panel is hidden
+ * Takes up 85% of viewport width when right panel is hidden
  */
 export const middleSectionStyles = xcss({
-  width: '90%',
+  width: '85%',
   paddingInlineEnd: 'space.200',
   paddingInlineStart: 'space.200',
   padding: 'space.200',

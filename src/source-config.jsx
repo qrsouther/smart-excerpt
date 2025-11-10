@@ -252,10 +252,6 @@ const App = () => {
   ];
 
   const onSubmit = async (formData) => {
-    // DEBUG: Log what we're about to save
-    console.log('[source-config onSubmit] documentationLinks state:', documentationLinks);
-    alert('Saving Source with documentationLinks: ' + JSON.stringify(documentationLinks));
-
     // Merge detected variables with their metadata
     const variablesWithMetadata = detectedVariables.map(v => ({
       name: v.name,

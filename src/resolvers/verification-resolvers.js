@@ -20,6 +20,39 @@ import { generateUUID } from '../utils.js';
 import { extractTextFromAdf } from '../utils/adf-utils.js';
 
 /**
+ * Helper function to extract variables from ADF content
+ */
+function extractVariablesFromAdf(adfDoc) {
+  const variables = new Set();
+  const variableRegex = /\{\{([^}]+)\}\}/g;
+
+  const extractFromNode = (node) => {
+    // Check text content
+    if (node.text) {
+      let match;
+      while ((match = variableRegex.exec(node.text)) !== null) {
+        variables.add(match[1]);
+      }
+    }
+
+    // Recurse into content
+    if (node.content) {
+      for (const child of node.content) {
+        extractFromNode(child);
+      }
+    }
+  };
+
+  extractFromNode(adfDoc);
+
+  return Array.from(variables).map(name => ({
+    name,
+    defaultValue: '',
+    description: ''
+  }));
+}
+
+/**
  * Source macro heartbeat - tracks when a Source macro was last seen/active
  */
 export async function sourceHeartbeat(req) {
@@ -48,8 +81,20 @@ export async function sourceHeartbeat(req) {
  * Also cleans up stale Include usage entries
  */
 export async function checkAllSources(req) {
+  const progressId = `sources-check-${Date.now()}`;
+
   try {
     console.log('🔍 ACTIVE CHECK: Checking all Sources against their pages...');
+
+    // Initialize progress tracking
+    await storage.set(`progress:${progressId}`, {
+      phase: 'initializing',
+      status: 'Loading excerpts...',
+      percent: 0,
+      total: 0,
+      processed: 0,
+      startTime: Date.now()
+    });
 
     // Get all excerpts from the index
     const excerptIndex = await storage.get('excerpt-index') || { excerpts: [] };
@@ -58,24 +103,77 @@ export async function checkAllSources(req) {
     const orphanedSources = [];
     const checkedSources = [];
     let totalStaleEntriesRemoved = 0;
+    let contentConversionsCount = 0; // Track how many Storage Format -> ADF conversions we do
+
+    // Load all excerpts and group by page to minimize API calls
+    const excerptsByPage = new Map(); // pageId -> [excerpts]
+    const skippedExcerpts = [];
+
+    await storage.set(`progress:${progressId}`, {
+      phase: 'loading',
+      status: 'Grouping excerpts by page...',
+      percent: 10,
+      total: excerptIndex.excerpts.length,
+      processed: 0,
+      startTime: Date.now()
+    });
 
     for (const excerptSummary of excerptIndex.excerpts) {
-      // Load full excerpt data
       const excerpt = await storage.get(`excerpt:${excerptSummary.id}`);
       if (!excerpt) continue;
 
-      // Skip if this excerpt doesn't have page info (shouldn't happen, but safety check)
+      // Skip if this excerpt doesn't have page info
       if (!excerpt.sourcePageId || !excerpt.sourceLocalId) {
         console.log(`⚠️ Excerpt "${excerpt.name}" missing sourcePageId or sourceLocalId, skipping`);
+        skippedExcerpts.push(excerpt.name);
         continue;
       }
 
-      console.log(`Checking "${excerpt.name}" on page ${excerpt.sourcePageId}...`);
+      if (!excerptsByPage.has(excerpt.sourcePageId)) {
+        excerptsByPage.set(excerpt.sourcePageId, []);
+      }
+      excerptsByPage.get(excerpt.sourcePageId).push(excerpt);
+    }
+
+    console.log(`Grouped excerpts into ${excerptsByPage.size} pages to check`);
+    if (skippedExcerpts.length > 0) {
+      console.log(`Skipped ${skippedExcerpts.length} excerpts with missing page info`);
+    }
+
+    await storage.set(`progress:${progressId}`, {
+      phase: 'checking',
+      status: `Checking ${excerptsByPage.size} pages...`,
+      percent: 20,
+      total: excerptIndex.excerpts.length,
+      processed: 0,
+      totalPages: excerptsByPage.size,
+      currentPage: 0,
+      startTime: Date.now()
+    });
+
+    // Check each page once
+    let pageNumber = 0;
+    for (const [pageId, pageExcerpts] of excerptsByPage.entries()) {
+      pageNumber++;
+      console.log(`Fetching page ${pageId} (${pageExcerpts.length} excerpts)...`);
+
+      // Update progress
+      const percentComplete = 20 + Math.floor((pageNumber / excerptsByPage.size) * 70);
+      await storage.set(`progress:${progressId}`, {
+        phase: 'checking',
+        status: `Checking page ${pageNumber} of ${excerptsByPage.size}...`,
+        percent: percentComplete,
+        total: excerptIndex.excerpts.length,
+        processed: checkedSources.length + orphanedSources.length,
+        totalPages: excerptsByPage.size,
+        currentPage: pageNumber,
+        startTime: Date.now()
+      });
 
       try {
-        // Fetch the page content from Confluence API
-        const response = await api.asApp().requestConfluence(
-          route`/wiki/api/v2/pages/${excerpt.sourcePageId}?body-format=storage`,
+        // STEP 1: Fetch in storage format for orphan detection (proven to work)
+        const storageResponse = await api.asApp().requestConfluence(
+          route`/wiki/api/v2/pages/${pageId}?body-format=storage`,
           {
             headers: {
               'Accept': 'application/json'
@@ -83,78 +181,63 @@ export async function checkAllSources(req) {
           }
         );
 
-        if (!response.ok) {
-          console.log(`❌ Page ${excerpt.sourcePageId} not found or not accessible`);
-          orphanedSources.push({
-            ...excerpt,
-            orphanedReason: 'Source page not found or deleted'
+        if (!storageResponse.ok) {
+          console.log(`❌ Page ${pageId} not accessible, marking ${pageExcerpts.length} Sources as orphaned`);
+          pageExcerpts.forEach(excerpt => {
+            orphanedSources.push({
+              ...excerpt,
+              orphanedReason: 'Source page not found or deleted'
+            });
           });
           continue;
         }
 
-        const pageData = await response.json();
-        const pageBody = pageData?.body?.storage?.value || '';
+        const storageData = await storageResponse.json();
+        const storageBody = storageData?.body?.storage?.value || '';
 
-        // Check if the sourceLocalId exists in the page body
-        // Confluence stores macro IDs in the storage format like: data-macro-id="sourceLocalId"
-        const macroExists = pageBody.includes(excerpt.sourceLocalId);
+        if (!storageBody) {
+          console.warn(`⚠️ No storage body found for page ${pageId}`);
+          pageExcerpts.forEach(excerpt => {
+            orphanedSources.push({
+              ...excerpt,
+              orphanedReason: 'Unable to read page content'
+            });
+          });
+          continue;
+        }
 
-        if (macroExists) {
+        // STEP 2: Check which Sources exist on the page (string matching - works for all Sources)
+        const sourcesToConvert = []; // Track Sources that need conversion
+
+        for (const excerpt of pageExcerpts) {
+          const macroExists = storageBody.includes(excerpt.sourceLocalId);
+
+          if (!macroExists) {
+            console.log(`❌ Source "${excerpt.name}" NOT found on page - ORPHANED`);
+            orphanedSources.push({
+              ...excerpt,
+              orphanedReason: 'Macro deleted from source page'
+            });
+            continue;
+          }
+
+          // Source exists on page
           console.log(`✅ Source "${excerpt.name}" found on page`);
           checkedSources.push(excerpt.name);
-        } else {
-          console.log(`❌ Source "${excerpt.name}" NOT found on page - ORPHANED`);
-          orphanedSources.push({
-            ...excerpt,
-            orphanedReason: 'Macro deleted from source page'
-          });
+
+          // Check if content needs conversion (Storage Format XML -> ADF JSON)
+          const needsConversion = excerpt.content && typeof excerpt.content === 'string';
+          if (needsConversion) {
+            sourcesToConvert.push(excerpt);
+          }
         }
-      } catch (apiError) {
-        console.error(`Error checking page ${excerpt.sourcePageId}:`, apiError);
-        orphanedSources.push({
-          ...excerpt,
-          orphanedReason: `API error: ${apiError.message}`
-        });
-      }
-    }
 
-    console.log(`✅ Source check complete: ${checkedSources.length} active, ${orphanedSources.length} orphaned`);
+        // STEP 3: If any Sources need conversion, fetch page in ADF format
+        if (sourcesToConvert.length > 0) {
+          console.log(`🔄 ${sourcesToConvert.length} Sources need conversion, fetching ADF...`);
 
-    // Now clean up stale Include usage entries
-    console.log('🧹 CLEANUP: Checking for stale Include usage entries...');
-
-    for (const excerptSummary of excerptIndex.excerpts) {
-      const excerpt = await storage.get(`excerpt:${excerptSummary.id}`);
-      if (!excerpt) continue;
-
-      // Get usage data for this excerpt
-      const usageKey = `usage:${excerpt.id}`;
-      const usageData = await storage.get(usageKey);
-
-      if (!usageData || !usageData.references || usageData.references.length === 0) {
-        continue;
-      }
-
-      console.log(`Checking usage entries for "${excerpt.name}" (${usageData.references.length} entries)...`);
-
-      // Group references by pageId to check each page only once
-      const pageMap = new Map();
-      for (const ref of usageData.references) {
-        if (!pageMap.has(ref.pageId)) {
-          pageMap.set(ref.pageId, []);
-        }
-        pageMap.get(ref.pageId).push(ref);
-      }
-
-      const validReferences = [];
-      let staleEntriesForThisExcerpt = 0;
-
-      // Check each page
-      for (const [pageId, refs] of pageMap.entries()) {
-        try {
-          // Fetch the page content
-          const response = await api.asApp().requestConfluence(
-            route`/wiki/api/v2/pages/${pageId}?body-format=storage`,
+          const adfResponse = await api.asApp().requestConfluence(
+            route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`,
             {
               headers: {
                 'Accept': 'application/json'
@@ -162,54 +245,124 @@ export async function checkAllSources(req) {
             }
           );
 
-          if (!response.ok) {
-            console.log(`⚠️ Page ${pageId} not accessible, removing all ${refs.length} references`);
-            staleEntriesForThisExcerpt += refs.length;
+          if (!adfResponse.ok) {
+            console.warn(`⚠️ Could not fetch ADF for page ${pageId}, skipping conversion`);
             continue;
           }
 
-          const pageData = await response.json();
-          const pageBody = pageData?.body?.storage?.value || '';
+          const adfData = await adfResponse.json();
+          const adfBody = adfData?.body?.atlas_doc_format?.value;
 
-          // Check which localIds still exist on the page
-          for (const ref of refs) {
-            if (pageBody.includes(ref.localId)) {
-              validReferences.push(ref);
-            } else {
-              console.log(`🗑️ Removing stale entry: localId ${ref.localId} no longer on page ${pageId}`);
-              staleEntriesForThisExcerpt++;
-            }
+          if (!adfBody) {
+            console.warn(`⚠️ No ADF body found for page ${pageId}, skipping conversion`);
+            continue;
           }
-        } catch (apiError) {
-          console.error(`Error checking page ${pageId}:`, apiError);
-          // Keep references if we can't verify (safer than deleting)
-          validReferences.push(...refs);
-        }
-      }
 
-      // Update storage if we removed any stale entries
-      if (staleEntriesForThisExcerpt > 0) {
-        console.log(`✅ Cleaned up ${staleEntriesForThisExcerpt} stale entries for "${excerpt.name}"`);
-        totalStaleEntriesRemoved += staleEntriesForThisExcerpt;
+          const adfDoc = typeof adfBody === 'string' ? JSON.parse(adfBody) : adfBody;
 
-        if (validReferences.length > 0) {
-          usageData.references = validReferences;
-          await storage.set(usageKey, usageData);
-        } else {
-          // No valid references left, delete the usage key
-          await storage.delete(usageKey);
+          // Find all bodiedExtension nodes
+          const findExtensions = (node, extensions = []) => {
+            if (node.type === 'bodiedExtension' && node.attrs?.extensionKey?.includes('blueprint-standard-source')) {
+              extensions.push(node);
+            }
+            if (node.content) {
+              for (const child of node.content) {
+                findExtensions(child, extensions);
+              }
+            }
+            return extensions;
+          };
+
+          const extensionNodes = findExtensions(adfDoc);
+          console.log(`Found ${extensionNodes.length} Source macro extension nodes in ADF`);
+
+          // Convert each Source that needs it
+          for (const excerpt of sourcesToConvert) {
+            const extensionNode = extensionNodes.find(node =>
+              node.attrs?.localId === excerpt.sourceLocalId
+            );
+
+            if (!extensionNode || !extensionNode.content) {
+              console.warn(`⚠️ Could not find ADF node for "${excerpt.name}", skipping conversion`);
+              continue;
+            }
+
+            console.log(`🔄 Converting "${excerpt.name}" from Storage Format to ADF JSON...`);
+
+            // Extract ADF content from the bodiedExtension node
+            const bodyContent = {
+              type: 'doc',
+              version: 1,
+              content: extensionNode.content
+            };
+
+            // Extract variables from ADF content
+            const variables = extractVariablesFromAdf(bodyContent);
+
+            // Generate content hash
+            const crypto = require('crypto');
+            const contentHash = crypto.createHash('sha256').update(JSON.stringify(bodyContent)).digest('hex');
+
+            // Update excerpt in storage
+            excerpt.content = bodyContent;
+            excerpt.variables = variables;
+            excerpt.contentHash = contentHash;
+            excerpt.updatedAt = new Date().toISOString();
+
+            await storage.set(`excerpt:${excerpt.id}`, excerpt);
+
+            console.log(`✅ Converted "${excerpt.name}" to ADF JSON (${variables.length} variables)`);
+            contentConversionsCount++;
+          }
         }
+      } catch (apiError) {
+        console.error(`Error checking page ${pageId}:`, apiError);
+        pageExcerpts.forEach(excerpt => {
+          orphanedSources.push({
+            ...excerpt,
+            orphanedReason: `API error: ${apiError.message}`
+          });
+        });
       }
     }
 
-    console.log(`✅ Cleanup complete: ${totalStaleEntriesRemoved} stale Include entries removed`);
+    console.log(`✅ Source check complete: ${checkedSources.length} active, ${orphanedSources.length} orphaned`);
+    if (contentConversionsCount > 0) {
+      console.log(`🔄 Converted ${contentConversionsCount} Sources from Storage Format to ADF JSON`);
+    }
+
+    // Skip stale Include cleanup to avoid timeout (use "Check All Embeds" for that)
+    console.log('ℹ️ Skipping stale Include cleanup (use "Check All Embeds" button for comprehensive Include verification)');
+    totalStaleEntriesRemoved = 0; // Not running cleanup, so set to 0
+
+    // Build completion status message
+    let statusMessage = `Complete! ${checkedSources.length} active, ${orphanedSources.length} orphaned`;
+    if (contentConversionsCount > 0) {
+      statusMessage += `, ${contentConversionsCount} converted to ADF`;
+    }
+
+    // Mark as complete
+    await storage.set(`progress:${progressId}`, {
+      phase: 'complete',
+      status: statusMessage,
+      percent: 100,
+      total: excerptIndex.excerpts.length,
+      processed: checkedSources.length + orphanedSources.length,
+      activeCount: checkedSources.length,
+      orphanedCount: orphanedSources.length,
+      contentConversionsCount,
+      startTime: Date.now(),
+      endTime: Date.now()
+    });
 
     return {
       success: true,
+      progressId,  // Return progressId for frontend polling
       orphanedSources,
       checkedCount: checkedSources.length + orphanedSources.length,
       activeCount: checkedSources.length,
-      staleEntriesRemoved: totalStaleEntriesRemoved
+      staleEntriesRemoved: totalStaleEntriesRemoved,
+      contentConversionsCount
     };
   } catch (error) {
     console.error('Error in checkAllSources:', error);
@@ -217,7 +370,8 @@ export async function checkAllSources(req) {
       success: false,
       error: error.message,
       orphanedSources: [],
-      staleEntriesRemoved: 0
+      staleEntriesRemoved: 0,
+      contentConversionsCount: 0
     };
   }
 }

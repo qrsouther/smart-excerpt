@@ -1,21 +1,27 @@
 #!/usr/bin/env node
 
 /**
- * Fix Excerpt IDs - Generate unique IDs for each SmartExcerpt
+ * Fix Excerpt IDs - Generate unique IDs for each Blueprint Standard Source
  *
  * The Edit modal uses excerpt-id to look up the configuration.
- * All cloned macros currently have the same ID, so they all show "SmartExcerpt0".
+ * All cloned macros currently have the same ID.
  * This script generates a unique UUID for each macro.
+ *
+ * Updated: 2025-11-09 for Blueprint Standard (v7.15.0+)
  */
 
 const https = require('https');
 const crypto = require('crypto');
 
-const PAGE_ID = '80150529';
-const BASE_URL = 'https://qrsouther.atlassian.net';
+// Parse command line arguments
+const args = process.argv.slice(2);
+const pageIdArg = args.find(arg => arg.startsWith('--page-id='));
+const PAGE_ID = pageIdArg ? pageIdArg.split('=')[1] : '99909654';
+const baseUrlArg = args.find(arg => arg.startsWith('--base-url='));
+const BASE_URL = baseUrlArg ? baseUrlArg.split('=')[1] : 'https://qrsouther.atlassian.net';
 const API_EMAIL = process.env.CONFLUENCE_EMAIL;
 const API_TOKEN = process.env.CONFLUENCE_API_TOKEN;
-const DRY_RUN = process.argv.includes('--dry-run');
+const DRY_RUN = args.includes('--dry-run');
 
 // Generate a UUID v4
 function generateUUID() {
@@ -83,7 +89,7 @@ async function updatePageContent(pageId, newStorageContent, currentVersion) {
     },
     version: {
       number: currentVersion + 1,
-      message: 'Fixed excerpt IDs for SmartExcerpt macros'
+      message: 'Fixed excerpt IDs for Blueprint Standard Source macros'
     }
   };
 
@@ -95,9 +101,9 @@ function updateExcerptIds(storageContent) {
   let updatedContent = storageContent;
   let updateCount = 0;
 
-  // Find all SmartExcerpt macros and give each a unique ID
+  // Find all Blueprint Standard Source macros and give each a unique ID
   // We need to match the entire macro and replace the excerpt-id within it
-  const macroRegex = /<ac:adf-extension><ac:adf-node type="bodied-extension">[\s\S]*?smart-excerpt-source[\s\S]*?<\/ac:adf-node><\/ac:adf-extension>/g;
+  const macroRegex = /<ac:adf-extension><ac:adf-node type="bodied-extension">[\s\S]*?blueprint-standard-source[\s\S]*?<\/ac:adf-node><\/ac:adf-extension>/g;
 
   updatedContent = updatedContent.replace(macroRegex, (macroMatch) => {
     // Extract the excerpt-name to log progress
@@ -142,7 +148,7 @@ async function main() {
     console.log(`✓ Page storage fetched (version ${currentVersion})\n`);
 
     // Step 2: Update excerpt IDs
-    console.log('🔧 Generating unique IDs for each SmartExcerpt...');
+    console.log('🔧 Generating unique IDs for each Blueprint Standard Source...');
     const { updatedContent, updateCount } = updateExcerptIds(storageContent);
     console.log(`✓ Generated ${updateCount} unique IDs\n`);
 
@@ -163,11 +169,12 @@ async function main() {
       console.log('✓ Page updated successfully!\n');
 
       console.log('✅ SUCCESS!');
-      console.log(`\n🎉 ${updateCount} SmartExcerpt macros now have unique IDs!`);
+      console.log(`\n🎉 ${updateCount} Blueprint Standard Source macros now have unique IDs!`);
       console.log('\n⚠️  NEXT STEPS:');
       console.log('   1. Close and reopen the edit page');
-      console.log('   2. Click Edit on a SmartExcerpt macro');
-      console.log('   3. Verify it now shows the correct name\n');
+      console.log('   2. Click Edit on a Blueprint Standard Source macro');
+      console.log('   3. Verify it now shows the correct name');
+      console.log('   4. Delete the old MultiExcerpt macros\n');
     }
 
   } catch (error) {

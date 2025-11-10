@@ -1,28 +1,34 @@
 #!/usr/bin/env node
 
 /**
- * Clone SmartExcerpt Macros Script
+ * Clone Blueprint Standard Source Macros Script
  *
- * This script clones an existing, initialized SmartExcerpt macro 147 times
- * and updates each clone's name to match the MultiExcerpt macros.
+ * This script clones an existing, initialized Blueprint Standard Source macro
+ * multiple times and updates each clone's name to match the MultiExcerpt macros.
  *
  * Prerequisites:
- * 1. Manually create ONE SmartExcerpt macro on the page
+ * 1. Manually create ONE Blueprint Standard Source macro on the page
  * 2. Initialize it with any name/category (we'll update the names)
  * 3. Save the page
  * 4. Set environment variables:
  *    export CONFLUENCE_EMAIL="your-email@example.com"
  *    export CONFLUENCE_API_TOKEN="your-api-token"
- * 5. Run this script: node clone-macros.js [--dry-run]
+ * 5. Run this script: node scripts/clone-macros.js [--dry-run]
+ *
+ * Updated: 2025-11-09 for Blueprint Standard (v7.15.0+)
  */
 
 const https = require('https');
 
-const PAGE_ID = '80150529';
-const BASE_URL = 'https://qrsouther.atlassian.net';
+// Parse command line arguments
+const args = process.argv.slice(2);
+const pageIdArg = args.find(arg => arg.startsWith('--page-id='));
+const PAGE_ID = pageIdArg ? pageIdArg.split('=')[1] : '99909654';
+const baseUrlArg = args.find(arg => arg.startsWith('--base-url='));
+const BASE_URL = baseUrlArg ? baseUrlArg.split('=')[1] : 'https://qrsouther.atlassian.net';
 const API_EMAIL = process.env.CONFLUENCE_EMAIL;
 const API_TOKEN = process.env.CONFLUENCE_API_TOKEN;
-const DRY_RUN = process.argv.includes('--dry-run');
+const DRY_RUN = args.includes('--dry-run');
 
 // Make authenticated API request
 function makeRequest(method, path, body = null) {
@@ -86,22 +92,22 @@ function extractMultiExcerptNames(storageContent) {
   return names;
 }
 
-// Find the SmartExcerpt macro in storage
-function findSmartExcerptMacro(storageContent) {
-  // Look for ac:adf-extension with SmartExcerpt - it's a bodied-extension, not extension
-  const smartExcerptRegex = /<ac:adf-extension><ac:adf-node type="bodied-extension">[\s\S]*?smart-excerpt-source[\s\S]*?<\/ac:adf-node><\/ac:adf-extension>/;
+// Find the Blueprint Standard Source macro in storage
+function findBlueprintStandardMacro(storageContent) {
+  // Look for ac:adf-extension with Blueprint Standard - it's a bodied-extension
+  const blueprintRegex = /<ac:adf-extension><ac:adf-node type="bodied-extension">[\s\S]*?blueprint-standard-source[\s\S]*?<\/ac:adf-node><\/ac:adf-extension>/;
 
-  const match = storageContent.match(smartExcerptRegex);
+  const match = storageContent.match(blueprintRegex);
 
   if (!match) {
-    throw new Error('No SmartExcerpt macro found! Please create one manually first.');
+    throw new Error('No Blueprint Standard Source macro found! Please create one manually first.');
   }
 
   return match[0];
 }
 
-// Clone the SmartExcerpt macro and update its name
-function cloneSmartExcerptWithName(macroXML, newName) {
+// Clone the Blueprint Standard macro and update its name
+function cloneBlueprintStandardWithName(macroXML, newName) {
   // The name is stored in guest-params as excerpt-name
   // Find: <ac:adf-parameter key="excerpt-name">SmartExcerpt0</ac:adf-parameter>
   // Replace the value between the tags
@@ -127,7 +133,7 @@ async function updatePageContent(pageId, newStorageContent, currentVersion) {
     },
     version: {
       number: currentVersion + 1,
-      message: 'Cloned SmartExcerpt macros from script'
+      message: 'Cloned Blueprint Standard Source macros from script'
     }
   };
 
@@ -136,7 +142,7 @@ async function updatePageContent(pageId, newStorageContent, currentVersion) {
 
 // Main function
 async function main() {
-  console.log('🚀 SmartExcerpt Macro Cloning Script Starting...\n');
+  console.log('🚀 Blueprint Standard Source Macro Cloning Script Starting...\n');
 
   try {
     // Step 1: Fetch page storage
@@ -155,23 +161,23 @@ async function main() {
       console.log(`   Last: "${multiExcerptNames[multiExcerptNames.length - 1]}"\n`);
     }
 
-    // Step 3: Find the SmartExcerpt macro
-    console.log('🔍 Finding SmartExcerpt macro template...');
-    const smartExcerptTemplate = findSmartExcerptMacro(storageContent);
-    console.log('✓ Found SmartExcerpt macro template\n');
+    // Step 3: Find the Blueprint Standard macro
+    console.log('🔍 Finding Blueprint Standard Source macro template...');
+    const blueprintTemplate = findBlueprintStandardMacro(storageContent);
+    console.log('✓ Found Blueprint Standard Source macro template\n');
 
-    // Step 4: Clone and create all SmartExcerpt macros
-    console.log('📝 Cloning SmartExcerpt macros...');
+    // Step 4: Clone and create all Blueprint Standard macros
+    console.log('📝 Cloning Blueprint Standard Source macros...');
     const clonedMacros = multiExcerptNames.map(name => {
-      return cloneSmartExcerptWithName(smartExcerptTemplate, name);
+      return cloneBlueprintStandardWithName(blueprintTemplate, name);
     });
     console.log(`✓ Created ${clonedMacros.length} cloned macros\n`);
 
     // Step 5: Insert clones into storage
     console.log('📝 Inserting clones into page storage...');
 
-    // Find where to insert (after the original SmartExcerpt)
-    const insertPosition = storageContent.indexOf(smartExcerptTemplate) + smartExcerptTemplate.length;
+    // Find where to insert (after the original Blueprint Standard)
+    const insertPosition = storageContent.indexOf(blueprintTemplate) + blueprintTemplate.length;
 
     const updatedStorage =
       storageContent.slice(0, insertPosition) +
@@ -198,12 +204,13 @@ async function main() {
       console.log('✓ Page updated successfully!\n');
 
       console.log('✅ SUCCESS!');
-      console.log(`\n🎉 ${clonedMacros.length} SmartExcerpt macros have been cloned!`);
+      console.log(`\n🎉 ${clonedMacros.length} Blueprint Standard Source macros have been cloned!`);
       console.log('\n⚠️  NEXT STEPS:');
       console.log('   1. Refresh the Confluence page in your browser');
-      console.log('   2. Verify all SmartExcerpt macros appear correctly');
-      console.log('   3. Copy content from MultiExcerpt to SmartExcerpt macros');
-      console.log('   4. Delete the old MultiExcerpt macros\n');
+      console.log('   2. Verify all Blueprint Standard Source macros appear correctly');
+      console.log('   3. Run migrate-content.js to copy content from MultiExcerpt macros');
+      console.log('   4. Run fix-excerpt-ids.js to generate unique IDs');
+      console.log('   5. Delete the old MultiExcerpt macros\n');
     }
 
   } catch (error) {

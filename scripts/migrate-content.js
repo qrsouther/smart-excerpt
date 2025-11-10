@@ -1,19 +1,25 @@
 #!/usr/bin/env node
 
 /**
- * Migrate MultiExcerpt Content to SmartExcerpt Macros
+ * Migrate MultiExcerpt Content to Blueprint Standard Source Macros
  *
  * This script copies the body content from each MultiExcerpt macro
- * into its corresponding SmartExcerpt macro (matched by name).
+ * into its corresponding Blueprint Standard Source macro (matched by name).
+ *
+ * Updated: 2025-11-09 for Blueprint Standard (v7.15.0+)
  */
 
 const https = require('https');
 
-const PAGE_ID = '80150529';
-const BASE_URL = 'https://qrsouther.atlassian.net';
+// Parse command line arguments
+const args = process.argv.slice(2);
+const pageIdArg = args.find(arg => arg.startsWith('--page-id='));
+const PAGE_ID = pageIdArg ? pageIdArg.split('=')[1] : '99909654';
+const baseUrlArg = args.find(arg => arg.startsWith('--base-url='));
+const BASE_URL = baseUrlArg ? baseUrlArg.split('=')[1] : 'https://qrsouther.atlassian.net';
 const API_EMAIL = process.env.CONFLUENCE_EMAIL;
 const API_TOKEN = process.env.CONFLUENCE_API_TOKEN;
-const DRY_RUN = process.argv.includes('--dry-run');
+const DRY_RUN = args.includes('--dry-run');
 
 // Make authenticated API request
 function makeRequest(method, path, body = null) {
@@ -109,8 +115,8 @@ function extractMultiExcerpts(storageContent) {
   return multiExcerpts;
 }
 
-// Find all SmartExcerpt macros and update their content
-function updateSmartExcerptContent(storageContent, multiExcerpts) {
+// Find all Blueprint Standard Source macros and update their content
+function updateBlueprintStandardContent(storageContent, multiExcerpts) {
   let updatedContent = storageContent;
   let updatedCount = 0;
 
@@ -120,15 +126,10 @@ function updateSmartExcerptContent(storageContent, multiExcerpts) {
     contentMap.set(me.name, me.content);
   });
 
-  // Find each SmartExcerpt and update its content
-  const smartExcerptRegex = /<ac:adf-extension><ac:adf-node type="bodied-extension">[\s\S]*?<ac:adf-parameter key="excerpt-name">([^<]+)<\/ac:adf-parameter>[\s\S]*?<ac:adf-content>([\s\S]*?)<\/ac:adf-content>[\s\S]*?<\/ac:adf-node><\/ac:adf-extension>/g;
+  // Find each Blueprint Standard Source macro and update its content
+  const blueprintRegex = /<ac:adf-extension><ac:adf-node type="bodied-extension">[\s\S]*?<ac:adf-parameter key="excerpt-name">([^<]+)<\/ac:adf-parameter>[\s\S]*?<ac:adf-content>([\s\S]*?)<\/ac:adf-content>[\s\S]*?<\/ac:adf-node><\/ac:adf-extension>/g;
 
-  updatedContent = updatedContent.replace(smartExcerptRegex, (match, excerptName, currentContent) => {
-    // Skip SmartExcerpt0 (the template)
-    if (excerptName === 'SmartExcerpt0') {
-      return match;
-    }
-
+  updatedContent = updatedContent.replace(blueprintRegex, (match, excerptName, currentContent) => {
     // Find matching MultiExcerpt content
     const newContent = contentMap.get(excerptName);
 
@@ -161,7 +162,7 @@ async function updatePageContent(pageId, newStorageContent, currentVersion) {
     },
     version: {
       number: currentVersion + 1,
-      message: 'Migrated content from MultiExcerpt to SmartExcerpt macros'
+      message: 'Migrated content from MultiExcerpt to Blueprint Standard Source macros'
     }
   };
 
@@ -185,10 +186,10 @@ async function main() {
     const multiExcerpts = extractMultiExcerpts(storageContent);
     console.log(`✓ Found ${multiExcerpts.length} MultiExcerpt macros with content\n`);
 
-    // Step 3: Update SmartExcerpt content
-    console.log('📝 Updating SmartExcerpt content...');
-    const { updatedContent, updatedCount } = updateSmartExcerptContent(storageContent, multiExcerpts);
-    console.log(`\n✓ Updated ${updatedCount} SmartExcerpt macros\n`);
+    // Step 3: Update Blueprint Standard content
+    console.log('📝 Updating Blueprint Standard Source content...');
+    const { updatedContent, updatedCount } = updateBlueprintStandardContent(storageContent, multiExcerpts);
+    console.log(`\n✓ Updated ${updatedCount} Blueprint Standard Source macros\n`);
 
     // Step 4: Save or update
     if (DRY_RUN) {
@@ -207,11 +208,12 @@ async function main() {
       console.log('✓ Page updated successfully!\n');
 
       console.log('✅ SUCCESS!');
-      console.log(`\n🎉 ${updatedCount} SmartExcerpt macros have been updated with content!`);
+      console.log(`\n🎉 ${updatedCount} Blueprint Standard Source macros have been updated with content!`);
       console.log('\n⚠️  NEXT STEPS:');
       console.log('   1. Refresh the Confluence page in your browser');
-      console.log('   2. Verify all SmartExcerpt macros show the correct content');
-      console.log('   3. Delete the old MultiExcerpt macros\n');
+      console.log('   2. Verify all Blueprint Standard Source macros show the correct content');
+      console.log('   3. Run fix-excerpt-ids.js to generate unique IDs');
+      console.log('   4. Delete the old MultiExcerpt macros\n');
     }
 
   } catch (error) {
