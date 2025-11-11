@@ -41,6 +41,17 @@ export const fullWidthTableStyle = xcss({
 });
 
 /**
+ * Scrollable table container
+ * Used for: usage details table that may have many variable/toggle columns
+ * Adds horizontal scrollbar when table content overflows
+ */
+export const tableScrollContainerStyle = xcss({
+  width: '100%',
+  maxWidth: '100%',
+  overflowX: 'auto'
+});
+
+/**
  * Preview content box styling
  * Matches the Include macro preview styling for consistency
  */

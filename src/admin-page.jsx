@@ -76,6 +76,7 @@ import { OrphanedItemsSection } from './components/admin/OrphanedItemsSection';
 import {
   cardStyles,
   fullWidthTableStyle,
+  tableScrollContainerStyle,
   previewBoxStyle,
   selectStyles,
   leftSidebarStyles,
@@ -1280,9 +1281,10 @@ const App = () => {
                   {uniqueUsage.length === 0 ? (
                     <Text><Em>This Blueprint Standard is not used on any pages yet</Em></Text>
                   ) : (
-                    <DynamicTable
-                      head={{ cells: headerCells }}
-                      rows={uniqueUsage.map((ref) => {
+                    <Box xcss={tableScrollContainerStyle}>
+                      <DynamicTable
+                        head={{ cells: headerCells }}
+                        rows={uniqueUsage.map((ref) => {
                         const rowCells = [
                           {
                             key: 'page',
@@ -1408,7 +1410,8 @@ const App = () => {
                           cells: rowCells
                         };
                       })}
-                    />
+                      />
+                    </Box>
                   )}
                 </Stack>
               );
@@ -1629,7 +1632,7 @@ const App = () => {
                           <Stack space="space.200">
                             <Text>Included in the following {usageCount} page(s)</Text>
                             {usageCount > 0 && (
-                              <Box xcss={fullWidthTableStyle}>
+                              <Box xcss={tableScrollContainerStyle}>
                                 <DynamicTable
                                   head={{
                                     cells: headerCells
