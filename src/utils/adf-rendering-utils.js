@@ -22,6 +22,9 @@
  * - Null table cell attributes
  * - Unsupported table attributes
  *
+ * Note: AdfRenderer uses hardcoded 14px font size that cannot be overridden.
+ * This is a known limitation of Forge UI Kit's AdfRenderer component.
+ *
  * @param {Object} adfNode - ADF node to clean
  * @returns {Object} Cleaned ADF node
  */

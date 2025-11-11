@@ -1014,6 +1014,23 @@ logError('API call failed', error, { pageId, excerptId });
 
 ---
 
+## ⚠️ Known Limitations
+
+### Font Size (14px Fixed)
+**Issue:** Embed body text renders at 14px and cannot be changed to 16px or any other size.
+
+**Root Cause:** Forge UI Kit's `AdfRenderer` component has hardcoded internal styles that ignore parent container font-size CSS. The ADF specification doesn't include a fontSize mark type, making it impossible to override this behavior through styling or ADF manipulation.
+
+**Workaround:** None available with current Forge UI Kit architecture.
+
+**Future Resolution:** This limitation will be resolved in the planned "Custom UI" rewrite, which will use a single iframe/compositor model with full CSS control. In that architecture, 16px body text will be the standard.
+
+**Community Discussion:** [Atlassian Community Thread - Different font size UI Kits Text vs AdfRenderer](https://community.developer.atlassian.com/t/different-font-size-ui-kits-text-vs-adfrenderer/96454)
+
+**Note:** 14px is Atlassian's standard body text size across Confluence and other products, so the current rendering is consistent with the broader Confluence UI.
+
+---
+
 ## 🐛 Troubleshooting
 
 ### Includes Showing Old Content
