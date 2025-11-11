@@ -83,9 +83,10 @@ export function EmbedViewMode({
 
   const isAdf = content && typeof content === 'object' && content.type === 'doc';
 
-  // Wrapper content - either with border (when stale) or without
+  // Wrapper content - either with border (when stale and checking is complete) or without
+  // Border only appears AFTER checking completes AND staleness is detected
   const wrapperContent = (children) => {
-    if (isStale || isCheckingStaleness) {
+    if (isStale && !isCheckingStaleness) {
       return <Box xcss={staleBorderWrapperStyle}>{children}</Box>;
     }
     return <Fragment>{children}</Fragment>;
@@ -101,12 +102,15 @@ export function EmbedViewMode({
 
     return wrapperContent(
       <Box xcss={xcss({ position: 'relative', width: '100%' })}>
-        <StalenessCheckIndicator
-          isCheckingStaleness={isCheckingStaleness}
-          isStale={isStale}
-          showUpdateBanner={showUpdateBanner}
-          onReviewClick={handleReviewClick}
-        />
+        {/* Only show Review Update button when stale (not when just checking) */}
+        {isStale && !isCheckingStaleness && (
+          <StalenessCheckIndicator
+            isCheckingStaleness={false}
+            isStale={isStale}
+            showUpdateBanner={showUpdateBanner}
+            onReviewClick={handleReviewClick}
+          />
+        )}
         <Stack space="space.150">
           {showUpdateBanner && (
             <UpdateAvailableBanner
@@ -121,7 +125,10 @@ export function EmbedViewMode({
               toggleStates={toggleStates}
             />
           )}
-          <DocumentationLinksDisplay documentationLinks={excerpt?.documentationLinks} />
+          <DocumentationLinksDisplay 
+            documentationLinks={excerpt?.documentationLinks}
+            isCheckingStaleness={isCheckingStaleness}
+          />
           <Box xcss={adfContentContainerStyle}>
             <AdfRenderer document={cleaned} />
           </Box>
@@ -133,12 +140,15 @@ export function EmbedViewMode({
   // Plain text content
   return wrapperContent(
     <Box xcss={xcss({ position: 'relative', width: '100%' })}>
-      <StalenessCheckIndicator
-        isCheckingStaleness={isCheckingStaleness}
-        isStale={isStale}
-        showUpdateBanner={showUpdateBanner}
-        onReviewClick={handleReviewClick}
-      />
+      {/* Only show Review Update button when stale (not when just checking) */}
+      {isStale && !isCheckingStaleness && (
+        <StalenessCheckIndicator
+          isCheckingStaleness={false}
+          isStale={isStale}
+          showUpdateBanner={showUpdateBanner}
+          onReviewClick={handleReviewClick}
+        />
+      )}
       <Stack space="space.200">
         {showUpdateBanner && (
           <UpdateAvailableBanner
@@ -153,7 +163,10 @@ export function EmbedViewMode({
             toggleStates={toggleStates}
           />
         )}
-        <DocumentationLinksDisplay documentationLinks={excerpt?.documentationLinks} />
+        <DocumentationLinksDisplay 
+          documentationLinks={excerpt?.documentationLinks}
+          isCheckingStaleness={isCheckingStaleness}
+        />
         <Box xcss={adfContentContainerStyle}>
           {content && typeof content === 'object' && content.type === 'doc' ? (
             <AdfRenderer document={content} />

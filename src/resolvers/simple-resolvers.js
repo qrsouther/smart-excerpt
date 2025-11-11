@@ -10,6 +10,7 @@
 import { storage, startsWith } from '@forge/api';
 import api, { route } from '@forge/api';
 import { detectVariables, detectToggles } from '../utils/detection-utils.js';
+import { saveVersion } from '../utils/version-manager.js';
 
 /**
  * Detect variables from content (for UI to call)
@@ -513,6 +514,29 @@ export async function saveCachedContent(req) {
     // Also update lastSynced, syncedContentHash, and syncedContent in macro-vars
     const varsKey = `macro-vars:${localId}`;
     const existingVars = await storage.get(varsKey) || {};
+
+    // Phase 3: Create version snapshot before modification (v7.17.0)
+    if (existingVars && Object.keys(existingVars).length > 0) {
+      const versionResult = await saveVersion(
+        storage,
+        varsKey,
+        existingVars,
+        {
+          changeType: 'UPDATE',
+          changedBy: 'saveCachedContent',
+          userAccountId: req.context?.accountId,
+          localId: localId
+        }
+      );
+      if (versionResult.success) {
+        console.log('[saveCachedContent] ✅ Version snapshot created:', versionResult.versionId);
+      } else if (versionResult.skipped) {
+        console.log('[saveCachedContent] ⏭️  Version snapshot skipped (content unchanged)');
+      } else {
+        console.warn('[saveCachedContent] ⚠️  Version snapshot failed:', versionResult.error);
+      }
+    }
+
     existingVars.lastSynced = now;
 
     // Update syncedContentHash if provided (for Update button in view mode)

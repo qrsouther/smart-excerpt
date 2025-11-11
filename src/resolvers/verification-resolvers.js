@@ -225,13 +225,40 @@ export async function checkAllSources(req) {
           console.log(`✅ Source "${excerpt.name}" found on page`);
           checkedSources.push(excerpt.name);
 
+          /*
+           * ═══════════════════════════════════════════════════════════════════════
+           * DANGEROUS AUTO-CONVERSION DISABLED (Phase 1 Safety Patch - v7.16.0)
+           * ═══════════════════════════════════════════════════════════════════════
+           *
+           * The following code automatically converted Storage Format (XML) → ADF JSON.
+           * This has caused data corruption in the past (variables disappearing, content
+           * becoming malformed, Embeds losing Source references).
+           *
+           * REASON FOR DISABLING:
+           * - No versioning system to rollback corrupted data
+           * - No validation to catch conversion errors
+           * - Silent failures corrupt Sources permanently
+           *
+           * This conversion will be RE-ENABLED in Phase 3 (v7.18.0) with:
+           * - Pre-conversion version snapshots
+           * - Post-conversion validation
+           * - Automatic rollback on corruption detection
+           *
+           * For now, Check All Sources is a PURE CHECKER (no data modifications).
+           *
+           * See: DATA-SAFETY-VERSIONING-PROPOSAL.md for full implementation plan
+           * ═══════════════════════════════════════════════════════════════════════
+           */
+
           // Check if content needs conversion (Storage Format XML -> ADF JSON)
           const needsConversion = excerpt.content && typeof excerpt.content === 'string';
           if (needsConversion) {
-            sourcesToConvert.push(excerpt);
+            console.warn(`⚠️ Source "${excerpt.name}" needs Storage Format → ADF conversion (DISABLED pending versioning system)`);
+            // sourcesToConvert.push(excerpt); // DISABLED - will be re-enabled in v7.18.0
           }
         }
 
+        /* DISABLED - Auto-conversion code (lines 235-316) - See comment block above
         // STEP 3: If any Sources need conversion, fetch page in ADF format
         if (sourcesToConvert.length > 0) {
           console.log(`🔄 ${sourcesToConvert.length} Sources need conversion, fetching ADF...`);
@@ -315,6 +342,7 @@ export async function checkAllSources(req) {
             contentConversionsCount++;
           }
         }
+        */ // END DISABLED AUTO-CONVERSION CODE
       } catch (apiError) {
         console.error(`Error checking page ${pageId}:`, apiError);
         pageExcerpts.forEach(excerpt => {

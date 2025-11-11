@@ -132,7 +132,6 @@ const arrowColumnStyle = xcss({
   display: 'flex',
   flexDirection: 'column',
   justifyContent: 'space-between',
-  alignItems: 'center',
   flexShrink: 0,  // Don't shrink arrow column
   minHeight: '100%'
 });

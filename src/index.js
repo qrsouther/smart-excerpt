@@ -77,6 +77,24 @@ import {
   restoreFromBackup as restoreFromBackupResolver
 } from './resolvers/restore-resolvers.js';
 
+// Import emergency recovery resolver functions (Phase 1 Safety Patch - v7.16.0)
+import {
+  getDeletedItems as getDeletedItemsResolver,
+  restoreDeletedItem as restoreDeletedItemResolver,
+  deleteOrphanedEmbedsByPage as deleteOrphanedEmbedsByPageResolver,
+  deleteOrphanedUsageReferences as deleteOrphanedUsageReferencesResolver,
+  deleteOrphanedUsageKey as deleteOrphanedUsageKeyResolver
+} from './resolvers/emergency-recovery-resolvers.js';
+
+// Import version management resolver functions (Phase 2 - v7.16.0)
+import {
+  getVersionHistory,
+  getVersionDetails,
+  restoreFromVersion,
+  pruneVersionsNow,
+  getVersioningStatsResolver
+} from './resolvers/version-resolvers.js';
+
 // ⚠️ ONE-TIME USE MIGRATION FUNCTIONS - DELETE AFTER PRODUCTION MIGRATION ⚠️
 // Import migration resolver functions (Phase 4 modularization)
 // These are one-time use functions for migrating from MultiExcerpt to SmartExcerpt
@@ -814,5 +832,47 @@ resolver.define('restoreDeletedEmbed', restoreDeletedEmbedResolver);
 
 // Restore from backup snapshot (Phase 2: actually restore after preview)
 resolver.define('restoreFromBackup', restoreFromBackupResolver);
+
+// ============================================================================
+// EMERGENCY RECOVERY RESOLVERS (Phase 1 Safety Patch - v7.16.0)
+// ============================================================================
+// Simplified emergency recovery functions for viewing and restoring soft-deleted items
+// Provides immediate safety net while comprehensive versioning system is built
+
+// Get all soft-deleted items (macro-vars-deleted:* namespace)
+resolver.define('getDeletedItems', getDeletedItemsResolver);
+
+// Restore a single soft-deleted item back to active storage
+resolver.define('restoreDeletedItem', restoreDeletedItemResolver);
+
+// Delete orphaned Embeds by page title (permanent deletion for cleanup)
+resolver.define('deleteOrphanedEmbedsByPage', deleteOrphanedEmbedsByPageResolver);
+
+// Force delete orphaned usage references by localId (cleanup stale references)
+resolver.define('deleteOrphanedUsageReferences', deleteOrphanedUsageReferencesResolver);
+
+// Delete orphaned usage key directly by excerptId (simpler cleanup for stale keys)
+resolver.define('deleteOrphanedUsageKey', deleteOrphanedUsageKeyResolver);
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Version Management Resolvers (Phase 2 - v7.16.0)
+// Comprehensive versioning system with automatic snapshots, 14-day retention,
+// and point-in-time restoration to prevent data loss.
+// ═════════════════════════════════════════════════════════════════════════════
+
+// Get version history for an entity (Source or Embed)
+resolver.define('getVersionHistory', getVersionHistory);
+
+// Get details for a specific version snapshot
+resolver.define('getVersionDetails', getVersionDetails);
+
+// Restore from a specific version snapshot
+resolver.define('restoreFromVersion', restoreFromVersion);
+
+// Manually trigger version pruning (admin function)
+resolver.define('pruneVersionsNow', pruneVersionsNow);
+
+// Get versioning system statistics
+resolver.define('getVersioningStats', getVersioningStatsResolver);
 
 export const handler = resolver.getDefinitions();

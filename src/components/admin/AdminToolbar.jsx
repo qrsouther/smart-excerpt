@@ -6,6 +6,7 @@
  * - Manage Categories button
  * - Check All Sources button
  * - Check All Embeds button
+ * - Emergency Recovery button (Phase 1 safety feature)
  *
  * Shows last verification timestamp as tooltip on button hover.
  *
@@ -17,6 +18,7 @@
  * @param {boolean} props.isCheckingAllSources - Whether Check All Sources is running
  * @param {Function} props.onCheckAllIncludes - Handler for Check All Embeds button
  * @param {boolean} props.isCheckingIncludes - Whether Check All Embeds is running
+ * @param {Function} props.onOpenEmergencyRecovery - Handler for Emergency Recovery button
  * @param {string|null} props.lastVerificationTime - ISO timestamp of last verification
  * @param {Function} props.formatTimestamp - Function to format timestamp for display
  * @returns {JSX.Element}
@@ -45,6 +47,7 @@ export function AdminToolbar({
   isCheckingAllSources,
   onCheckAllIncludes,
   isCheckingIncludes,
+  onOpenEmergencyRecovery,
   lastVerificationTime,
   formatTimestamp,
   onCreateTestPage,
@@ -93,6 +96,16 @@ export function AdminToolbar({
           xcss={buttonStyles}
         >
           {isCheckingIncludes ? 'Checking...' : '🔍 Check All Embeds'}
+        </Button>
+      </Tooltip>
+
+      <Tooltip content="View and restore soft-deleted Embeds from the recovery namespace. Use this if data was accidentally removed by Check All Embeds or other operations.">
+        <Button
+          appearance="warning"
+          onClick={onOpenEmergencyRecovery}
+          xcss={buttonStyles}
+        >
+          🚨 Emergency Recovery
         </Button>
       </Tooltip>
 

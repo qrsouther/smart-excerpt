@@ -10,9 +10,11 @@
  * - Links displayed inline as default buttons
  * - Opens links in new tab
  * - Subtly rounded borders
+ * - Optional "Checking for Source updates..." message on the right when checking staleness
  *
  * @param {Object} props
  * @param {Array} props.documentationLinks - Array of {anchor, url} objects
+ * @param {boolean} props.isCheckingStaleness - Whether to show checking message on the right
  * @returns {JSX.Element|null} - Display JSX or null if no links
  */
 
@@ -21,13 +23,26 @@ import {
   Box,
   Inline,
   Icon,
-  Button
+  Button,
+  Text,
+  xcss
 } from '@forge/react';
 import { router } from '@forge/bridge';
 
-export function DocumentationLinksDisplay({ documentationLinks }) {
-  // Don't render if no documentation links
-  if (!documentationLinks || documentationLinks.length === 0) {
+const checkingTextStyle = xcss({
+  color: 'background.accent.gray.subtler', // Light gray design token
+  fontStyle: 'italic',
+  fontSize: '10px' // Smaller than default small size
+});
+
+const spinnerStyle = xcss({
+  marginLeft: 'space.050',
+  marginInlineEnd: 'space.050'
+});
+
+export function DocumentationLinksDisplay({ documentationLinks, isCheckingStaleness }) {
+  // Don't render if no documentation links and not checking staleness
+  if ((!documentationLinks || documentationLinks.length === 0) && !isCheckingStaleness) {
     return null;
   }
 
@@ -40,23 +55,35 @@ export function DocumentationLinksDisplay({ documentationLinks }) {
         width: '100%'
       }}
     >
-      <Inline space="space.200" alignBlock="center">
-        <Icon glyph="page" size="medium" label="Documentation" />
-        {documentationLinks.map((link, index) => (
-          <Button
-            key={index}
-            appearance="default"
-            onClick={async () => {
-              try {
-                await router.open(link.url);
-              } catch (err) {
-                console.error('[DOCUMENTATION-LINK] Navigation error:', err);
-              }
-            }}
-          >
-            {link.anchor}
-          </Button>
-        ))}
+      <Inline space="space.200" alignBlock="center" spread="space-between">
+        {(documentationLinks && documentationLinks.length > 0) ? (
+          <Inline space="space.200" alignBlock="center">
+            <Icon glyph="page" size="medium" label="Documentation" />
+            {documentationLinks.map((link, index) => (
+              <Button
+                key={index}
+                appearance="default"
+                onClick={async () => {
+                  try {
+                    await router.open(link.url);
+                  } catch (err) {
+                    console.error('[DOCUMENTATION-LINK] Navigation error:', err);
+                  }
+                }}
+              >
+                {link.anchor}
+              </Button>
+            ))}
+          </Inline>
+        ) : (
+          <Box></Box>
+        )}
+        {isCheckingStaleness && (
+          <Inline space="space.050" alignBlock="center">
+            <Text weight="extra-light" size="small" xcss={checkingTextStyle}>Checking for Source updates...</Text>
+            <Text weight="extra-light" size="small" xcss={spinnerStyle}>⟳</Text>
+          </Inline>
+        )}
       </Inline>
     </Box>
   );

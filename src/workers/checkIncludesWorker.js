@@ -24,6 +24,7 @@ import { AsyncEvent } from '@forge/events';
 import { storage, startsWith } from '@forge/api';
 import api, { route } from '@forge/api';
 import { findHeadingBeforeMacro } from '../utils/adf-utils.js';
+import { saveVersion } from '../utils/version-manager.js';
 
 // SAFETY: Dry-run mode configuration
 // Default is true (preview mode) - must be explicitly set to false for cleanup
@@ -37,6 +38,24 @@ async function softDeleteMacroVars(localId, reason, metadata = {}, dryRun = true
   const data = await storage.get(`macro-vars:${localId}`);
 
   if (data) {
+    // Phase 3: Create version snapshot before soft delete (v7.17.0)
+    const versionResult = await saveVersion(
+      storage,
+      `macro-vars:${localId}`,
+      data,
+      {
+        changeType: 'DELETE',
+        changedBy: 'checkAllIncludes',
+        deletionReason: reason,
+        localId: localId
+      }
+    );
+    if (versionResult.success) {
+      console.log(`[SOFT-DELETE] ✅ Version snapshot created: ${versionResult.versionId}`);
+    } else {
+      console.warn(`[SOFT-DELETE] ⚠️  Version snapshot failed: ${versionResult.error}`);
+    }
+
     // Move to deleted namespace with recovery metadata
     await storage.set(`macro-vars-deleted:${localId}`, {
       ...data,
@@ -233,15 +252,33 @@ export async function handler(event, context) {
       processed: 0
     });
 
-    // Collect all Include instances from all excerpts
-    const allUsagePromises = excerptIds.map(async (excerptId) => {
-      const usageKey = `usage:${excerptId}`;
-      const usageData = await storage.get(usageKey);
-      return usageData ? usageData.references || [] : [];
-    });
+    // Collect all Include instances from ALL usage keys (not just existing Sources)
+    // This ensures we clean up orphaned embeds even if their Source was deleted
+    const allUsageQuery = await storage.query()
+      .where('key', startsWith('usage:'))
+      .getMany();
 
-    const allUsageArrays = await Promise.all(allUsagePromises);
-    const allIncludes = allUsageArrays.flat();
+    console.log(`[WORKER] Found ${allUsageQuery.results.length} usage key(s) to check`);
+
+    const allIncludes = [];
+    const orphanedUsageKeys = []; // Track usage keys for deleted Sources
+
+    for (const entry of allUsageQuery.results) {
+      const excerptId = entry.key.replace('usage:', '');
+      const usageData = entry.value;
+      const references = usageData ? usageData.references || [] : [];
+
+      // Check if this Source still exists
+      const sourceExists = excerptIds.includes(excerptId);
+
+      if (!sourceExists) {
+        console.log(`[WORKER] ⚠️ Found orphaned usage key for deleted Source: ${excerptId} (${references.length} references)`);
+        orphanedUsageKeys.push({ excerptId, key: entry.key, references });
+      }
+
+      // Collect all references (whether Source exists or not)
+      allIncludes.push(...references);
+    }
 
     // Deduplicate by localId (in case an Include references multiple excerpts)
     const uniqueIncludes = Array.from(

@@ -32,7 +32,7 @@ import ForgeReconciler, {
   xcss
 } from '@forge/react';
 import { invoke, router } from '@forge/bridge';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 // Import React Query hooks
@@ -71,6 +71,7 @@ import { CategoryManager } from './components/admin/CategoryManager';
 import { CheckAllProgressBar } from './components/admin/CheckAllProgressBar';
 import { AdminToolbar } from './components/admin/AdminToolbar';
 import { OrphanedItemsSection } from './components/admin/OrphanedItemsSection';
+import { EmergencyRecoveryModal } from './components/admin/EmergencyRecoveryModal';
 
 // Import admin styles
 import {
@@ -123,6 +124,9 @@ const App = () => {
   // REACT QUERY HOOKS
   // ============================================================================
 
+  // Get query client for manual cache invalidation
+  const queryClient = useQueryClient();
+
   // Fetch excerpts and orphaned data
   const {
     data: excerptsQueryData,
@@ -173,6 +177,9 @@ const App = () => {
   const [includesCheckResult, setIncludesCheckResult] = useState(null);
   const [includesProgress, setIncludesProgress] = useState(null);
   const [progressId, setProgressId] = useState(null);
+
+  // Force delete orphaned references state
+  const [isDeletingOrphanedRefs, setIsDeletingOrphanedRefs] = useState(false);
   const [lastVerificationTime, setLastVerificationTime] = useState(null);
   const [isAutoVerifying, setIsAutoVerifying] = useState(false);
 
@@ -198,6 +205,9 @@ const App = () => {
 
   // Migration Modal UI
   const [isMigrationModalOpen, setIsMigrationModalOpen] = useState(false);
+
+  // Emergency Recovery Modal UI (Phase 1 Safety Patch - v7.16.0)
+  const [isEmergencyRecoveryOpen, setIsEmergencyRecoveryOpen] = useState(false);
 
   // Convert excerptsError to string for display
   const error = excerptsError ? String(excerptsError.message || 'Unknown error') : null;
@@ -678,6 +688,10 @@ const App = () => {
       setLastVerificationTime(now);
       console.log('[ADMIN] Verification timestamp updated:', now);
 
+      // Invalidate React Query cache to refresh orphaned usage data
+      console.log('[ADMIN] Invalidating excerpts cache to refresh orphaned data...');
+      queryClient.invalidateQueries({ queryKey: ['excerpts', 'list'] });
+
       // Show results for 2 seconds before clearing
       await new Promise(resolve => setTimeout(resolve, 2000));
       setIncludesProgress(null);
@@ -690,6 +704,67 @@ const App = () => {
     } finally {
       isComplete = true; // Ensure polling stops
       setProgressId(null);
+    }
+  };
+
+  // Handle Force Delete Orphaned References button (from orphaned Embed modal)
+  const handleForceDeleteOrphanedRefs = async (orphanedItem) => {
+    console.log('[ADMIN] Force delete requested for orphaned item:', orphanedItem);
+
+    // Confirm before deletion
+    if (!confirm(`⚠️ This will PERMANENTLY delete the orphaned usage key for "${orphanedItem.excerptName}" (${orphanedItem.referenceCount} reference(s)).\n\nThis action cannot be undone (unless you have CSV log backups).\n\nContinue?`)) {
+      return;
+    }
+
+    setIsDeletingOrphanedRefs(true);
+
+    try {
+      // Extract and filter valid localIds from references
+      const localIds = (orphanedItem.references || [])
+        .map(ref => ref.localId)
+        .filter(id => id !== undefined && id !== null && id !== '');
+
+      console.log('[ADMIN] Extracted localIds:', localIds);
+      console.log('[ADMIN] References array:', orphanedItem.references);
+
+      // If no valid localIds, just delete the usage key directly
+      if (localIds.length === 0) {
+        console.log('[ADMIN] No valid localIds found - deleting usage key directly');
+        const result = await invoke('deleteOrphanedUsageKey', { excerptId: orphanedItem.excerptId });
+
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to delete orphaned usage key');
+        }
+
+        console.log('[ADMIN] Successfully deleted orphaned usage key:', result.message);
+      } else {
+        // Call resolver to delete by localIds
+        console.log('[ADMIN] Deleting orphaned references by localId:', localIds);
+        const result = await invoke('deleteOrphanedUsageReferences', { localIds });
+
+        if (!result.success) {
+          throw new Error(result.error || 'Failed to delete orphaned references');
+        }
+
+        console.log('[ADMIN] Successfully deleted orphaned references:', result.summary);
+      }
+
+      // Invalidate React Query cache to refresh orphaned usage data
+      console.log('[ADMIN] Invalidating excerpts cache to refresh orphaned data...');
+      queryClient.invalidateQueries({ queryKey: ['excerpts', 'list'] });
+
+      // Close modal
+      setIsModalOpen(false);
+      setSelectedExcerpt(null);
+
+      // Show success message
+      alert(`✅ Successfully deleted orphaned usage key for "${orphanedItem.excerptName}"`);
+
+    } catch (err) {
+      console.error('[ADMIN] Error force deleting orphaned references:', err);
+      alert('❌ Error deleting orphaned references: ' + err.message);
+    } finally {
+      setIsDeletingOrphanedRefs(false);
     }
   };
 
@@ -986,13 +1061,8 @@ const App = () => {
 
   return (
     <Fragment>
-      {/* Page Header */}
-      <Box xcss={sectionSeparatorStyles}>
-        <Text><Strong>Blueprint Standards Admin v{APP_VERSION}</Strong></Text>
-      </Box>
-
       {/* Top Toolbar - Action Buttons */}
-      <Box xcss={sectionMarginStyles}>
+      <Box xcss={xcss({ marginBlockEnd: 'space.100' })}>
         <AdminToolbar
           onOpenMigrationModal={() => setIsMigrationModalOpen(true)}
           showMigrationTools={SHOW_MIGRATION_TOOLS}
@@ -1001,6 +1071,7 @@ const App = () => {
           isCheckingAllSources={checkAllSourcesMutation.isPending}
           onCheckAllIncludes={handleCheckAllIncludes}
           isCheckingIncludes={includesProgress !== null}
+          onOpenEmergencyRecovery={() => setIsEmergencyRecoveryOpen(true)}
           lastVerificationTime={lastVerificationTime}
           formatTimestamp={formatTimestamp}
           onCreateTestPage={handleCreateTestPage}
@@ -1455,37 +1526,55 @@ const App = () => {
             {selectedExcerpt.orphanedReason ? (
               // Orphaned Source
               <Fragment>
-                <Lozenge appearance="removed" isBold>ORPHANED SOURCE</Lozenge>
-                <Text>{' '}</Text>
-                <Text><Strong>{selectedExcerpt.name}</Strong></Text>
-                <Text>{' '}</Text>
+                <ModalHeader>
+                  <Inline space="space.100" alignBlock="center">
+                    <ModalTitle>{selectedExcerpt.name}</ModalTitle>
+                    <Lozenge appearance="removed" isBold>ORPHANED SOURCE</Lozenge>
+                  </Inline>
+                </ModalHeader>
 
-                <Tabs>
-                  <TabList>
-                    <Tab>Details</Tab>
-                    <Tab>Preview</Tab>
-                  </TabList>
+                <ModalBody>
+                  <Tabs>
+                    <TabList>
+                      <Tab>Details</Tab>
+                      <Tab>Preview</Tab>
+                    </TabList>
 
-                  <TabPanel>
-                    <SectionMessage appearance="warning">
-                      <Text>This Source has been deleted from its page or hasn't checked in recently.</Text>
-                      <Text><Strong>Reason:</Strong> {selectedExcerpt.orphanedReason}</Text>
-                    </SectionMessage>
+                    <TabPanel>
+                      <Stack space="space.200">
+                        <SectionMessage appearance="warning">
+                          <Text>This Source has been deleted from its page or hasn't checked in recently.</Text>
+                          <Text><Strong>Reason:</Strong> {selectedExcerpt.orphanedReason}</Text>
+                        </SectionMessage>
 
-                    <Text>Category: {selectedExcerpt.category}</Text>
-                    <Text>Variables: {selectedExcerpt.variables?.length || 0}</Text>
-                    <Text>Toggles: {selectedExcerpt.toggles?.length || 0}</Text>
-                    <Text>{' '}</Text>
+                        <Text>Category: {selectedExcerpt.category}</Text>
+                        <Text>Variables: {selectedExcerpt.variables?.length || 0}</Text>
+                        <Text>Toggles: {selectedExcerpt.toggles?.length || 0}</Text>
 
-                    <Text><Strong>What happened?</Strong></Text>
-                    <Text>The Source macro was likely deleted from the page where it was defined.</Text>
-                    <Text>{' '}</Text>
+                        <Text><Strong>What happened?</Strong></Text>
+                        <Text>The Source macro was likely deleted from the page where it was defined.</Text>
 
-                    <Text><Strong>Options:</Strong></Text>
-                    <Text>  1. View Page History to see when it was deleted and restore it manually</Text>
-                    <Text>  2. Delete this orphaned Source from storage to clean up</Text>
-                    <Text>{' '}</Text>
+                        <Text><Strong>Options:</Strong></Text>
+                        <Text>  1. View Page History to see when it was deleted and restore it manually</Text>
+                        <Text>  2. Delete this orphaned Source from storage to clean up</Text>
+                      </Stack>
+                    </TabPanel>
 
+                    <TabPanel>
+                      <Stack space="space.200">
+                        <Text><Strong>Stored Macro Content:</Strong></Text>
+                        {selectedExcerpt.content && typeof selectedExcerpt.content === 'object' ? (
+                          <AdfRenderer document={selectedExcerpt.content} />
+                        ) : (
+                          <Text>{selectedExcerpt.content || 'No content stored'}</Text>
+                        )}
+                      </Stack>
+                    </TabPanel>
+                  </Tabs>
+                </ModalBody>
+
+                <ModalFooter>
+                  <Inline space="space.100">
                     {selectedExcerpt.sourcePageId && (
                       <Fragment>
                         <Button
@@ -1523,41 +1612,49 @@ const App = () => {
                     >
                       Delete Permanently
                     </Button>
-                  </TabPanel>
-
-                  <TabPanel>
-                    <Text><Strong>Stored Macro Content:</Strong></Text>
-                    <Text>{' '}</Text>
-                    {selectedExcerpt.content && typeof selectedExcerpt.content === 'object' ? (
-                      <AdfRenderer document={selectedExcerpt.content} />
-                    ) : (
-                      <Text>{selectedExcerpt.content || 'No content stored'}</Text>
-                    )}
-                  </TabPanel>
-                </Tabs>
+                  </Inline>
+                </ModalFooter>
               </Fragment>
             ) : selectedExcerpt.referenceCount !== undefined ? (
-              // Orphaned Include
+              // Orphaned Embed
               <Fragment>
-                <Lozenge appearance="removed" isBold>ORPHANED</Lozenge>
-                <Text>{' '}</Text>
-                <Text><Strong>{selectedExcerpt.excerptName}</Strong></Text>
-                <Text>{' '}</Text>
+                <ModalHeader>
+                  <Inline space="space.100" alignBlock="center">
+                    <ModalTitle>{selectedExcerpt.excerptName}</ModalTitle>
+                    <Lozenge appearance="removed" isBold>ORPHANED EMBED</Lozenge>
+                  </Inline>
+                </ModalHeader>
 
-                <SectionMessage appearance="warning">
-                  <Text>This Source has been deleted, but {selectedExcerpt.referenceCount} Embed macro(s) still reference it.</Text>
-                </SectionMessage>
+                <ModalBody>
+                  <Stack space="space.200">
+                    <SectionMessage appearance="warning">
+                      <Text>This Source has been deleted, but {selectedExcerpt.referenceCount} Embed macro(s) still reference it.</Text>
+                    </SectionMessage>
 
-                <Text><Strong>Affected Pages:</Strong></Text>
-                {selectedExcerpt.references.map((ref, idx) => (
-                  <Text key={idx}>  - {String(ref.pageTitle || 'Unknown Page')}</Text>
-                ))}
-                <Text>{' '}</Text>
+                    <Text><Strong>Affected Pages:</Strong></Text>
+                    {selectedExcerpt.references.map((ref, idx) => (
+                      <Text key={idx}>  - {String(ref.pageTitle || 'Unknown Page')}</Text>
+                    ))}
 
-                <Text>You should either:</Text>
-                <Text>  1. Recreate the Source with the same name</Text>
-                <Text>  2. Update the Embed macros to reference a different Source</Text>
-                <Text>  3. Remove the Embed macros from the affected pages</Text>
+                    <Text><Strong>Options:</Strong></Text>
+                    <Text>  1. Recreate the Source with the same name</Text>
+                    <Text>  2. Update the Embed macros to reference a different Source</Text>
+                    <Text>  3. Remove the Embed macros from the affected pages</Text>
+                    <Text>  4. Force delete these stale references if they're already deleted</Text>
+                  </Stack>
+                </ModalBody>
+
+                <ModalFooter>
+                  <Inline space="space.100">
+                    <Button
+                      appearance="danger"
+                      onClick={() => handleForceDeleteOrphanedRefs(selectedExcerpt)}
+                      isDisabled={isDeletingOrphanedRefs}
+                    >
+                      {isDeletingOrphanedRefs ? 'Deleting...' : 'Force Delete Orphaned References'}
+                    </Button>
+                  </Inline>
+                </ModalFooter>
               </Fragment>
             ) : (
               // Regular excerpt
@@ -1840,6 +1937,12 @@ const App = () => {
         isOpen={isMigrationModalOpen}
         onClose={() => setIsMigrationModalOpen(false)}
         defaultPageId="99909654"
+      />
+
+      {/* Emergency Recovery Modal (Phase 1 Safety Patch - v7.16.0) */}
+      <EmergencyRecoveryModal
+        isOpen={isEmergencyRecoveryOpen}
+        onClose={() => setIsEmergencyRecoveryOpen(false)}
       />
     </Fragment>
   );

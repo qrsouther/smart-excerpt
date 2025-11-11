@@ -6,6 +6,137 @@ This file tracks ongoing tasks, future enhancements, and technical debt for the 
 
 ## Current Sprint / Active Work
 
+### Data Safety & Versioning System (CRITICAL PRIORITY 🔴)
+**Status:** Approved - Phase 1 Ready to Start
+**Priority:** CRITICAL (prevents data loss)
+**Estimated Effort:** XL (3-4 weeks across 4 phases)
+**Detailed Plan:** See [DATA-SAFETY-VERSIONING-PROPOSAL.md](./DATA-SAFETY-VERSIONING-PROPOSAL.md)
+
+**Problem:**
+Investigation revealed that both "Check All Sources" and "Check All Embeds" functions modify data in potentially dangerous ways:
+- **Check All Sources**: Automatically converts Storage Format → ADF JSON, which has caused past corruption issues (variables disappearing, content becoming malformed, embeds losing Source references)
+- **Check All Embeds**: Repairs broken usage tracking, potentially corrupting data if repair logic is flawed
+- **User Requirement**: "It is CRITICAL that my users NEVER lose data in their Embeds"
+
+**Solution: 4-Phase Implementation**
+
+#### Phase 1: IMMEDIATE SAFETY PATCH (v7.16.0 - Deploy ASAP)
+**Status:** ✅ COMPLETE (Deployed in v7.15.x series)
+**Effort:** Small (2-3 hours)
+
+Emergency safety measures:
+- [x] Disable dangerous auto-conversion in Check All Sources (commented out lines 228-316 in verification-resolvers.js)
+- [x] Create `src/utils/storage-validator.js` - Pre-flight validation for all storage writes (437 lines, comprehensive validation)
+- [x] Add "🚨 Emergency Recovery" button to Admin UI (EmergencyRecoveryModal.jsx)
+- [x] Deploy to production (deployed across v7.15.4-v7.15.8)
+
+**Goal**: Make Check functions safe RIGHT NOW while versioning system is built.
+
+**Completed Features:**
+- Check All Sources is now a PURE CHECKER (no data modifications)
+- Storage validator provides pre-flight validation for excerpts, macro-vars, usage data, and ADF structure
+- Emergency Recovery UI allows restoring soft-deleted Embeds from `macro-vars-deleted:*` namespace
+- Forge logger provides structured CSV logging for manual recovery
+- Check All Embeds properly detects and cleans up orphaned embeds (including those referencing deleted Sources)
+
+#### Phase 2: VERSIONING INFRASTRUCTURE (v7.16.0)
+**Status:** ✅ COMPLETE
+**Effort:** Large (1-2 weeks)
+
+Build comprehensive versioning system:
+- [x] Create `src/utils/version-manager.js` (518 lines)
+  - `saveVersion()`, `listVersions()`, `getVersion()`, `restoreVersion()`
+  - `pruneExpiredVersions()` - 14-day time-based retention (configurable)
+  - `validateVersionSnapshot()` - Version integrity validation
+  - `getVersioningStats()` - Storage usage statistics
+- [x] Create `src/resolvers/version-resolvers.js` (294 lines)
+  - `getVersionHistory()`, `getVersionDetails()`, `restoreFromVersion()`
+  - `pruneVersionsNow()` (manual admin trigger)
+  - `getVersioningStats()` (UI statistics endpoint)
+- [x] Version storage schema with SHA-256 contentHash-based snapshots
+- [x] On-demand auto-pruning system (max once per day)
+- [x] Integrity validation checks (ADF structure, content hash, required fields)
+- [x] Register all resolvers in index.js
+
+**Goal**: Every data modification creates versioned snapshot for 14-day recovery window.
+
+**Completed Features:**
+- Automatic version snapshots with content hash change detection
+- 14-day retention with configurable override
+- On-demand pruning (checks once per day, runs if >24 hours since last prune)
+- Version indexes for efficient history queries
+- Point-in-time restoration with automatic backup before restore
+- CSV audit logging for all version operations
+- Integration with existing storage-validator.js and forge-logger.js
+- Storage schema: `version:{entityId}:{timestamp}` and `version-index:{entityId}`
+
+**Storage Impact:**
+- Estimated ~15-20MB for typical customer (100 Sources, 14-day retention)
+- Well within 250MB Forge storage limit per environment
+
+**Next Steps (Phase 3):**
+- Wire up saveVersion() calls before data modifications
+- Re-enable Check All Sources auto-conversion with version snapshots
+- Add auto-rollback on validation failure
+
+#### Phase 3: VERSIONED CHECK FUNCTIONS (v7.18.0 - After Phase 2)
+**Status:** 🟢 Ready to start (Phase 2 complete)
+**Effort:** Medium (1 week)
+
+Re-enable Check functions with automatic versioning & rollback:
+- [ ] Enhance Check All Sources with version snapshots before conversion
+- [ ] Add post-conversion validation (variable count, ADF structure, etc.)
+- [ ] Implement auto-rollback on validation failure
+- [ ] Enhance Check All Embeds to version usage tracking before repairs
+- [ ] Create new "Validate Health" function (pure checker, no modifications)
+- [ ] Update UI to show rollback notifications
+
+**Goal**: Safe auto-conversion with automatic rollback on corruption detection.
+
+#### Phase 4: VERSION MANAGEMENT UI (v7.19.0 - After Phase 3)
+**Status:** ⏸️ Waiting for Phase 3
+**Effort:** Medium (1 week)
+
+Give users visibility and control:
+- [ ] Create Version History Viewer (14-day timeline per Source/Embed)
+- [ ] Create Health Dashboard (integrity status, storage usage, alerts)
+- [ ] Create Corruption Alert banner (shows auto-rollback events)
+- [ ] Create manual restore flow (preview, diff, confirm, restore)
+- [ ] Add "Run Health Check" button (non-destructive validation)
+
+**Goal**: Full transparency and manual recovery capability for users.
+
+**Success Metrics:**
+- Zero data loss events (PRIMARY GOAL)
+- Auto-rollback success rate: 100%
+- Check All Sources conversion success rate: >99%
+- Storage overhead: <25MB for typical customer (100 Sources, 1000 Embeds)
+
+**Storage Impact:**
+- Current: ~3MB per typical customer
+- With versioning: ~20MB per typical customer
+- Well within Forge limits (250MB per environment)
+
+**Risk Mitigation:**
+- Phase 1 protects users BEFORE versioning is live
+- Versioning is additive (doesn't change existing storage)
+- Emergency recovery UI provides manual fallback
+- 14-day retention is configurable (can increase if needed)
+
+**Timeline:**
+- Week 1: Phase 1 (immediate safety)
+- Week 2-3: Phase 2 (versioning infrastructure)
+- Week 3-4: Phase 3 (versioned Check functions)
+- Week 4-5: Phase 4 (version UI)
+
+**Next Steps:**
+1. Begin Phase 1 implementation (disable dangerous conversion)
+2. Create storage-validator.js with integrity checks
+3. Add Emergency Recovery UI to Admin page
+4. Deploy v7.16.0 to production ASAP
+
+---
+
 ### Fix Preview Diff Container Overflow Issues
 **Status:** Deferred - temporarily disabled
 **Priority:** Medium (UX enhancement)
@@ -981,6 +1112,56 @@ Add an expandable debug panel to various UI contexts that reveals detailed techn
 ---
 
 ## Technical Debt
+
+### Clean Up XCSS Property Warnings Flooding Console
+**Status:** Not started
+**Priority:** Medium (code quality / debugging experience)
+**Estimated Effort:** Small-Medium (2-4 hours investigation + fixes)
+
+**Problem:**
+Console is flooded with hundreds of "Unexpected XCSS property provided" warnings during admin operations (e.g., deleting orphaned Embeds), making it nearly impossible to see functional logs and debug actual issues.
+
+**Specific Warnings:**
+```
+Unexpected XCSS property provided: alignItems: flex-start
+Unexpected XCSS property provided: cursor: pointer
+Unexpected XCSS property provided: flex: 1 1 250px
+```
+
+**Source Files (from stack traces):**
+- `FullPageEditorComponent.02fc12a8.js` (Atlassian's Forge UI Kit code)
+- `xcssValidate.ts` (Atlassian's XCSS validation system)
+
+**Impact:**
+- Functional logs (delete operation results, error messages) are buried under 100+ identical warnings
+- Makes debugging admin operations extremely difficult
+- Degrades developer experience and slows down troubleshooting
+
+**Root Cause Analysis Needed:**
+1. Determine if warnings originate from our code or Atlassian's UI Kit components
+2. Search our codebase for usage of these specific XCSS properties
+3. Check if we're using deprecated or unsupported XCSS properties
+4. Investigate if this is a known Atlassian Forge UI Kit issue
+
+**Potential Solutions:**
+- Replace unsupported XCSS properties with supported alternatives
+- Use native Box/Inline component props instead of xcss where applicable
+- Suppress warnings if they're coming from Atlassian's code (use console filtering)
+- File bug report with Atlassian if issue is in their UI Kit
+- Consult Atlassian Design Tokens documentation: https://atlassian.design/components/tokens/all-tokens
+
+**Next Steps:**
+1. Search codebase for `alignItems: 'flex-start'`, `cursor: 'pointer'`, and `flex:` in xcss definitions
+2. Review Atlassian XCSS documentation for supported properties
+3. Test if removing/replacing these properties resolves warnings
+4. Document findings and implement fixes
+
+**Related Files:**
+- `src/admin-page.jsx` (where warnings appear during operations)
+- `src/styles/admin-styles.js` (admin UI xcss styles)
+- `src/components/admin/*.jsx` (admin UI components using xcss)
+
+---
 
 ### Code Refactoring & Modularization (High Priority)
 **Status:** Overdue - needs immediate attention

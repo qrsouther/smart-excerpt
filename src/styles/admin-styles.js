@@ -29,7 +29,9 @@ export const cardStyles = xcss({
   boxShadow: 'elevation.shadow.raised',
   backgroundColor: 'color.background.neutral.subtle',
   minWidth: '250px',
-  flex: '1 1 250px'
+  flexGrow: 1,
+  flexShrink: 1,
+  flexBasis: '250px'
 });
 
 /**
@@ -89,11 +91,11 @@ export const leftSidebarStyles = xcss({
 
 /**
  * Scrollable excerpt list container
- * Shows ~5 excerpts above-the-fold, scrollable for the rest
+ * Height constrained to fit within viewport without requiring page scroll
  * Used in: ExcerptListSidebar for the main excerpt list
  */
 export const scrollableListStyle = xcss({
-  maxHeight: '400px',  // ~5 items at 80px each
+  maxHeight: '250px',  // Reduced from 400px to fit within viewport without page scroll
   overflowY: 'auto'
 });
 

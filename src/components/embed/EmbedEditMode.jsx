@@ -8,7 +8,7 @@
  * - Standard selector dropdown at top
  * - Header with standard name and "View Source" link
  * - Save status indicator (Saving/Saved)
- * - Three tabs: Write (variables), Toggles, Custom (insertions/notes)
+ * - Three tabs: Toggles, Write (variables), Custom (insertions/notes)
  * - Live preview below tabs (updates as configuration changes)
  * - Preview mode switches based on selected tab (rendered vs raw with markers)
  *
@@ -20,7 +20,7 @@
  * @param {Function} props.handleExcerptSelection - Handler for Standard selection change
  * @param {Object} props.context - Forge context object
  * @param {string} props.saveStatus - Current save status ('saving'|'saved'|null)
- * @param {number} props.selectedTabIndex - Currently selected tab index (0=Write, 1=Toggles, 2=Custom)
+ * @param {number} props.selectedTabIndex - Currently selected tab index (0=Toggles, 1=Write, 2=Custom)
  * @param {Function} props.setSelectedTabIndex - Handler to change selected tab
  * @param {Object} props.variableValues - Current variable values
  * @param {Function} props.setVariableValues - Update variable values
@@ -98,10 +98,10 @@ export function EmbedEditMode({
   getRawPreviewContent
 }) {
   // Use different preview based on selected tab
-  // Write tab (0): Rendered without markers
-  // Toggles tab (1): Raw with markers
+  // Toggles tab (0): Raw with markers
+  // Write tab (1): Rendered without markers
   // Custom tab (2): Raw with markers
-  const previewContent = (selectedTabIndex === 1 || selectedTabIndex === 2)
+  const previewContent = (selectedTabIndex === 0 || selectedTabIndex === 2)
     ? getRawPreviewContent()
     : getPreviewContent();
   const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
@@ -178,25 +178,25 @@ export function EmbedEditMode({
 
       <Tabs onChange={(index) => setSelectedTabIndex(index)}>
         <TabList>
-          <Tab>Write</Tab>
           <Tab>Toggles</Tab>
+          <Tab>Write</Tab>
           <Tab>Custom</Tab>
         </TabList>
-        {/* Write Tab - Variables */}
-        <TabPanel>
-          <VariableConfigPanel
-            excerpt={excerpt}
-            variableValues={variableValues}
-            setVariableValues={setVariableValues}
-          />
-        </TabPanel>
-
         {/* Toggles Tab */}
         <TabPanel>
           <ToggleConfigPanel
             excerpt={excerpt}
             toggleStates={toggleStates}
             setToggleStates={setToggleStates}
+          />
+        </TabPanel>
+
+        {/* Write Tab - Variables */}
+        <TabPanel>
+          <VariableConfigPanel
+            excerpt={excerpt}
+            variableValues={variableValues}
+            setVariableValues={setVariableValues}
           />
         </TabPanel>
 

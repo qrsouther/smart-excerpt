@@ -39,9 +39,9 @@ import {
 // Pressable item styling for excerpt list items
 const excerptItemStyle = (isSelected) => xcss({
   padding: 'space.100',
+  textAlign: 'left',
   borderRadius: 'border.radius',
   backgroundColor: isSelected ? 'color.background.selected' : 'color.background.neutral.subtle',
-  cursor: 'pointer',
   ':hover': {
     backgroundColor: 'color.background.neutral.hovered'
   }

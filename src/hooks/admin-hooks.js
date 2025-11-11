@@ -253,7 +253,9 @@ export const useCheckAllIncludesMutation = () => {
       return result;
     },
     onSuccess: () => {
-      // Invalidate all usage queries as they may have changed
+      // Invalidate excerpts list to refresh orphaned usage data
+      queryClient.invalidateQueries({ queryKey: ['excerpts', 'list'] });
+      // Also invalidate individual excerpt usage queries
       queryClient.invalidateQueries({ queryKey: ['excerpt'] });
     },
     onError: (error) => {

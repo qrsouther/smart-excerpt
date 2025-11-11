@@ -12,6 +12,7 @@ import { generateUUID } from '../utils.js';
 import { detectVariables, detectToggles } from '../utils/detection-utils.js';
 import { updateExcerptIndex } from '../utils/storage-utils.js';
 import { calculateContentHash } from '../utils/hash-utils.js';
+import { saveVersion } from '../utils/version-manager.js';
 
 /**
  * Save excerpt (create or update)
@@ -86,6 +87,28 @@ export async function saveExcerpt(req) {
   console.log('[saveExcerpt] About to save excerpt with documentationLinks:', excerpt.documentationLinks);
   console.log('[saveExcerpt] Full excerpt object before storage.set:', JSON.stringify(excerpt, null, 2));
   console.log('[saveExcerpt] Excerpt object keys:', Object.keys(excerpt));
+
+  // Phase 3: Create version snapshot before modification (v7.17.0)
+  if (existingExcerpt) {
+    const versionResult = await saveVersion(
+      storage,
+      `excerpt:${id}`,
+      existingExcerpt,
+      {
+        changeType: 'UPDATE',
+        changedBy: 'saveExcerpt',
+        userAccountId: req.context?.accountId,
+        excerptName: existingExcerpt.name
+      }
+    );
+    if (versionResult.success) {
+      console.log('[saveExcerpt] ✅ Version snapshot created:', versionResult.versionId);
+    } else if (versionResult.skipped) {
+      console.log('[saveExcerpt] ⏭️  Version snapshot skipped (content unchanged)');
+    } else {
+      console.warn('[saveExcerpt] ⚠️  Version snapshot failed:', versionResult.error);
+    }
+  }
 
   await storage.set(`excerpt:${id}`, excerpt);
 
@@ -170,6 +193,24 @@ export async function updateExcerptContent(req) {
     // Content actually changed - update the excerpt
     updatedExcerpt.contentHash = newContentHash;
     updatedExcerpt.updatedAt = new Date().toISOString();
+
+    // Phase 3: Create version snapshot before modification (v7.17.0)
+    const versionResult = await saveVersion(
+      storage,
+      `excerpt:${excerptId}`,
+      excerpt, // Save the OLD version before overwriting
+      {
+        changeType: 'UPDATE',
+        changedBy: 'updateExcerptContent',
+        userAccountId: req.context?.accountId,
+        excerptName: excerpt.name
+      }
+    );
+    if (versionResult.success) {
+      console.log('[updateExcerptContent] ✅ Version snapshot created:', versionResult.versionId);
+    } else {
+      console.warn('[updateExcerptContent] ⚠️  Version snapshot failed:', versionResult.error);
+    }
 
     await storage.set(`excerpt:${excerptId}`, updatedExcerpt);
 
