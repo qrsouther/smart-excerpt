@@ -722,7 +722,7 @@ The Internal Notes feature allows you to add footnote-style annotations to Inclu
 - **Inline Markers:** Purple superscript numbers (¹, ², ³) appear at the end of paragraphs in the published view
 - **Expandable Panel:** A collapsible section titled "🔒 Internal Notes" appears at the bottom of the excerpt
 - **Numbered List:** Each note is displayed with its corresponding number and content
-- **Preview:** Internal notes appear in all tab previews (Write, Alternatives, Free Write)
+- **Preview:** Internal notes appear in all tab previews (Write, Toggles, Free Write)
 
 **Technical Details:**
 

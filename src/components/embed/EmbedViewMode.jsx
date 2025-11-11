@@ -37,6 +37,15 @@ import {
   Stack,
   xcss
 } from '@forge/react';
+
+// Subtle border wrapper that appears only when stale
+const staleBorderWrapperStyle = xcss({
+  borderWidth: 'border.width',
+  borderStyle: 'solid',
+  borderColor: 'color.border',
+  borderRadius: 'border.radius',
+  padding: 'space.200'
+});
 import { cleanAdfForRenderer } from '../../utils/adf-rendering-utils';
 import { UpdateAvailableBanner } from './UpdateAvailableBanner';
 import { DocumentationLinksDisplay } from './DocumentationLinksDisplay';
@@ -61,8 +70,10 @@ export function EmbedViewMode({
   const [showUpdateBanner, setShowUpdateBanner] = useState(false);
 
   // Handler for when user clicks "Review Update" button on indicator
+  // Auto-expands diff view so user sees comparison immediately
   const handleReviewClick = () => {
     setShowUpdateBanner(true);
+    setShowDiffView(true);
   };
 
   // Loading state
@@ -72,6 +83,14 @@ export function EmbedViewMode({
 
   const isAdf = content && typeof content === 'object' && content.type === 'doc';
 
+  // Wrapper content - either with border (when stale) or without
+  const wrapperContent = (children) => {
+    if (isStale || isCheckingStaleness) {
+      return <Box xcss={staleBorderWrapperStyle}>{children}</Box>;
+    }
+    return <Fragment>{children}</Fragment>;
+  };
+
   // ADF content
   if (isAdf) {
     const cleaned = cleanAdfForRenderer(content);
@@ -80,7 +99,46 @@ export function EmbedViewMode({
       return <Text>Error: Content cleaning failed</Text>;
     }
 
-    return (
+    return wrapperContent(
+      <Box xcss={xcss({ position: 'relative', width: '100%' })}>
+        <StalenessCheckIndicator
+          isCheckingStaleness={isCheckingStaleness}
+          isStale={isStale}
+          showUpdateBanner={showUpdateBanner}
+          onReviewClick={handleReviewClick}
+        />
+        <Stack space="space.150">
+          {showUpdateBanner && (
+            <UpdateAvailableBanner
+              isStale={isStale}
+              showDiffView={showDiffView}
+              setShowDiffView={setShowDiffView}
+              handleUpdateToLatest={handleUpdateToLatest}
+              isUpdating={isUpdating}
+              syncedContent={syncedContent}
+              latestRenderedContent={latestRenderedContent}
+              variableValues={variableValues}
+              toggleStates={toggleStates}
+            />
+          )}
+          <DocumentationLinksDisplay documentationLinks={excerpt?.documentationLinks} />
+          <Box xcss={adfContentContainerStyle}>
+            <AdfRenderer document={cleaned} />
+          </Box>
+        </Stack>
+      </Box>
+    );
+  }
+
+  // Plain text content
+  return wrapperContent(
+    <Box xcss={xcss({ position: 'relative', width: '100%' })}>
+      <StalenessCheckIndicator
+        isCheckingStaleness={isCheckingStaleness}
+        isStale={isStale}
+        showUpdateBanner={showUpdateBanner}
+        onReviewClick={handleReviewClick}
+      />
       <Stack space="space.200">
         {showUpdateBanner && (
           <UpdateAvailableBanner
@@ -96,43 +154,6 @@ export function EmbedViewMode({
           />
         )}
         <DocumentationLinksDisplay documentationLinks={excerpt?.documentationLinks} />
-        <Box xcss={xcss({ position: 'relative' })}>
-          <StalenessCheckIndicator
-            isCheckingStaleness={isCheckingStaleness}
-            isStale={isStale}
-            onReviewClick={handleReviewClick}
-          />
-          <Box xcss={adfContentContainerStyle}>
-            <AdfRenderer document={cleaned} />
-          </Box>
-        </Box>
-      </Stack>
-    );
-  }
-
-  // Plain text content
-  return (
-    <Stack space="space.200">
-      {showUpdateBanner && (
-        <UpdateAvailableBanner
-          isStale={isStale}
-          showDiffView={showDiffView}
-          setShowDiffView={setShowDiffView}
-          handleUpdateToLatest={handleUpdateToLatest}
-          isUpdating={isUpdating}
-          syncedContent={syncedContent}
-          latestRenderedContent={latestRenderedContent}
-          variableValues={variableValues}
-          toggleStates={toggleStates}
-        />
-      )}
-      <DocumentationLinksDisplay documentationLinks={excerpt?.documentationLinks} />
-      <Box xcss={xcss({ position: 'relative' })}>
-        <StalenessCheckIndicator
-          isCheckingStaleness={isCheckingStaleness}
-          isStale={isStale}
-          onReviewClick={handleReviewClick}
-        />
         <Box xcss={adfContentContainerStyle}>
           {content && typeof content === 'object' && content.type === 'doc' ? (
             <AdfRenderer document={content} />
@@ -140,7 +161,7 @@ export function EmbedViewMode({
             <Text>{content}</Text>
           )}
         </Box>
-      </Box>
-    </Stack>
+      </Stack>
+    </Box>
   );
 }

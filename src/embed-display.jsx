@@ -116,7 +116,7 @@ const App = () => {
   const [customText, setCustomText] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [saveStatus, setSaveStatus] = useState('saved'); // 'saved', 'saving', or 'error'
-  const [selectedTabIndex, setSelectedTabIndex] = useState(0); // Track active tab (0=Write, 1=Alternatives, 2=Free Write)
+  const [selectedTabIndex, setSelectedTabIndex] = useState(0); // Track active tab (0=Write, 1=Toggles, 2=Free Write)
   // View mode staleness detection state
   const [isStale, setIsStale] = useState(false);
   const [isCheckingStaleness, setIsCheckingStaleness] = useState(false); // Tracks when staleness check is running
@@ -279,8 +279,9 @@ const App = () => {
           }
         }
 
-        // Only auto-infer if client is undefined, null, or empty string
-        const clientIsEmpty = !loadedVariableValues['client'] || loadedVariableValues['client'].trim() === '';
+        // Only auto-infer if client is undefined, null, or empty string (check both 'client' and 'Client' for case variations)
+        const clientValue = loadedVariableValues['client'] || loadedVariableValues['Client'] || '';
+        const clientIsEmpty = !clientValue || (typeof clientValue === 'string' && clientValue.trim() === '');
 
         // Check if title contains "Blueprint:" and extract client name
         if (pageTitle.includes('Blueprint:') && clientIsEmpty) {
@@ -583,7 +584,7 @@ const App = () => {
     }
   };
 
-  // Get raw preview content for Alternatives and Free Write tabs (keeps toggle markers visible)
+  // Get raw preview content for Toggles and Free Write tabs (keeps toggle markers visible)
   const getRawPreviewContent = () => {
     if (!excerpt) return content;
 

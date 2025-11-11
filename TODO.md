@@ -6,6 +6,67 @@ This file tracks ongoing tasks, future enhancements, and technical debt for the 
 
 ## Current Sprint / Active Work
 
+### Fix Preview Diff Container Overflow Issues
+**Status:** Deferred - temporarily disabled
+**Priority:** Medium (UX enhancement)
+**Estimated Effort:** Medium (4-6 hours)
+
+**Problem:**
+Preview Diff two-column layout (Current vs Updated) experiences container-breaking overflow when ADF content (especially tables) exceeds column width. The `overflow` and width constraint CSS properties in xcss are not properly constraining the AdfRenderer output, causing the "Updated" column to overflow and break the layout.
+
+**Root Cause:**
+AdfRenderer generates complex nested HTML structures with tables that have their own width properties. Standard CSS constraints (`overflow: 'hidden'`, `maxWidth: '100%'`, `display: 'block'`) applied via xcss do not effectively constrain this rendered content. Tables force columns to expand beyond their flex-allocated space, causing either:
+1. Vertical stacking of columns (instead of side-by-side)
+2. Right column overflowing container boundaries
+
+**Current Workaround:**
+Preview Diff tab is commented out in `src/components/EnhancedDiffView.jsx` (lines 293-350). Only Line Diff is currently visible to users.
+
+**Attempted Solutions (all failed):**
+- Nested Box wrappers with overflow properties
+- `display: 'block'` on ADF wrapper
+- Percentage-based width constraints (48-4-48 layout)
+- Parent-level `overflow: 'auto'`
+- Multiple combinations of minWidth, maxWidth, flexShrink
+
+**Potential Solutions to Explore:**
+1. **Custom UI with iframe isolation** - Use Forge Custom UI instead of UI Kit 2, which might give more direct DOM access and CSS control
+2. **Pre-render ADF to constrained HTML** - Transform ADF server-side to HTML with inline styles that enforce width constraints
+3. **Virtual scrolling container** - Render each column in a fixed-width scrollable container
+4. **Table-specific handling** - Detect tables in ADF and wrap them specifically in scrollable containers before rendering
+5. **Atlassian support request** - File support ticket about AdfRenderer not respecting parent container constraints
+
+**Technical Notes:**
+- XCSS does not support `overflowX`/`overflowY` separately (only `overflow`)
+- AdfRenderer is a black-box component with limited styling control
+- Forge community has acknowledged table overflow as a known limitation
+- The Inline component with flex-grow works for equal column widths, but cannot prevent ADF content from breaking out
+
+**Implementation Plan (when revisited):**
+1. Research Custom UI capabilities for better CSS control
+2. Investigate ADF pre-processing options
+3. Consider server-side HTML rendering with enforced constraints
+4. File Atlassian support ticket if necessary
+5. Prototype solution in isolated test component
+6. Validate with wide tables and complex ADF structures
+7. Re-enable Preview Diff tab if solution found
+
+**Success Criteria:**
+- [ ] Two columns remain equal width and side-by-side
+- [ ] Wide tables do not break container boundaries
+- [ ] Content is accessible (scrollable if wider than column)
+- [ ] No visual jank or layout shifts
+- [ ] Works across different ADF content types (tables, panels, expand sections)
+
+**Next Steps:**
+Revisit after Line Diff is polished and stable. Consider this a "Phase 2" enhancement rather than blocking the current staleness detection UX.
+
+**Related Files:**
+- `src/components/EnhancedDiffView.jsx` (Preview Diff commented out)
+- `src/components/embed/UpdateAvailableBanner.jsx` (integrates diff view)
+
+---
+
 ### Performance Optimization - Lazy Loading Embeds
 **Status:** Ready to implement
 **Priority:** High (addresses 50-Embed page performance)
@@ -1077,7 +1138,7 @@ Extract remaining large sections:
   - Staleness checking effect
   - Read-only rendering with Update Available banner
 - [ ] `<EmbedEditMode />` → `src/components/embed/EmbedEditMode.jsx` (300-350 lines)
-  - Tab navigation (Write/Alternatives/Custom/Preview)
+  - Tab navigation (Write/Toggles/Custom/Preview)
   - Config panels integration
   - Save/auto-save logic
   - Preview section

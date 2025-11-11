@@ -57,7 +57,7 @@ export const requiredFieldStyle = xcss({
  * Only applies margin, SectionMessage has its own padding
  */
 export const updateBannerStyle = xcss({
-  marginBottom: 'space.200'
+  marginBottom: 'space.100'
 });
 
 /**
@@ -73,8 +73,8 @@ export const sectionContentStyle = xcss({
  * Prevents horizontal scrollbar by constraining expand panels and other ADF elements
  */
 export const adfContentContainerStyle = xcss({
-  width: '99%',
-  maxWidth: '99%',
+  width: '100%',
+  maxWidth: '100%',
   overflow: 'hidden'
 });
 

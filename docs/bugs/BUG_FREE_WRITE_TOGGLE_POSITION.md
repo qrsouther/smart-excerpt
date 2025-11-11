@@ -77,7 +77,7 @@ When toggles are filtered/processed by `filterContentByToggles()`, the paragraph
 
 2. Create an Include macro referencing that Source
 3. Open the Include in Edit mode
-4. Go to the Alternatives tab and enable the "advanced" toggle
+4. Go to the Toggles tab and enable the "advanced" toggle
 5. Go to the Free Write tab
 6. Select "After paragraph 2: This is advanced content" from the dropdown
 7. Enter custom text: "My custom insertion"

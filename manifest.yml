@@ -76,5 +76,7 @@ permissions:
     - read:page:confluence
     - write:page:confluence
     - write:confluence-content
+    - delete:page:confluence
+    - read:confluence-user
     - search:confluence
     - storage:app

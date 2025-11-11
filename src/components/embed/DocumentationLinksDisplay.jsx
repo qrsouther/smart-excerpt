@@ -33,7 +33,7 @@ export function DocumentationLinksDisplay({ documentationLinks }) {
 
   return (
     <Box
-      padding="space.200"
+      padding="space.100"
       backgroundColor="color.background.neutral"
       xcss={{
         borderRadius: 'border.radius.200',

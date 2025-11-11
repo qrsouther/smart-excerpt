@@ -55,9 +55,9 @@ export function UpdateAvailableBanner({
   return (
     <Box xcss={updateBannerStyle}>
       <SectionMessage appearance="success">
-        <Stack space="space.100" xcss={sectionContentStyle}>
+        <Stack space="space.100">
           {/* Compact heading section with inline buttons */}
-          <Inline spread="space-between" alignBlock="center">
+          <Inline spread="space-between" alignBlock="center" xcss={sectionContentStyle}>
             <Stack space="space.050">
               <Heading size="small">Update Available</Heading>
               <Text>The Source content has been updated since this Embed was last edited.</Text>
@@ -79,7 +79,7 @@ export function UpdateAvailableBanner({
             </ButtonGroup>
           </Inline>
 
-          {/* Enhanced diff view - inside green box */}
+          {/* Enhanced diff view - inside green box, full width */}
           {showDiffView && (
             <EnhancedDiffView
               oldSourceContent={syncedContent}

@@ -1,8 +1,8 @@
 /**
  * Toggle Configuration Panel
  *
- * Component for the "Alternatives" tab that displays conditional content toggles.
- * Allows users to enable/disable alternative content sections within a Blueprint Standard embed.
+ * Component for the "Toggles" tab that displays conditional content toggles.
+ * Allows users to enable/disable content blocks within a Blueprint Standard embed.
  *
  * Features:
  * - Toggle switches for each conditional section

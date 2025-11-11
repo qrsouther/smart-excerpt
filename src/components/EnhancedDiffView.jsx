@@ -16,8 +16,8 @@
  * - Maximum disclosure with clear visual markers
  */
 
-import React, { useState } from 'react';
-import { Box, Heading, Text, Strong, Em, Stack, Inline, Button, ButtonGroup, AdfRenderer, Code, SectionMessage, Lozenge, xcss } from '@forge/react';
+import React from 'react';
+import { Box, Heading, Text, Strong, Em, Stack, Inline, AdfRenderer, Code, Lozenge, Tabs, TabList, Tab, TabPanel, xcss } from '@forge/react';
 import { diffLines } from 'diff';
 import {
   filterContentByToggles,
@@ -29,50 +29,21 @@ import {
 // Container styles (no background - now inside green SectionMessage)
 const containerStyle = xcss({
   paddingTop: 'space.050',
-  marginRight: 'space.300'  // 24px - balances SectionMessage icon column on left
+  width: '100%'
 });
 
-// Horizontal separator line
-const separatorStyle = xcss({
-  borderTopWidth: 'border.width',
-  borderTopStyle: 'solid',
-  borderTopColor: 'color.border',
-  marginBlock: 'space.150'
+// Helper text spacing - more top padding, no bottom padding
+const helperTextStyle = xcss({
+  paddingTop: 'space.200',
+  paddingBottom: 'space.0'
 });
 
-// View switcher button group container (centered, no gap for joined appearance)
-const viewSwitcherStyle = xcss({
-  display: 'flex',
-  justifyContent: 'center',
-  gap: '0'
-});
-
-// Left button style (Line Diff) - no right border, square right corners
-const leftButtonStyle = xcss({
-  flexGrow: 1,
-  flexShrink: 1,
-  flexBasis: '0%',
-  minWidth: '0',
-  borderRightWidth: '0',
-  borderTopRightRadius: '0',
-  borderBottomRightRadius: '0'
-});
-
-// Right button style (Preview Diff) - no left border, square left corners
-const rightButtonStyle = xcss({
-  flexGrow: 1,
-  flexShrink: 1,
-  flexBasis: '0%',
-  minWidth: '0',
-  borderLeftWidth: '0',
-  borderTopLeftRadius: '0',
-  borderBottomLeftRadius: '0'
-});
-
+// Side columns for preview diff - equal flex-grow for equal widths
 const sideBoxStyle = xcss({
   flexGrow: 1,
-  flexShrink: 1,
+  flexShrink: 1,  // Allow shrinking to fit side-by-side
   flexBasis: '0%',
+  minWidth: 0,  // Critical: allows flex items to shrink below content size
   padding: 'space.200',
   backgroundColor: 'color.background.input',
   borderRadius: 'border.radius',
@@ -83,6 +54,8 @@ const sideBoxStyle = xcss({
 
 const diffContainerStyle = xcss({
   marginBlock: 'space.200',
+  marginTop: 'space.0',  // No top margin since helper text provides spacing
+  width: '100%',
   borderRadius: 'border.radius',
   borderWidth: 'border.width',
   borderStyle: 'solid',
@@ -138,17 +111,29 @@ const contentWrapperStyle = xcss({
   minWidth: 0  // Allows flex item to shrink below content size
 });
 
-// Margin for preview section (Inline component will handle the layout)
+// Margin for preview section with width constraints - allow horizontal scrolling
 const previewContainerStyle = xcss({
-  marginBlock: 'space.200'
+  marginBlock: 'space.200',
+  marginTop: 'space.0',  // No top margin since helper text provides spacing
+  width: '100%',
+  maxWidth: '100%',
+  overflow: 'auto'  // Allow scrolling if content is too wide
 });
 
-// Arrow column in the middle - take minimal space, stretch to match box heights
+// Wrapper for ADF content - force block display and constrain width
+const adfWrapperStyle = xcss({
+  display: 'block',
+  width: '100%',
+  overflow: 'auto'
+});
+
+// Arrow column in the middle - takes minimal natural width
 const arrowColumnStyle = xcss({
   display: 'flex',
   flexDirection: 'column',
   justifyContent: 'space-between',
   alignItems: 'center',
+  flexShrink: 0,  // Don't shrink arrow column
   minHeight: '100%'
 });
 
@@ -260,9 +245,6 @@ export function EnhancedDiffView({
   variableValues = {},
   toggleStates = {}
 }) {
-  // State for toggling between line-based diff and preview diff
-  const [showPreview, setShowPreview] = useState(false);
-
   // Render content with variables substituted and only enabled toggles (for preview)
   const renderForPreview = (content) => {
     if (!content) return null;
@@ -287,103 +269,89 @@ export function EnhancedDiffView({
   const newText = renderForLineDiff(newSourceContent);
 
   return (
-    <Box xcss={containerStyle}>
+    <Box id="enhanced-diff-view-container" xcss={containerStyle}>
       <Stack space="space.200">
-        {/* Horizontal separator line */}
-        <Box xcss={separatorStyle} />
+        {/* Native Tabs component with proper TabList and TabPanel structure */}
+        <Tabs id="diff-view-tabs">
+          <TabList>
+            <Tab>Line Diff</Tab>
+            {/* <Tab>Preview Diff</Tab> */}
+          </TabList>
 
-        {/* View switcher: Two wide buttons joined as split button */}
-        <Box xcss={viewSwitcherStyle}>
-          <Button
-            xcss={leftButtonStyle}
-            appearance={!showPreview ? 'primary' : 'default'}
-            onClick={() => setShowPreview(false)}
-          >
-            Line Diff
-          </Button>
-          <Button
-            xcss={rightButtonStyle}
-            appearance={showPreview ? 'primary' : 'default'}
-            onClick={() => setShowPreview(true)}
-          >
-            Preview Diff
-          </Button>
-        </Box>
-
-        {/* Conditional rendering: Line-based diff OR Preview diff */}
-        {!showPreview ? (
-          /* LINE-BASED DIFF (default view) */
-          <Stack space="space.100">
-            <SectionMessage appearance="information">
-              <Text>
-                Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray/white).
-                ALL content in this Embed's Source excerpt is displayed below, even content which may be hidden by disabled toggles in your Blueprint.
-              </Text>
-            </SectionMessage>
-
-            <Box xcss={diffContainerStyle}>
-              {renderLineDiff(oldText, newText)}
+          <TabPanel>
+            <Box xcss={xcss({ width: '100%', paddingRight: 'space.300' })}>
+              <Stack id="line-diff-tab-panel" space="space.0">
+                <Box id="line-diff-helper-text" xcss={helperTextStyle}>
+                  <Text>
+                    <Em>Line-by-line comparison showing additions (green), removals (red), and unchanged content (gray/white).</Em>
+                  </Text>
+                </Box>
+                <Box id="line-diff-container" xcss={diffContainerStyle}>
+                  {renderLineDiff(oldText, newText)}
+                </Box>
+              </Stack>
             </Box>
-          </Stack>
-        ) : (
-          /* PREVIEW DIFF (toggled view) */
-          <Stack space="space.100">
-            {/* Info about disabled toggles */}
-            <SectionMessage appearance="information">
-              <Text>
-                Changes in disabled toggles are not shown in this preview.
-                Toggle back to line-by-line diff to see all changes including disabled toggle content.
-              </Text>
-            </SectionMessage>
+          </TabPanel>
 
-            <Box xcss={previewContainerStyle}>
-              <Inline space="space.100" alignBlock="start">
-                {/* Left: Current rendered content */}
-                <Box xcss={sideBoxStyle}>
-                  <Stack space="space.200">
-                    <Lozenge appearance="default">Current</Lozenge>
+          {/* PREVIEW DIFF COMMENTED OUT - TODO: Fix container overflow issues
+          <TabPanel>
+            <Stack space="space.0">
+              <Box xcss={helperTextStyle}>
+                <Text>
+                  <Em>Changes in disabled toggles are not shown in this preview.</Em>
+                </Text>
+              </Box>
+              <Box xcss={previewContainerStyle}>
+                <Inline space="space.100" alignBlock="start">
+                  <Box xcss={sideBoxStyle}>
+                    <Stack space="space.200">
+                      <Lozenge appearance="default">Current</Lozenge>
 
-                    {oldPreviewContent ? (
-                      <AdfRenderer document={oldPreviewContent} />
-                    ) : (
-                      <Text>
-                        <Em>No previous version available</Em>
-                      </Text>
-                    )}
-                  </Stack>
-                </Box>
-
-                {/* Middle: Arrow icons */}
-                <Box xcss={arrowColumnStyle}>
-                  <Box xcss={topArrowStyle}>
-                    <Text>→</Text>
+                      {oldPreviewContent ? (
+                        <Box xcss={adfWrapperStyle}>
+                          <AdfRenderer document={oldPreviewContent} />
+                        </Box>
+                      ) : (
+                        <Text>
+                          <Em>No previous version available</Em>
+                        </Text>
+                      )}
+                    </Stack>
                   </Box>
-                  <Box>
-                    <Text>→</Text>
-                  </Box>
-                  <Box xcss={bottomArrowStyle}>
-                    <Text>→</Text>
-                  </Box>
-                </Box>
 
-                {/* Right: Updated rendered content */}
-                <Box xcss={sideBoxStyle}>
-                  <Stack space="space.200">
-                    <Lozenge appearance="success">Updated</Lozenge>
+                  <Box xcss={arrowColumnStyle}>
+                    <Box xcss={topArrowStyle}>
+                      <Text>→</Text>
+                    </Box>
+                    <Box>
+                      <Text>→</Text>
+                    </Box>
+                    <Box xcss={bottomArrowStyle}>
+                      <Text>→</Text>
+                    </Box>
+                  </Box>
 
-                    {newPreviewContent ? (
-                      <AdfRenderer document={newPreviewContent} />
-                    ) : (
-                      <Text>
-                        <Em>No new content available</Em>
-                      </Text>
-                    )}
-                  </Stack>
-                </Box>
-              </Inline>
-            </Box>
-          </Stack>
-        )}
+                  <Box xcss={sideBoxStyle}>
+                    <Stack space="space.200">
+                      <Lozenge appearance="success">Updated</Lozenge>
+
+                      {newPreviewContent ? (
+                        <Box xcss={adfWrapperStyle}>
+                          <AdfRenderer document={newPreviewContent} />
+                        </Box>
+                      ) : (
+                        <Text>
+                          <Em>No new content available</Em>
+                        </Text>
+                      )}
+                    </Stack>
+                  </Box>
+                </Inline>
+              </Box>
+            </Stack>
+          </TabPanel>
+          */}
+        </Tabs>
       </Stack>
     </Box>
   );

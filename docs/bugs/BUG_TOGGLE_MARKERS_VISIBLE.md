@@ -120,7 +120,7 @@ if (item.textEnd > range.fullStart && item.textStart < range.fullEnd)
 **Testing Results:**
 ✅ Published view: Markers hidden, toggle filtering works correctly
 ✅ Edit > Write > Preview: Markers hidden, toggle filtering works correctly
-✅ Edit > Alternatives > Preview: Same as Write (markers hidden, toggle filtering works)
+✅ Edit > Toggles > Preview: Same as Write (markers hidden, toggle filtering works)
 ✅ Edit > Free Write > Preview: Same as Write (markers hidden, toggle filtering works)
 
 **Cleanup:**

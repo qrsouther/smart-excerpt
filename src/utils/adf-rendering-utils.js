@@ -110,10 +110,54 @@ export const cleanupEmptyNodes = (adfNode) => {
 };
 
 /**
+ * Split text nodes that contain toggle markers into separate nodes
+ * This preprocessing step makes toggle filtering much simpler and more reliable.
+ *
+ * Example:
+ *   Input:  {type: 'text', text: 'before {{toggle:foo}}inside'}
+ *   Output: [
+ *     {type: 'text', text: 'before '},
+ *     {type: 'text', text: '{{toggle:foo}}'},
+ *     {type: 'text', text: 'inside'}
+ *   ]
+ *
+ * @param {Object} textNode - Text node that may contain toggle markers
+ * @returns {Array} Array of text nodes (original node if no markers found)
+ */
+function splitTextNodeByToggleMarkers(textNode) {
+  if (textNode.type !== 'text' || !textNode.text) {
+    return [textNode];
+  }
+
+  // Check if this text contains toggle markers (don't use test() as it modifies regex state)
+  const hasToggleMarkers = /\{\{toggle:[^}]+\}\}|\{\{\/toggle:[^}]+\}\}/.test(textNode.text);
+
+  if (!hasToggleMarkers) {
+    // No toggle markers, return original node
+    return [textNode];
+  }
+
+  // Split by markers, preserving the markers themselves
+  // IMPORTANT: Create fresh regex for split (can't reuse after test())
+  const toggleMarkerRegex = /(\{\{toggle:[^}]+\}\}|\{\{\/toggle:[^}]+\}\})/g;
+  const parts = textNode.text.split(toggleMarkerRegex).filter(part => part !== '');
+
+  // Create separate text nodes for each part, preserving marks
+  return parts.map(part => ({
+    type: 'text',
+    text: part,
+    ...(textNode.marks && textNode.marks.length > 0 ? { marks: [...textNode.marks] } : {})
+  }));
+}
+
+/**
  * Filter content based on toggle states
  *
- * Handles rich text formatting by processing toggle ranges across multiple nodes.
- * Removes content within disabled toggle ranges and strips toggle markers from enabled content.
+ * Two-phase approach:
+ * 1. Split text nodes so toggle markers are isolated in their own nodes
+ * 2. Track toggle state as we traverse, removing content in disabled toggles
+ *
+ * This is much more reliable than trying to handle partial overlaps.
  *
  * Toggle syntax: {{toggle:name}}content{{/toggle:name}}
  *
@@ -124,142 +168,70 @@ export const cleanupEmptyNodes = (adfNode) => {
 export const filterContentByToggles = (adfNode, toggleStates) => {
   if (!adfNode) return null;
 
-  // For container nodes (paragraph, doc, etc.), process toggle ranges across all children
+  // For container nodes (paragraph, doc, etc.), process children
   if (adfNode.content && Array.isArray(adfNode.content)) {
-    // First pass: Flatten and extract all text with node references
-    const flattenNodes = (nodes, path = []) => {
-      const flattened = [];
-      let textPosition = 0;
+    // Phase 1: Split text nodes so toggle markers are in separate nodes
+    const expandedContent = [];
 
-      for (let i = 0; i < nodes.length; i++) {
-        const node = nodes[i];
-        const currentPath = [...path, i];
-
-        if (node.type === 'text' && node.text) {
-          flattened.push({
-            node,
-            path: currentPath,
-            textStart: textPosition,
-            textEnd: textPosition + node.text.length,
-            text: node.text
-          });
-          textPosition += node.text.length;
-        } else if (node.content && Array.isArray(node.content)) {
-          // Recursively flatten nested content
-          const nested = flattenNodes(node.content, currentPath);
-          flattened.push({
-            node,
-            path: currentPath,
-            textStart: textPosition,
-            textEnd: textPosition + nested.totalText.length,
-            isContainer: true,
-            children: nested.flattened
-          });
-          textPosition += nested.totalText.length;
-        } else {
-          // Non-text, non-container nodes (images, etc.)
-          flattened.push({
-            node,
-            path: currentPath,
-            textStart: textPosition,
-            textEnd: textPosition,
-            isLeaf: true
-          });
+    for (const child of adfNode.content) {
+      if (child.type === 'text') {
+        // Split this text node by toggle markers
+        const splitNodes = splitTextNodeByToggleMarkers(child);
+        expandedContent.push(...splitNodes);
+      } else if (child.content && Array.isArray(child.content)) {
+        // Recursively process container nodes first
+        const processed = filterContentByToggles(child, toggleStates);
+        if (processed) {
+          expandedContent.push(processed);
         }
+      } else {
+        // Keep other nodes as-is
+        expandedContent.push(child);
       }
-
-      const totalText = flattened
-        .map(f => f.text || '')
-        .join('');
-
-      return { flattened, totalText, textPosition };
-    };
-
-    const { flattened, totalText } = flattenNodes(adfNode.content);
-
-    // Find all toggle ranges
-    const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
-    const toggleRanges = [];
-    let match;
-
-    while ((match = toggleRegex.exec(totalText)) !== null) {
-      const toggleName = match[1].trim();
-      const isEnabled = toggleStates?.[toggleName] === true;
-
-      const openMarker = `{{toggle:${match[1]}}}`;
-      const closeMarker = `{{/toggle:${match[1]}}}`;
-
-      toggleRanges.push({
-        name: toggleName,
-        enabled: isEnabled,
-        fullStart: match.index,
-        fullEnd: match.index + match[0].length,
-        contentStart: match.index + openMarker.length,
-        contentEnd: match.index + match[0].length - closeMarker.length
-      });
     }
 
-    // Second pass: Filter and process nodes
-    const processFlattened = () => {
-      const newContent = [];
+    // Phase 2: Walk through nodes tracking toggle state, filter disabled content
+    const filteredContent = [];
+    const toggleStack = []; // Stack of {name, enabled} for nested toggles
 
-      for (const item of flattened) {
-        // Check if node overlaps with any toggle range
-        let inDisabledToggle = false;
-        let textModifications = [];
+    for (const node of expandedContent) {
+      // Check if this is a toggle marker
+      if (node.type === 'text' && node.text) {
+        const openMatch = node.text.match(/^\{\{toggle:([^}]+)\}\}$/);
+        const closeMatch = node.text.match(/^\{\{\/toggle:([^}]+)\}\}$/);
 
-        for (const range of toggleRanges) {
-          if (!range.enabled) {
-            // Node overlaps with disabled toggle - remove entire node
-            // Check if node has ANY overlap with the full toggle range (including markers)
-            if (item.textEnd > range.fullStart && item.textStart < range.fullEnd) {
-              inDisabledToggle = true;
-              break;
-            }
-          }
-        }
-
-        if (inDisabledToggle) {
-          continue; // Skip this node
-        }
-
-        // For text nodes, strip toggle markers if present
-        if (item.node.type === 'text' && item.text) {
-          let newText = item.text;
-
-          // Remove any toggle markers from this text node
-          newText = newText.replace(/\{\{toggle:[^}]+\}\}/g, '');
-          newText = newText.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
-
-          if (newText.trim() === '') {
-            continue; // Skip empty nodes
-          }
-
-          newContent.push({ ...item.node, text: newText });
-        } else if (item.isContainer) {
-          // Recursively process container
-          const processed = filterContentByToggles({ ...item.node }, toggleStates);
-          if (processed) {
-            newContent.push(processed);
-          }
-        } else {
-          // Keep other nodes as-is
-          newContent.push(item.node);
+        if (openMatch) {
+          // Opening toggle marker
+          const toggleName = openMatch[1].trim();
+          const isEnabled = toggleStates?.[toggleName] === true;
+          toggleStack.push({ name: toggleName, enabled: isEnabled });
+          // Don't add marker node to output
+          continue;
+        } else if (closeMatch) {
+          // Closing toggle marker
+          toggleStack.pop();
+          // Don't add marker node to output
+          continue;
         }
       }
 
-      return newContent;
-    };
+      // Check if we're currently inside any disabled toggle
+      const inDisabledToggle = toggleStack.some(t => !t.enabled);
 
-    const newContent = processFlattened();
+      if (!inDisabledToggle) {
+        // Keep this node (not in disabled toggle)
+        filteredContent.push(node);
+      }
+      // else: skip this node (inside disabled toggle)
+    }
 
-    if (newContent.length === 0 && adfNode.type !== 'doc') {
+    if (filteredContent.length === 0 && adfNode.type !== 'doc') {
       return null;
     }
 
     return {
       ...adfNode,
-      content: newContent
+      content: filteredContent
     };
   }
 
@@ -323,10 +295,15 @@ export const substituteVariablesInAdf = (adfNode, variableValues) => {
     while ((match = regex.exec(text)) !== null) {
       // Add text before the variable
       if (match.index > lastIndex) {
-        parts.push({
+        const part = {
           type: 'text',
           text: text.substring(lastIndex, match.index)
-        });
+        };
+        // Preserve original marks
+        if (adfNode.marks && adfNode.marks.length > 0) {
+          part.marks = [...adfNode.marks];
+        }
+        parts.push(part);
       }
 
       const varName = match[1].trim();
@@ -334,17 +311,27 @@ export const substituteVariablesInAdf = (adfNode, variableValues) => {
 
       if (value) {
         // Variable has a value - substitute it
-        parts.push({
+        const part = {
           type: 'text',
           text: value
-        });
+        };
+        // Preserve original marks
+        if (adfNode.marks && adfNode.marks.length > 0) {
+          part.marks = [...adfNode.marks];
+        }
+        parts.push(part);
       } else {
-        // Variable is unset - keep as code/monospace
-        parts.push({
+        // Variable is unset - keep as code/monospace, merged with original marks
+        const part = {
           type: 'text',
           text: match[0],
           marks: [{ type: 'code' }]
-        });
+        };
+        // Merge original marks with code mark
+        if (adfNode.marks && adfNode.marks.length > 0) {
+          part.marks = [...adfNode.marks, { type: 'code' }];
+        }
+        parts.push(part);
       }
 
       lastIndex = regex.lastIndex;
@@ -352,10 +339,15 @@ export const substituteVariablesInAdf = (adfNode, variableValues) => {
 
     // Add remaining text
     if (lastIndex < text.length) {
-      parts.push({
+      const part = {
         type: 'text',
         text: text.substring(lastIndex)
-      });
+      };
+      // Preserve original marks
+      if (adfNode.marks && adfNode.marks.length > 0) {
+        part.marks = [...adfNode.marks];
+      }
+      parts.push(part);
     }
 
     // If we found variables, return a content array, otherwise return the original node

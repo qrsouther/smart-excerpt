@@ -8,7 +8,7 @@
  * - Standard selector dropdown at top
  * - Header with standard name and "View Source" link
  * - Save status indicator (Saving/Saved)
- * - Three tabs: Write (variables), Alternatives (toggles), Custom (insertions/notes)
+ * - Three tabs: Write (variables), Toggles, Custom (insertions/notes)
  * - Live preview below tabs (updates as configuration changes)
  * - Preview mode switches based on selected tab (rendered vs raw with markers)
  *
@@ -20,7 +20,7 @@
  * @param {Function} props.handleExcerptSelection - Handler for Standard selection change
  * @param {Object} props.context - Forge context object
  * @param {string} props.saveStatus - Current save status ('saving'|'saved'|null)
- * @param {number} props.selectedTabIndex - Currently selected tab index (0=Write, 1=Alternatives, 2=Custom)
+ * @param {number} props.selectedTabIndex - Currently selected tab index (0=Write, 1=Toggles, 2=Custom)
  * @param {Function} props.setSelectedTabIndex - Handler to change selected tab
  * @param {Object} props.variableValues - Current variable values
  * @param {Function} props.setVariableValues - Update variable values
@@ -99,7 +99,7 @@ export function EmbedEditMode({
 }) {
   // Use different preview based on selected tab
   // Write tab (0): Rendered without markers
-  // Alternatives tab (1): Raw with markers
+  // Toggles tab (1): Raw with markers
   // Custom tab (2): Raw with markers
   const previewContent = (selectedTabIndex === 1 || selectedTabIndex === 2)
     ? getRawPreviewContent()
@@ -179,7 +179,7 @@ export function EmbedEditMode({
       <Tabs onChange={(index) => setSelectedTabIndex(index)}>
         <TabList>
           <Tab>Write</Tab>
-          <Tab>Alternatives</Tab>
+          <Tab>Toggles</Tab>
           <Tab>Custom</Tab>
         </TabList>
         {/* Write Tab - Variables */}
@@ -191,7 +191,7 @@ export function EmbedEditMode({
           />
         </TabPanel>
 
-        {/* Alternatives Tab - Toggles */}
+        {/* Toggles Tab */}
         <TabPanel>
           <ToggleConfigPanel
             excerpt={excerpt}

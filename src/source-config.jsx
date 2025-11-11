@@ -1,4 +1,4 @@
-import React, { Fragment, useState, useEffect } from 'react';
+import React, { Fragment, useState, useEffect, useCallback } from 'react';
 import ForgeReconciler, {
   Form,
   FormSection,
@@ -27,6 +27,7 @@ import ForgeReconciler, {
 } from '@forge/react';
 import { invoke, view, router } from '@forge/bridge';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCategoriesQuery } from './hooks/admin-hooks';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -143,6 +144,12 @@ const App = () => {
     isError: isSaveError
   } = useSaveExcerptMutation();
 
+  // Fetch categories from storage (shared with Admin UI)
+  const {
+    data: categories = ['General', 'Pricing', 'Technical', 'Legal', 'Marketing'],
+    isLoading: isLoadingCategories
+  } = useCategoriesQuery();
+
   // Load excerpt data from React Query (only once per excerptId)
   useEffect(() => {
     // Reset flag if excerptId changed
@@ -243,13 +250,11 @@ const App = () => {
     detectToggs();
   }, [macroBody]);
 
-  const categoryOptions = [
-    { label: 'General', value: 'General' },
-    { label: 'Pricing', value: 'Pricing' },
-    { label: 'Technical', value: 'Technical' },
-    { label: 'Legal', value: 'Legal' },
-    { label: 'Marketing', value: 'Marketing' }
-  ];
+  // Convert categories array to options format for Select component
+  const categoryOptions = categories.map(cat => ({
+    label: cat,
+    value: cat
+  }));
 
   const onSubmit = async (formData) => {
     // Merge detected variables with their metadata
@@ -336,8 +341,8 @@ const App = () => {
             <Select
               id={getFieldId('category')}
               options={categoryOptions}
-              value={isLoadingExcerpt ? undefined : categoryOptions.find(opt => opt.value === category)}
-              placeholder={isLoadingExcerpt ? 'Loading...' : undefined}
+              value={(isLoadingExcerpt || isLoadingCategories) ? undefined : categoryOptions.find(opt => opt.value === category)}
+              placeholder={(isLoadingExcerpt || isLoadingCategories) ? 'Loading...' : undefined}
               onChange={(e) => setCategory(e.value)}
             />
 
@@ -384,6 +389,7 @@ const App = () => {
                       </Inline>
                     </Inline>
                     <Textfield
+                      id={`var-desc-${variable.name}`}
                       label="Description"
                       placeholder={isLoadingExcerpt ? 'Loading...' : 'Description'}
                       value={variableMetadata[variable.name]?.description || ''}
@@ -399,6 +405,7 @@ const App = () => {
                       }}
                     />
                     <Textfield
+                      id={`var-example-${variable.name}`}
                       label="Example"
                       placeholder={isLoadingExcerpt ? 'Loading...' : 'Example'}
                       value={variableMetadata[variable.name]?.example || ''}
@@ -442,6 +449,7 @@ const App = () => {
                     <Text>{' '}</Text>
                     <Text><Strong><Code>{`{{toggle:${toggle.name}}}`}</Code></Strong></Text>
                     <Textfield
+                      id={`toggle-desc-${toggle.name}`}
                       label="Description"
                       placeholder={isLoadingExcerpt ? 'Loading...' : 'Description'}
                       value={toggleMetadata[toggle.name]?.description || ''}
