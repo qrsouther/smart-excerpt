@@ -5,7 +5,7 @@
  * - Add new categories
  * - Rename existing categories
  * - Delete unused categories
- * - Reorder categories (move up/down)
+ * - Reorder categories (direct position numbering)
  *
  * @param {Object} props
  * @param {boolean} props.isOpen - Whether the modal is open
@@ -18,12 +18,11 @@
  * @param {Function} props.onAddCategory - Handler for adding a new category
  * @param {Function} props.onDeleteCategory - Handler for deleting a category
  * @param {Function} props.onEditCategory - Handler for editing/renaming a category
- * @param {Function} props.onMoveCategoryUp - Handler for moving a category up
- * @param {Function} props.onMoveCategoryDown - Handler for moving a category down
+ * @param {Function} props.onMoveCategoryToPosition - Handler for moving category to specific position
  * @returns {JSX.Element}
  */
 
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Text,
   Strong,
@@ -63,9 +62,10 @@ export function CategoryManager({
   onAddCategory,
   onDeleteCategory,
   onEditCategory,
-  onMoveCategoryUp,
-  onMoveCategoryDown
+  onMoveCategoryToPosition
 }) {
+  // Track position input for each category
+  const [positionInputs, setPositionInputs] = useState({});
   return (
     <ModalTransition>
       {isOpen && (
@@ -96,41 +96,67 @@ export function CategoryManager({
               {/* Category List */}
               <Box>
                 <Stack space="space.100">
-                  {categories.map((category, index) => (
-                    <Box key={category} xcss={categoryItemStyle}>
-                      <Inline space="space.200" alignBlock="center" spread="space-between">
-                        <Text><Strong>{category}</Strong></Text>
-                        <Inline space="space.100" alignBlock="center">
-                          <Button
-                            appearance="subtle"
-                            onClick={() => onMoveCategoryUp(category)}
-                            isDisabled={index === 0}
-                          >
-                            <Icon glyph="arrow-up" label="Move Up" />
-                          </Button>
-                          <Button
-                            appearance="subtle"
-                            onClick={() => onMoveCategoryDown(category)}
-                            isDisabled={index === categories.length - 1}
-                          >
-                            <Icon glyph="arrow-down" label="Move Down" />
-                          </Button>
-                          <Button
-                            appearance="subtle"
-                            onClick={() => onEditCategory(category)}
-                          >
-                            <Icon glyph="edit" label="Edit" />
-                          </Button>
-                          <Button
-                            appearance="subtle"
-                            onClick={() => onDeleteCategory(category)}
-                          >
-                            <Icon glyph="trash" label="Delete" />
-                          </Button>
+                  {categories.map((category, index) => {
+                    const currentPosition = index + 1;
+                    const positionInput = positionInputs[category] || currentPosition;
+
+                    return (
+                      <Box key={category} xcss={categoryItemStyle}>
+                        <Inline space="space.200" alignBlock="center" spread="space-between">
+                          <Inline space="space.100" alignBlock="center">
+                            <Text><Strong>#{currentPosition}</Strong></Text>
+                            <Text><Strong>{category}</Strong></Text>
+                          </Inline>
+                          <Inline space="space.100" alignBlock="center">
+                            <Textfield
+                              type="number"
+                              value={positionInput}
+                              onChange={(e) => {
+                                const newPos = parseInt(e.target.value);
+                                setPositionInputs(prev => ({
+                                  ...prev,
+                                  [category]: isNaN(newPos) ? currentPosition : newPos
+                                }));
+                              }}
+                              width="xsmall"
+                              min={1}
+                              max={categories.length}
+                            />
+                            <Button
+                              appearance="subtle"
+                              onClick={() => {
+                                const targetPosition = parseInt(positionInput);
+                                if (!isNaN(targetPosition) && targetPosition !== currentPosition) {
+                                  onMoveCategoryToPosition(category, targetPosition);
+                                  // Reset input after move
+                                  setPositionInputs(prev => {
+                                    const newInputs = { ...prev };
+                                    delete newInputs[category];
+                                    return newInputs;
+                                  });
+                                }
+                              }}
+                              isDisabled={parseInt(positionInput) === currentPosition || isNaN(parseInt(positionInput))}
+                            >
+                              <Icon glyph="arrow-right" label="Move to Position" />
+                            </Button>
+                            <Button
+                              appearance="subtle"
+                              onClick={() => onEditCategory(category)}
+                            >
+                              <Icon glyph="edit" label="Edit" />
+                            </Button>
+                            <Button
+                              appearance="subtle"
+                              onClick={() => onDeleteCategory(category)}
+                            >
+                              <Icon glyph="trash" label="Delete" />
+                            </Button>
+                          </Inline>
                         </Inline>
-                      </Inline>
-                    </Box>
-                  ))}
+                      </Box>
+                    );
+                  })}
                 </Stack>
               </Box>
             </Stack>

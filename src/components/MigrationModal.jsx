@@ -45,7 +45,7 @@ export const MigrationModal = ({ isOpen, onClose, defaultPageId = '99909654' }) 
             <ModalTitle>MultiExcerpt to Blueprint Standard Migration</ModalTitle>
           </ModalHeader>
           <ModalBody>
-            <Stack space="space.300">
+            <Stack space="space.150">
               <Box>
                 <Text>
                   <Strong>Page ID to migrate:</Strong>
@@ -67,7 +67,7 @@ export const MigrationModal = ({ isOpen, onClose, defaultPageId = '99909654' }) 
 
               {/* Step 1: Clone Macros */}
               <Box>
-                <Stack space="space.150">
+                <Stack space="space.100">
                   <Inline space="space.100" alignBlock="center" spread="space-between">
                     <Text>
                       <Strong>Step 1: Clone Blueprint Standard Source Macros</Strong>
@@ -111,7 +111,7 @@ export const MigrationModal = ({ isOpen, onClose, defaultPageId = '99909654' }) 
 
               {/* Step 2: Migrate Content */}
               <Box>
-                <Stack space="space.150">
+                <Stack space="space.100">
                   <Inline space="space.100" alignBlock="center" spread="space-between">
                     <Text>
                       <Strong>Step 2: Migrate Content</Strong>
@@ -155,7 +155,7 @@ export const MigrationModal = ({ isOpen, onClose, defaultPageId = '99909654' }) 
 
               {/* Step 3: Fix Excerpt IDs */}
               <Box>
-                <Stack space="space.150">
+                <Stack space="space.100">
                   <Inline space="space.100" alignBlock="center" spread="space-between">
                     <Text>
                       <Strong>Step 3: Generate Unique IDs</Strong>
@@ -199,7 +199,7 @@ export const MigrationModal = ({ isOpen, onClose, defaultPageId = '99909654' }) 
 
               {/* Step 4: Bulk Initialize */}
               <Box>
-                <Stack space="space.150">
+                <Stack space="space.100">
                   <Inline space="space.100" alignBlock="center" spread="space-between">
                     <Text>
                       <Strong>Step 4: Initialize Forge Storage</Strong>

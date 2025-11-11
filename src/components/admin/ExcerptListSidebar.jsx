@@ -59,7 +59,8 @@ export function ExcerptListSidebar({
   selectedExcerptForDetails,
   setSelectedExcerptForDetails,
   xcss: containerStyle,
-  selectStyles
+  selectStyles,
+  scrollableListStyle
 }) {
   return (
     <Box xcss={containerStyle}>
@@ -118,27 +119,31 @@ export function ExcerptListSidebar({
           </Fragment>
         )}
 
-        {/* Excerpt List */}
-        {sortedExcerpts.map((excerpt) => {
-          const category = String(excerpt.category || 'General');
-          const isSelected = selectedExcerptForDetails?.id === excerpt.id;
+        {/* Excerpt List - Scrollable */}
+        <Box xcss={scrollableListStyle}>
+          <Stack space="space.100">
+            {sortedExcerpts.map((excerpt) => {
+              const category = String(excerpt.category || 'General');
+              const isSelected = selectedExcerptForDetails?.id === excerpt.id;
 
-          return (
-            <Pressable
-              key={excerpt.id}
-              onClick={() => {
-                console.log('[ExcerptListSidebar] Row clicked for:', excerpt.name);
-                setSelectedExcerptForDetails(excerpt);
-              }}
-              xcss={excerptItemStyle(isSelected)}
-            >
-              <Inline space="space.100" alignBlock="center" shouldWrap>
-                <Text><Strong>{excerpt.name}</Strong></Text>
-                <Lozenge isBold>{category}</Lozenge>
-              </Inline>
-            </Pressable>
-          );
-        })}
+              return (
+                <Pressable
+                  key={excerpt.id}
+                  onClick={() => {
+                    console.log('[ExcerptListSidebar] Row clicked for:', excerpt.name);
+                    setSelectedExcerptForDetails(excerpt);
+                  }}
+                  xcss={excerptItemStyle(isSelected)}
+                >
+                  <Inline space="space.100" alignBlock="center" shouldWrap>
+                    <Text><Strong>{excerpt.name}</Strong></Text>
+                    <Lozenge isBold>{category}</Lozenge>
+                  </Inline>
+                </Pressable>
+              );
+            })}
+          </Stack>
+        </Box>
       </Stack>
     </Box>
   );

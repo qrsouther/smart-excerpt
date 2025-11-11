@@ -88,6 +88,16 @@ export const leftSidebarStyles = xcss({
 });
 
 /**
+ * Scrollable excerpt list container
+ * Shows ~5 excerpts above-the-fold, scrollable for the rest
+ * Used in: ExcerptListSidebar for the main excerpt list
+ */
+export const scrollableListStyle = xcss({
+  maxHeight: '400px',  // ~5 items at 80px each
+  overflowY: 'auto'
+});
+
+/**
  * Middle section layout
  * Takes up 85% of viewport width when right panel is hidden
  */

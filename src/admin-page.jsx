@@ -80,6 +80,7 @@ import {
   previewBoxStyle,
   selectStyles,
   leftSidebarStyles,
+  scrollableListStyle,
   middleSectionStyles,
   rightContentStyles,
   sectionSeparatorStyles,
@@ -314,21 +315,24 @@ const App = () => {
     alert(`Category "${trimmedName}" added successfully`);
   };
 
-  const handleMoveCategoryUp = (categoryName) => {
-    const index = categories.indexOf(categoryName);
-    if (index <= 0) return; // Already at top or not found
+  const handleMoveCategoryToPosition = (categoryName, targetPosition) => {
+    const currentIndex = categories.indexOf(categoryName);
+    if (currentIndex === -1) return; // Category not found
+
+    // Convert 1-based position to 0-based index
+    const targetIndex = targetPosition - 1;
+
+    // Validate target index
+    if (targetIndex < 0 || targetIndex >= categories.length || targetIndex === currentIndex) {
+      return;
+    }
 
     const newCategories = [...categories];
-    [newCategories[index - 1], newCategories[index]] = [newCategories[index], newCategories[index - 1]];
-    saveCategoriesMutation.mutate(newCategories);
-  };
+    // Remove category from current position
+    const [removed] = newCategories.splice(currentIndex, 1);
+    // Insert at target position
+    newCategories.splice(targetIndex, 0, removed);
 
-  const handleMoveCategoryDown = (categoryName) => {
-    const index = categories.indexOf(categoryName);
-    if (index === -1 || index >= categories.length - 1) return; // Already at bottom or not found
-
-    const newCategories = [...categories];
-    [newCategories[index], newCategories[index + 1]] = [newCategories[index + 1], newCategories[index]];
     saveCategoriesMutation.mutate(newCategories);
   };
 
@@ -1080,6 +1084,7 @@ const App = () => {
           setSelectedExcerptForDetails={setSelectedExcerptForDetails}
           xcss={leftSidebarStyles}
           selectStyles={selectStyles}
+          scrollableListStyle={scrollableListStyle}
         />
 
         {/* Middle Section - Excerpt Details with Inline Editing */}
@@ -1819,8 +1824,7 @@ const App = () => {
         onAddCategory={handleAddCategory}
         onDeleteCategory={handleDeleteCategory}
         onEditCategory={handleEditCategory}
-        onMoveCategoryUp={handleMoveCategoryUp}
-        onMoveCategoryDown={handleMoveCategoryDown}
+        onMoveCategoryToPosition={handleMoveCategoryToPosition}
       />
 
       {/* Preview Content Modal */}
