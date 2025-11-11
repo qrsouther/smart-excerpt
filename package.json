@@ -1,6 +1,6 @@
 {
   "name": "smart-excerpt",
-  "version": "7.15.1",
+  "version": "7.15.2",
   "description": "A high-performance replacement for MultiExcerpt for Confluence",
   "main": "src/index.js",
   "scripts": {

@@ -96,7 +96,8 @@ export function AdminToolbar({
         </Button>
       </Tooltip>
 
-      <Tooltip content="Creates a test page with 148 Embed macros (3x realistic max) with random variable values for performance testing">
+      {/* Hidden but wired up for future use */}
+      {/* <Tooltip content="Creates a test page with 148 Embed macros (3x realistic max) with random variable values for performance testing">
         <Button
           appearance="warning"
           onClick={onCreateTestPage}
@@ -105,7 +106,7 @@ export function AdminToolbar({
         >
           {isCreatingTestPage ? 'Creating...' : '🧪 Create Test Page'}
         </Button>
-      </Tooltip>
+      </Tooltip> */}
     </ButtonGroup>
   );
 }

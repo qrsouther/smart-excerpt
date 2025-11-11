@@ -1167,12 +1167,13 @@ const App = () => {
                         >
                           Preview Content
                         </Button>
-                        <Button
+                        {/* Hidden but wired up for future use */}
+                        {/* <Button
                           appearance="subtle"
                           onClick={() => handleCheckFormat(selectedExcerptForDetails.name)}
                         >
                           🔍 Check Format (Logs)
-                        </Button>
+                        </Button> */}
                         <Button
                           appearance="default"
                           onClick={async () => {
