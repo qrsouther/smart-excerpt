@@ -1061,6 +1061,28 @@ const App = () => {
 
   return (
     <Fragment>
+      {/* Page Header with Icon Tile */}
+      <Box xcss={xcss({ marginBlockEnd: 'space.100' })}>
+        <Inline space="space.100" alignBlock="center">
+          {/* Icon Tile - Large size */}
+          <Box
+            xcss={xcss({
+              width: '48px',
+              height: '48px',
+              borderRadius: 'border.radius.200',
+              backgroundColor: 'color.background.brand.bold',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center'
+            })}
+          >
+            <Icon glyph="page" size="large" label="Blueprint Standards Admin" />
+          </Box>
+          {/* Page Title */}
+          <Text><Strong>Blueprint Standards Admin</Strong></Text>
+        </Inline>
+      </Box>
+
       {/* Top Toolbar - Action Buttons */}
       <Box xcss={xcss({ marginBlockEnd: 'space.100' })}>
         <AdminToolbar
@@ -1443,42 +1465,60 @@ const App = () => {
                           )
                         });
 
-                        // Add actions cell with Push Update button (only enabled when stale)
+                        // Add actions cell with Copy UUID and Push Update buttons
                         rowCells.push({
                           key: 'actions',
                           content: (
-                            <Button
-                              appearance="primary"
-                              spacing="compact"
-                              isDisabled={!isStale}
-                              onClick={async () => {
-                                try {
-                                  const result = await invoke('pushUpdatesToPage', {
-                                    excerptId: selectedExcerptForDetails.id,
-                                    pageId: ref.pageId
-                                  });
+                            <Inline space="space.100" alignBlock="center">
+                              <Tooltip content={`Copy UUID: ${ref.localId}`}>
+                                <Button
+                                  appearance="subtle"
+                                  spacing="compact"
+                                  iconBefore={() => <Icon glyph="copy" label="Copy UUID" />}
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(ref.localId).then(() => {
+                                      // Success feedback
+                                      console.log('UUID copied to clipboard:', ref.localId);
+                                    }).catch(err => {
+                                      console.error('Failed to copy UUID:', err);
+                                      alert(`Failed to copy. UUID: ${ref.localId}`);
+                                    });
+                                  }}
+                                />
+                              </Tooltip>
+                              <Button
+                                appearance="primary"
+                                spacing="compact"
+                                isDisabled={!isStale}
+                                onClick={async () => {
+                                  try {
+                                    const result = await invoke('pushUpdatesToPage', {
+                                      excerptId: selectedExcerptForDetails.id,
+                                      pageId: ref.pageId
+                                    });
 
-                                  if (result.success) {
-                                    alert(`Successfully pushed update to ${result.updated} instance(s) on this page`);
-                                    // Refresh usage data
-                                    const refreshedUsage = await invoke('getExcerptUsage', { excerptId: selectedExcerptForDetails.id });
-                                    if (refreshedUsage.success) {
-                                      setUsageData(prev => ({
-                                        ...prev,
-                                        [selectedExcerptForDetails.id]: refreshedUsage.usage || []
-                                      }));
+                                    if (result.success) {
+                                      alert(`Successfully pushed update to ${result.updated} instance(s) on this page`);
+                                      // Refresh usage data
+                                      const refreshedUsage = await invoke('getExcerptUsage', { excerptId: selectedExcerptForDetails.id });
+                                      if (refreshedUsage.success) {
+                                        setUsageData(prev => ({
+                                          ...prev,
+                                          [selectedExcerptForDetails.id]: refreshedUsage.usage || []
+                                        }));
+                                      }
+                                    } else {
+                                      alert(`Failed to push update: ${result.error}`);
                                     }
-                                  } else {
-                                    alert(`Failed to push update: ${result.error}`);
+                                  } catch (err) {
+                                    console.error('Error pushing update:', err);
+                                    alert('Error pushing update');
                                   }
-                                } catch (err) {
-                                  console.error('Error pushing update:', err);
-                                  alert('Error pushing update');
-                                }
-                              }}
-                            >
-                              Push Update
-                            </Button>
+                                }}
+                              >
+                                Push Update
+                              </Button>
+                            </Inline>
                           )
                         });
 
@@ -1825,39 +1865,57 @@ const App = () => {
                                       )
                                     });
 
-                                    // Add Actions cell with Push Update button (only enabled when stale)
+                                    // Add Actions cell with Copy UUID and Push Update buttons
                                     rowCells.push({
                                       key: 'actions',
                                       content: (
-                                        <Button
-                                          appearance="primary"
-                                          spacing="compact"
-                                          isDisabled={!isStale}
-                                          onClick={async () => {
-                                            try {
-                                              const result = await invoke('pushUpdatesToPage', {
-                                                excerptId: selectedExcerpt.id,
-                                                pageId: ref.pageId
-                                              });
+                                        <Inline space="space.100" alignBlock="center">
+                                          <Tooltip content={`Copy UUID: ${ref.localId}`}>
+                                            <Button
+                                              appearance="subtle"
+                                              spacing="compact"
+                                              iconBefore={() => <Icon glyph="copy" label="Copy UUID" />}
+                                              onClick={() => {
+                                                navigator.clipboard.writeText(ref.localId).then(() => {
+                                                  // Success feedback
+                                                  console.log('UUID copied to clipboard:', ref.localId);
+                                                }).catch(err => {
+                                                  console.error('Failed to copy UUID:', err);
+                                                  alert(`Failed to copy. UUID: ${ref.localId}`);
+                                                });
+                                              }}
+                                            />
+                                          </Tooltip>
+                                          <Button
+                                            appearance="primary"
+                                            spacing="compact"
+                                            isDisabled={!isStale}
+                                            onClick={async () => {
+                                              try {
+                                                const result = await invoke('pushUpdatesToPage', {
+                                                  excerptId: selectedExcerpt.id,
+                                                  pageId: ref.pageId
+                                                });
 
-                                              if (result.success) {
-                                                alert(`Successfully pushed update to ${result.updated} instance(s) on this page`);
-                                                // Refresh usage data
-                                                const refreshedUsage = await invoke('getExcerptUsage', { excerptId: selectedExcerpt.id });
-                                                if (refreshedUsage.success) {
-                                                  setUsageData({ [selectedExcerpt.id]: refreshedUsage.usage || [] });
+                                                if (result.success) {
+                                                  alert(`Successfully pushed update to ${result.updated} instance(s) on this page`);
+                                                  // Refresh usage data
+                                                  const refreshedUsage = await invoke('getExcerptUsage', { excerptId: selectedExcerpt.id });
+                                                  if (refreshedUsage.success) {
+                                                    setUsageData({ [selectedExcerpt.id]: refreshedUsage.usage || [] });
+                                                  }
+                                                } else {
+                                                  alert(`Failed to push update: ${result.error}`);
                                                 }
-                                              } else {
-                                                alert(`Failed to push update: ${result.error}`);
+                                              } catch (err) {
+                                                console.error('Error pushing update:', err);
+                                                alert('Error pushing update');
                                               }
-                                            } catch (err) {
-                                              console.error('Error pushing update:', err);
-                                              alert('Error pushing update');
-                                            }
-                                          }}
-                                        >
-                                          Push Update
-                                        </Button>
+                                            }}
+                                          >
+                                            Push Update
+                                          </Button>
+                                        </Inline>
                                       )
                                     });
 

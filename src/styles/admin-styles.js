@@ -95,7 +95,7 @@ export const leftSidebarStyles = xcss({
  * Used in: ExcerptListSidebar for the main excerpt list
  */
 export const scrollableListStyle = xcss({
-  maxHeight: '250px',  // Reduced from 400px to fit within viewport without page scroll
+  maxHeight: '400px',  // Fixed size to try and fit within viewport without page scroll on initial load
   overflowY: 'auto'
 });
 
