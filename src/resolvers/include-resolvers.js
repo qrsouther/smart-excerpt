@@ -1,18 +1,18 @@
 /**
- * Include Instance Configuration Resolver Functions
+ * Embed Instance Configuration Resolver Functions
  *
- * This module contains operations for managing Include macro instances.
- * Each Include instance has its own configuration (variable values, toggle states,
+ * This module contains operations for managing Embed macro instances.
+ * Each Embed instance has its own configuration (variable values, toggle states,
  * custom insertions) that's stored separately from the source excerpt.
  *
  * Think of this like individual reader preferences for the same book chapter:
- * the chapter (excerpt) is the same, but each reader (Include instance) can
+ * the chapter (excerpt) is the same, but each reader (Embed instance) can
  * have their own bookmarks, highlights, and notes.
  *
  * Extracted during Phase 7 of index.js modularization.
  *
  * Functions:
- * - saveVariableValues: Save Include instance configuration
+ * - saveVariableValues: Save Embed instance configuration
  */
 
 import { storage } from '@forge/api';

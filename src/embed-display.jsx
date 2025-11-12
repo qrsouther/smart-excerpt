@@ -1,4 +1,4 @@
-import React, { Fragment, useState, useEffect } from 'react';
+import React, { Fragment, useState, useEffect, useRef } from 'react';
 import ForgeReconciler, {
   Text,
   Strong,
@@ -103,6 +103,9 @@ const App = () => {
   const [selectedExcerptId, setSelectedExcerptId] = useState(null);
   // availableExcerpts state removed - now managed by React Query
   const [isInitializing, setIsInitializing] = useState(true);
+
+  // Track if we're in the initial data load phase to prevent auto-save during load
+  const isLoadingInitialDataRef = useRef(false);
 
   const [content, setContent] = useState(null);
   // excerpt state removed - now managed by React Query
@@ -230,6 +233,8 @@ const App = () => {
       }
 
       // EDIT MODE: Full processing
+      // Mark that we're loading initial data - this prevents auto-save from running
+      isLoadingInitialDataRef.current = true;
       setIsRefreshing(true);
 
       try {
@@ -335,6 +340,12 @@ const App = () => {
         console.error('Error loading content:', err);
       } finally {
         setIsRefreshing(false);
+
+        // Allow a brief moment for state to settle, then enable auto-save for user changes
+        // This prevents the auto-save effect from triggering during initial data load
+        setTimeout(() => {
+          isLoadingInitialDataRef.current = false;
+        }, 100);
       }
     };
 
@@ -345,6 +356,12 @@ const App = () => {
   // Now uses React Query mutation for better state management
   useEffect(() => {
     if (!isEditing || !effectiveLocalId || !selectedExcerptId || !excerpt) {
+      return;
+    }
+
+    // CRITICAL: Skip auto-save during initial data load
+    // This prevents false version history entries when Edit Mode is first opened
+    if (isLoadingInitialDataRef.current) {
       return;
     }
 
@@ -478,6 +495,9 @@ const App = () => {
 
     // Select component passes the entire option object
     const newExcerptId = selectedOption.value;
+
+    // Block auto-save during excerpt transition to prevent duplicate version history
+    isLoadingInitialDataRef.current = true;
 
     setSelectedExcerptId(newExcerptId);
     setIsRefreshing(true);

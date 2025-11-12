@@ -55,7 +55,7 @@ export const tableScrollContainerStyle = xcss({
 
 /**
  * Preview content box styling
- * Matches the Include macro preview styling for consistency
+ * Matches the Embed macro preview styling for consistency
  */
 export const previewBoxStyle = xcss({
   borderColor: 'color.border',

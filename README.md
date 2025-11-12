@@ -98,7 +98,7 @@ Content management system with reusable content blocks and variable substitution
 ### System Analogies
 
 **If you know these systems, this is similar to:**
-- **Confluence:** Like native "Excerpt" and "Excerpt Include" macros, but with variables, change detection, and centralized management
+- **Confluence:** Like native "Excerpt" and "Excerpt Embed" macros, but with variables, change detection, and centralized management
 - **WordPress:** Sources are like "Reusable Blocks," Embeds are instances, Admin is the block library
 - **React:** Sources are component definitions, Embeds are component instances with props
 - **Mail merge:** Sources are templates, Embeds are merged documents with variable values
@@ -150,18 +150,18 @@ This branch contains a major refactoring effort to modularize the monolithic `in
 - Extracted all health-check and verification operations to `src/resolvers/verification-resolvers.js`:
   - `sourceHeartbeat` - Track Source macro activity
   - `checkAllSources` - Verify all Source macros + clean stale entries
-  - `checkAllIncludes` - Production "Check All Includes" feature with progress tracking (~353 lines)
+  - `checkAllIncludes` - Production "Check All Embeds" feature with progress tracking (~353 lines)
 - **Result:** `index.js` reduced from 1,103 → 570 lines (48% reduction!)
 
 #### **Phase 6: Create Usage Resolvers Module** ✅
 - Extracted usage tracking and push update operations to `src/resolvers/usage-resolvers.js`:
   - `trackExcerptUsage`, `removeExcerptUsage`, `getExcerptUsage` - Track where excerpts are used
-  - `pushUpdatesToAll`, `pushUpdatesToPage` - Force-refresh Include instances
+  - `pushUpdatesToAll`, `pushUpdatesToPage` - Force-refresh Embed instances
 - **Result:** `index.js` reduced from 570 → 285 lines (50% reduction!)
 
-#### **Phase 7: Create Include Resolvers Module** ✅
-- Extracted Include instance configuration to `src/resolvers/include-resolvers.js`:
-  - `saveVariableValues` - Save Include configuration (variables, toggles, custom insertions)
+#### **Phase 7: Create Embed Resolvers Module** ✅
+- Extracted Embed instance configuration to `src/resolvers/include-resolvers.js`:
+  - `saveVariableValues` - Save Embed configuration (variables, toggles, custom insertions)
 - **Result:** `index.js` reduced from 285 → 204 lines (final target achieved!)
 
 ### 📊 Impact Summary
@@ -190,7 +190,7 @@ src/
     ├── excerpt-resolvers.js (286 lines) - Excerpt CRUD operations
     ├── verification-resolvers.js (547 lines) - Health checks & verification
     ├── usage-resolvers.js (380 lines) - Usage tracking & push updates
-    ├── include-resolvers.js (116 lines) - Include instance configuration
+    ├── include-resolvers.js (116 lines) - Embed instance configuration
     └── migration-resolvers.js (1,644 lines) - One-time migration tools ⚠️
 ```
 
@@ -219,24 +219,24 @@ All one-time migration code is clearly marked with `⚠️ ONE-TIME USE` warning
 ### How It Works
 
 1. **SmartExcerpt Source Macro** - Create reusable content blocks with variables
-2. **SmartExcerpt Include Macro** - Reference and display excerpts with variable substitution
+2. **SmartExcerpt Embed Macro** - Reference and display excerpts with variable substitution
 3. **Performance Strategy:**
-   - Cached content stored in Include config for instant display
+   - Cached content stored in Embed config for instant display
    - Background refresh from source ensures content stays up-to-date
    - Best of both worlds: instant rendering + automatic updates
 
 ### On Page Load (Detailed Flow)
 
-When a page with Include macros loads, here's exactly what happens:
+When a page with Embed macros loads, here's exactly what happens:
 
 #### 1. **Instant Display (0-100ms)**
-   - Include macro reads `cachedContent` from its config
+   - Embed macro reads `cachedContent` from its config
    - Immediately displays the cached content
    - **User sees content right away** - no "Loading..." message
    - Page is interactive and ready to use
 
 #### 2. **Background Check (happens simultaneously, doesn't block display)**
-   - Include calls `invoke('getExcerpt', { excerptId })` in the background
+   - Embed calls `invoke('getExcerpt', { excerptId })` in the background
    - Fetches the latest Source excerpt from storage
    - Performs variable substitution with current variable values
    - Compares the fresh content to the cached content
@@ -258,7 +258,7 @@ When a page with Include macros loads, here's exactly what happens:
 
 ### What Gets Cached
 
-When you save an Include config, it stores:
+When you save an Embed config, it stores:
 ```javascript
 {
   excerptId: "abc-123",
@@ -301,14 +301,14 @@ When installing to a new Confluence environment (e.g., moving from development t
 1. **Install the app** to your production Confluence site
 2. **Access the Admin page** via: Settings → Manage apps → SmartExcerpt Admin
 3. **Copy the full URL** from your browser's address bar
-4. **Update the code** in `src/include-display.jsx` (around line 459):
+4. **Update the code** in `src/embed-display.jsx` (around line 459):
    ```javascript
    // Find this line and replace with your production URL
    await router.navigate('/wiki/admin/forge?id=ari%3Acloud%3A...');
    ```
 5. **Redeploy** with `forge deploy` and upgrade with `forge install --upgrade`
 
-**Why this is needed:** The Admin page URL contains an extension ID that is unique per installation and cannot be determined programmatically. The "Admin View" button in Include macros uses this URL to provide quick access to the admin panel.
+**Why this is needed:** The Admin page URL contains an extension ID that is unique per installation and cannot be determined programmatically. The "Admin View" button in Embed macros uses this URL to provide quick access to the admin panel.
 
 ---
 
@@ -487,7 +487,7 @@ Each row contains:
 
 ✅ **Rich Text Content** - Full WYSIWYG editing for Source macros with bold, italic, tables, and more
 
-✅ **Free Write Feature** - Insert custom paragraph content at chosen positions within Include macros
+✅ **Free Write Feature** - Insert custom paragraph content at chosen positions within Embed macros
 
 ✅ **Internal Notes** - Add footnote-style internal annotations visible only to Confluence users, hidden from external clients (see [Internal Notes](#-internal-notes-feature) section below)
 
@@ -509,9 +509,9 @@ Each row contains:
 
 ✅ **Usage Deduplication** - Smart display of unique page usage, eliminating duplicate entries
 
-✅ **Timestamp Tracking** - Track and display when Sources were last modified and when Includes last synced
+✅ **Timestamp Tracking** - Track and display when Sources were last modified and when Embeds last synced
 
-✅ **Check All Includes** - Comprehensive verification and reporting system with real-time progress tracking and CSV export
+✅ **Check All Embeds** - Comprehensive verification and reporting system with real-time progress tracking and CSV export
 
 ### In Development
 
@@ -524,22 +524,22 @@ Each row contains:
 
 ### Performance Strategy Evolution
 
-We evaluated three approaches to optimize Include macro rendering:
+We evaluated three approaches to optimize Embed macro rendering:
 
 #### **Original Approach (Baseline)**
-- Each Include calls backend on page load
+- Each Embed calls backend on page load
 - Fetches excerpt from storage, performs variable substitution
-- Performance: ~1-2 second initial load per Include
+- Performance: ~1-2 second initial load per Embed
 
 #### **Option 1: Pre-rendered Content (Not Implemented)**
-- Store fully rendered content in Include config
+- Store fully rendered content in Embed config
 - Zero backend calls, instant display
 - **Trade-off:** Manual refresh needed when Source changes
 - **Performance:** Instant (0ms) - best possible
 - **Use case:** Ideal when Sources rarely change
 
 #### **Option 4: Optimistic Rendering (Current Implementation)** ⭐
-- Store cached content in Include config
+- Store cached content in Embed config
 - Display cached content immediately
 - Refresh from source in background
 - **Trade-off:** Brief network activity after initial display
@@ -557,13 +557,13 @@ We explored a hybrid approach that would combine Option 1's instant performance 
 #### How It Would Work
 
 1. **Normal Operation**
-   - Includes display pre-rendered content (instant, zero backend calls)
+   - Embeds display pre-rendered content (instant, zero backend calls)
    - Zero overhead during page loads
 
 2. **When Source Excerpt Edited**
    - Backend maintains an index: `excerpt:{excerptId} → [pageIds using it]`
-   - On Source save, trigger bulk update of all Include configs
-   - Update stored `renderedContent` for each Include
+   - On Source save, trigger bulk update of all Embed configs
+   - Update stored `renderedContent` for each Embed
 
 3. **Benefits**
    - Option 1 performance (instant loads, zero network overhead)
@@ -577,12 +577,12 @@ We explored a hybrid approach that would combine Option 1's instant performance 
 permissions:
   scopes:
     - write:confluence-content  # To update page content
-    - search:confluence          # To find pages with Includes
+    - search:confluence          # To find pages with Embeds
 ```
 
 **Implementation Components:**
 
-1. **Include Usage Index**
+1. **Embed Usage Index**
 ```javascript
 // Stored in Forge storage
 {
@@ -595,9 +595,9 @@ permissions:
 }
 ```
 
-2. **Registration on Include Save**
+2. **Registration on Embed Save**
 ```javascript
-// When Include is configured
+// When Embed is configured
 await invoke('registerIncludeUsage', {
   excerptId: selectedExcerptId,
   pageId: context.extension.content.id,
@@ -657,8 +657,8 @@ smart-excerpt/
 │   ├── index.js             # Backend resolver (storage operations)
 │   ├── source-display.jsx   # Source macro display view
 │   ├── source-config.jsx    # Source macro configuration UI
-│   ├── include-display.jsx  # Include macro display (optimistic rendering)
-│   └── include-config.jsx   # Include macro configuration UI (with preview)
+│   ├── embed-display.jsx  # Embed macro display (optimistic rendering)
+│   └── include-config.jsx   # Embed macro configuration UI (with preview)
 └── README.md                # This file
 ```
 
@@ -681,12 +681,12 @@ Use double curly braces to define variables in excerpt content:
 The {{client}} is a {{stack-model}} organization.
 ```
 
-Variables are automatically detected and can be filled in when configuring Includes.
+Variables are automatically detected and can be filled in when configuring Embeds.
 
 ### Free Write Feature
-The Free Write feature allows you to insert custom paragraph content at specific positions within an Include macro:
+The Free Write feature allows you to insert custom paragraph content at specific positions within an Embed macro:
 
-1. Open an Include macro in edit mode
+1. Open an Embed macro in edit mode
 2. Navigate to the "Free Write" tab
 3. Select a paragraph position from the dropdown (shows last sentence of each paragraph)
 4. Enter your custom paragraph text
@@ -701,16 +701,16 @@ The Free Write feature allows you to insert custom paragraph content at specific
 **Features:**
 - Add multiple custom paragraphs at different positions
 - Remove custom paragraphs individually
-- Auto-saves with other Include configurations
+- Auto-saves with other Embed configurations
 - Appears immediately in live preview
 
 ### 📝 Internal Notes Feature
 
-The Internal Notes feature allows you to add footnote-style annotations to Include macros that are visible to Confluence users but hidden from external clients viewing content through integrations like Salesforce.
+The Internal Notes feature allows you to add footnote-style annotations to Embed macros that are visible to Confluence users but hidden from external clients viewing content through integrations like Salesforce.
 
 **How It Works:**
 
-1. Open an Include macro in edit mode
+1. Open an Embed macro in edit mode
 2. Navigate to the "Free Write" tab
 3. Toggle the insertion type from "Body Paragraph" to "Internal Note"
 4. Select a paragraph position where you want to add the note
@@ -767,11 +767,11 @@ Internal Notes are designed to work with external content filtering for Salesfor
 - One note per paragraph position
 - Visible in all Confluence views (published and edit mode previews)
 - Hidden from external clients via content filtering
-- Auto-saves with other Include configurations
+- Auto-saves with other Embed configurations
 - Collapsible panel for clean presentation
 
 ### Staleness Detection & Diff View
-When viewing a published page with Include macros, the app automatically detects if the Source excerpt has been updated since the Include was last synced using a progressive disclosure pattern for optimal UX:
+When viewing a published page with Embed macros, the app automatically detects if the Source excerpt has been updated since the Embed was last synced using a progressive disclosure pattern for optimal UX:
 
 **Progressive Disclosure Flow:**
 1. **Checking Phase (0-500ms):** Subtle gray monospace indicator appears in top-right corner showing "Checking for Source updates..." with spinner
@@ -792,10 +792,10 @@ When viewing a published page with Include macros, the app automatically detects
 
 **How It Works (Hash-Based Detection):**
 1. **Content Hashing:** Each excerpt stores a SHA256 `contentHash` representing its semantic content (content, name, category, variables, toggles)
-2. **Synced Hash:** Each Include stores the `syncedContentHash` it last synced with
-3. **Comparison:** Compares Source `contentHash` with Include's `syncedContentHash`
+2. **Synced Hash:** Each Embed stores the `syncedContentHash` it last synced with
+3. **Comparison:** Compares Source `contentHash` with Embed's `syncedContentHash`
 4. **Detection:** If hashes differ, content has actually changed (not just timestamps)
-5. **Fallback:** Uses timestamp comparison for backward compatibility with pre-hash Includes
+5. **Fallback:** Uses timestamp comparison for backward compatibility with pre-hash Embeds
 
 **Technical Details:**
 - **Hash includes:** Content (ADF), name, category, variables (with descriptions), toggles (with descriptions)
@@ -848,16 +848,16 @@ Click any excerpt to view detailed usage information:
 
 ### Bulk Operations
 - **Mass Category Updates:** Change category for multiple excerpts at once
-- **Push to All Pages:** Update all Include instances of an excerpt simultaneously
+- **Push to All Pages:** Update all Embed instances of an excerpt simultaneously
 - **Push to Specific Page:** Update only the instances on a particular page
 - **Individual Push Updates:** Per-page update buttons in usage table
 
 ### Push-Based Updates
-When a Source is modified, you can manually push updates to Includes:
-1. **Automatic Detection:** Admin UI shows which Includes are stale (Source newer than Include)
+When a Source is modified, you can manually push updates to Embeds:
+1. **Automatic Detection:** Admin UI shows which Embeds are stale (Source newer than Embed)
 2. **Selective Updates:** Choose to update all instances or specific pages
-3. **Timestamp Tracking:** View exact times when Source was modified and Include last synced
-4. **One-Click Updates:** "Push to All Pages" updates every Include instance instantly
+3. **Timestamp Tracking:** View exact times when Source was modified and Embed last synced
+4. **One-Click Updates:** "Push to All Pages" updates every Embed instance instantly
 
 ### Category Management
 Customize excerpt categories via "Manage Categories" button:
@@ -878,34 +878,34 @@ Customize excerpt categories via "Manage Categories" button:
   - Navigate to source page
   - Permanently delete orphaned Source from storage
 
-**Orphaned Includes:**
-- Automatically detects Includes referencing deleted Sources
+**Orphaned Embeds:**
+- Automatically detects Embeds referencing deleted Sources
 - Shows affected pages and reference counts
 - Suggests remediation:
   - Recreate the Source with same name
-  - Update Includes to reference different Source
-  - Remove Includes from affected pages
+  - Update Embeds to reference different Source
+  - Remove Embeds from affected pages
 
 **Automatic Cleanup:**
-- Removes stale Include usage entries during Source checking
-- Verifies Include instances still exist on their pages
+- Removes stale Embed usage entries during Source checking
+- Verifies Embed instances still exist on their pages
 - Maintains data integrity across the system
 
-### Check All Includes
+### Check All Embeds
 
-Comprehensive verification system for all Include instances across your Confluence space:
+Comprehensive verification system for all Embed instances across your Confluence space:
 
 **What It Does:**
-- **Verifies Existence:** Checks that each Include macro still exists on its page
-- **Validates References:** Ensures all Includes point to valid Sources
-- **Detects Staleness:** Identifies Includes that need updates (Source modified after Include last synced)
-- **Cleans Up Orphans:** Automatically removes storage entries for deleted Includes
-- **Generates Report:** Creates comprehensive CSV export with all Include data
+- **Verifies Existence:** Checks that each Embed macro still exists on its page
+- **Validates References:** Ensures all Embeds point to valid Sources
+- **Detects Staleness:** Identifies Embeds that need updates (Source modified after Embed last synced)
+- **Cleans Up Orphans:** Automatically removes storage entries for deleted Embeds
+- **Generates Report:** Creates comprehensive CSV export with all Embed data
 
 **Real-Time Progress Tracking:**
 - Visual progress bar with percentage completion
 - Current status messages (e.g., "Checking page 5/12...")
-- Items processed count (e.g., "120 / 200 Includes processed")
+- Items processed count (e.g., "120 / 200 Embeds processed")
 - Estimated time to completion (ETA calculated dynamically)
 - Warning to stay on page during operation
 
@@ -914,20 +914,20 @@ Comprehensive verification system for all Include instances across your Confluen
 - Excerpt Name and Category
 - Status (active/stale)
 - Last Synced and Excerpt Last Modified timestamps
-- All variable values for each Include
+- All variable values for each Embed
 - All toggle states (Enabled/Disabled)
 - Custom insertions count
 - Full rendered content (variables substituted, ready for grammar checking)
 
 **Use Cases:**
-- Audit all Includes across your Confluence space
+- Audit all Embeds across your Confluence space
 - Export data for external grammar/spell checking tools
-- Identify stale Includes that need updates
+- Identify stale Embeds that need updates
 - Clean up orphaned storage entries
 - Generate reports for documentation or compliance
 
 **How to Use:**
-1. Click "🔍 Check All Includes" button in Admin UI
+1. Click "🔍 Check All Embeds" button in Admin UI
 2. Stay on page while check runs (progress bar shows real-time updates)
 3. Review summary when complete
 4. Download CSV report when prompted
@@ -936,10 +936,10 @@ Comprehensive verification system for all Include instances across your Confluen
 For each excerpt, you can:
 - **Preview Content:** View raw Source content with all variables and toggle tags
 - **View Source Page:** Navigate directly to the page containing the Source macro
-- **Push Updates:** Update all or specific Include instances
+- **Push Updates:** Update all or specific Embed instances
 - **Permadelete:** Permanently remove excerpt from library (content remains on source page)
 
-**Important Note:** The Admin View button URL in Include macros needs to be updated when installing to new environments (see Production Installation Configuration section).
+**Important Note:** The Admin View button URL in Embed macros needs to be updated when installing to new environments (see Production Installation Configuration section).
 
 ---
 
@@ -1033,8 +1033,8 @@ logError('API call failed', error, { pageId, excerptId });
 
 ## 🐛 Troubleshooting
 
-### Includes Showing Old Content
-- Re-edit the Include and save to update cached content
+### Embeds Showing Old Content
+- Re-edit the Embed and save to update cached content
 - Check browser console for background refresh errors
 
 ### Variables Not Substituting
@@ -1044,8 +1044,8 @@ logError('API call failed', error, { pageId, excerptId });
 
 ### Slow Page Loads
 - Check Network tab for multiple concurrent `invoke` calls
-- Each Include makes one background refresh call
-- Consider page design: spread Includes across multiple pages
+- Each Embed makes one background refresh call
+- Consider page design: spread Embeds across multiple pages
 
 ### Deployment Issues
 ```bash
@@ -1067,12 +1067,12 @@ forge install --upgrade
 
 | Scenario | Performance |
 |----------|-------------|
-| Single Include | Instant display (~100ms) + 500ms background refresh |
-| 5 Includes | Instant display (~100ms) + 1-2s background refresh |
-| 20 Includes | Instant display (~100ms) + 3-5s background refresh |
-| 50+ Includes | Instant display (~100ms) + 5-10s background refresh |
+| Single Embed | Instant display (~100ms) + 500ms background refresh |
+| 5 Embeds | Instant display (~100ms) + 1-2s background refresh |
+| 20 Embeds | Instant display (~100ms) + 3-5s background refresh |
+| 50+ Embeds | Instant display (~100ms) + 5-10s background refresh |
 
-**Note:** Background refresh happens after content is already visible, so user experience remains fast even with many Includes.
+**Note:** Background refresh happens after content is already visible, so user experience remains fast even with many Embeds.
 
 ---
 
@@ -1091,12 +1091,12 @@ forge install --upgrade
 - ✅ Excerpt usage reporting (which pages use which excerpts)
 - ✅ Bulk operations (mass updates, push to all)
 - ✅ Push-based updates from Admin UI
-- ✅ Orphaned Source and Include detection
+- ✅ Orphaned Source and Embed detection
 - ✅ Staleness detection and diff view
 - ✅ Free Write custom paragraph insertion
 - ✅ Toggle content blocks
-- ✅ Check All Includes verification and cleanup with real-time progress tracking
-- ✅ CSV export of all Include instances with full metadata
+- ✅ Check All Embeds verification and cleanup with real-time progress tracking
+- ✅ CSV export of all Embed instances with full metadata
 
 ### Next Features
 - Content versioning and history
@@ -1109,10 +1109,10 @@ forge install --upgrade
 
 **v7.15.0** - Progressive Disclosure Staleness UI: Implemented subtle "Checking..." indicator during staleness check (8px gray monospace with spinner in top-right corner), added prominent green "Review Update" button when updates detected, implemented progressive disclosure pattern where UpdateAvailableBanner only appears on user request (not automatically), added jittered staleness check (0-500ms random delay) to prevent thundering herd when pages have many Embeds, created StalenessCheckIndicator component with position-relative wrapper for proper indicator placement
 **v4.300.1** - MultiExcerpt Migration: Added bulk excerpt initialization with excerpt-index support, cleaned up failed sync code (~173 lines removed), added migration reference scripts (clone-macros.js, migrate-content.js, migrate-macros.js, fix-excerpt-ids.js), created UUID mapping CSV for 147 migrated excerpts, enabled "View Source" functionality via sourcePageId, successfully migrated test page from MultiExcerpt to SmartExcerpt
-**v4.208.0** - Check All Includes Feature: Comprehensive Include verification system with real-time progress tracking (visual progress bar, ETA calculation, page-by-page status updates), CSV export of all Include instances with full metadata (page URLs, variable values, toggle states, rendered content), automatic cleanup of orphaned Include entries, broken reference detection, and staleness reporting
-**v4.300.0** - Comprehensive Admin UI: Added advanced search & filtering, excerpt usage reporting with variable/toggle display, bulk operations (mass category updates, push to all/specific pages), orphaned Source/Include detection with active checking and cleanup, category management UI (add/edit/delete/reorder), heading anchor navigation, usage deduplication, and timestamp tracking
+**v4.208.0** - Check All Embeds Feature: Comprehensive Embed verification system with real-time progress tracking (visual progress bar, ETA calculation, page-by-page status updates), CSV export of all Embed instances with full metadata (page URLs, variable values, toggle states, rendered content), automatic cleanup of orphaned Embed entries, broken reference detection, and staleness reporting
+**v4.300.0** - Comprehensive Admin UI: Added advanced search & filtering, excerpt usage reporting with variable/toggle display, bulk operations (mass category updates, push to all/specific pages), orphaned Source/Embed detection with active checking and cleanup, category management UI (add/edit/delete/reorder), heading anchor navigation, usage deduplication, and timestamp tracking
 **v4.203.0** - Added staleness detection and diff view: visual notifications when Source is updated, side-by-side comparison of cached vs latest content with all toggle tags visible
-**v4.83.0** - Added Free Write feature: insert custom paragraphs at chosen positions in Include macros
+**v4.83.0** - Added Free Write feature: insert custom paragraphs at chosen positions in Embed macros
 **v4.75.0** - Added required field validation for variables with visual indicators
 **v4.72.0** - Investigated TextArea multi-line support, discovered incompatibility with Forge UI Kit macros
 **v3.55.0** - Added rich text editing support for Source macros using bodied macro layout

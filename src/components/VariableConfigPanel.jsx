@@ -44,6 +44,14 @@ const requiredFieldStyle = xcss({
   padding: 'space.050'
 });
 
+// Style to ensure caret/cursor is visible in text inputs
+// NOTE: This fixes cursor visibility but NOT text selection highlighting
+// Text selection is broken in Forge Textfield due to missing ::selection styles
+// and CSP prevents workarounds. This is a known Forge/UI Kit bug.
+const textfieldWrapperStyle = xcss({
+  caretColor: 'color.text'
+});
+
 /**
  * VariableConfigPanel Component
  *
@@ -112,16 +120,20 @@ export const VariableConfigPanel = ({ excerpt, variableValues, setVariableValues
                 key: 'value',
                 content: (
                   <Box xcss={showWarning ? requiredFieldStyle : undefined}>
-                    <Textfield
-                      placeholder={variable.example ? `e.g., ${variable.example}` : `Enter value for ${variable.name}`}
-                      value={variableValues[variable.name] || ''}
-                      onChange={(e) => {
-                        setVariableValues({
-                          ...variableValues,
-                          [variable.name]: e.target.value
-                        });
-                      }}
-                    />
+                    <Box xcss={textfieldWrapperStyle}>
+                      <Textfield
+                        appearance="standard"
+                        id={`var-value-${variable.name}`}
+                        placeholder={variable.example ? `e.g., ${variable.example}` : `Enter value for ${variable.name}`}
+                        value={variableValues[variable.name] || ''}
+                        onChange={(e) => {
+                          setVariableValues({
+                            ...variableValues,
+                            [variable.name]: e.target.value
+                          });
+                        }}
+                      />
+                    </Box>
                   </Box>
                 )
               },

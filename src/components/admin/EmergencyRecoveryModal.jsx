@@ -638,8 +638,8 @@ export function EmergencyRecoveryModal({ isOpen, onClose, initialTab = 'deleted-
                       <Stack space="space.200">
                         {/* Header with back button */}
                         <Inline space="space.100" alignBlock="center" spread="space-between">
-                          <Text><Strong>Version Details</Strong></Text>
-                          <Inline space="space.100" alignBlock="center">
+                        <Text><Strong>Timestamp:</Strong> {formatTimestamp(selectedVersion.timestamp)}</Text>
+                        <Inline space="space.100" alignBlock="center">
                             <Button
                               appearance="subtle"
                               onClick={() => setSelectedVersion(null)}
@@ -658,40 +658,22 @@ export function EmergencyRecoveryModal({ isOpen, onClose, initialTab = 'deleted-
 
                         {/* Version metadata */}
                         <Stack space="space.050">
-                          <Text><Strong>Timestamp:</Strong> {formatTimestamp(selectedVersion.timestamp)}</Text>
-                          <Text><Strong>Change Type:</Strong> {selectedVersion.changeType}</Text>
-                          {selectedVersion.changedBy && (
-                            <Text><Strong>Changed By:</Strong> {selectedVersion.changedBy}</Text>
-                          )}
-                          <Text><Strong>Size:</Strong> {selectedVersion.size} bytes</Text>
-                          <Text><Strong>Content Hash:</Strong> <Text appearance="subtle">{selectedVersion.contentHash?.substring(0, 16)}...</Text></Text>
+                          <Text><Strong>Changed By:</Strong> {selectedVersion.changedBy}</Text>
                         </Stack>
 
                         {/* Stored data */}
                         {selectedVersion.data && (
                           <Stack space="space.100">
-                            <Text><Strong>Stored Configuration:</Strong></Text>
-
                             {/* Key metadata fields */}
                             <Box xcss={jsonPreviewStyle}>
-                              <Stack space="space.050">
-                                {selectedVersion.data.excerptId && (
-                                  <Text><Strong>Source ID:</Strong> {selectedVersion.data.excerptId}</Text>
-                                )}
-                                {selectedVersion.data.pageId && (
-                                  <Text><Strong>Page ID:</Strong> {selectedVersion.data.pageId}</Text>
-                                )}
-                                {selectedVersion.data.spaceId && (
-                                  <Text><Strong>Space ID:</Strong> {selectedVersion.data.spaceId}</Text>
-                                )}
-
+                              <Stack space="space.100">
                                 {/* Variable values */}
                                 {selectedVersion.data.variableValues && Object.keys(selectedVersion.data.variableValues).length > 0 && (
                                   <Box>
                                     <Text><Strong>Variable Values:</Strong></Text>
                                     <Box xcss={xcss({ paddingInlineStart: 'space.200' })}>
                                       {Object.entries(selectedVersion.data.variableValues).map(([key, value]) => (
-                                        <Text key={key}>• {key}: {value}</Text>
+                                        <Text key={key}><Strong>{key}</Strong>: {value}</Text>
                                       ))}
                                     </Box>
                                   </Box>
@@ -703,7 +685,7 @@ export function EmergencyRecoveryModal({ isOpen, onClose, initialTab = 'deleted-
                                     <Text><Strong>Toggle States:</Strong></Text>
                                     <Box xcss={xcss({ paddingInlineStart: 'space.200' })}>
                                       {Object.entries(selectedVersion.data.toggleStates).map(([key, value]) => (
-                                        <Text key={key}>• {key}: {value ? 'ON' : 'OFF'}</Text>
+                                        <Text key={key}><Strong>{key}</Strong>: {value ? 'TRUE' : 'FALSE'}</Text>
                                       ))}
                                     </Box>
                                   </Box>

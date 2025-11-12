@@ -301,7 +301,7 @@ export async function recoverOrphanedData(req) {
 }
 
 /**
- * Get cached rendered content for an Include instance (view mode)
+ * Get cached rendered content for an Embed instance (view mode)
  */
 export async function getCachedContent(req) {
   try {
@@ -379,7 +379,7 @@ export async function saveCategories(req) {
 }
 
 /**
- * Check if Include instance has stale content (update available)
+ * Check if Embed instance has stale content (update available)
  */
 export async function checkVersionStaleness(req) {
   try {
@@ -391,7 +391,7 @@ export async function checkVersionStaleness(req) {
       return { success: false, error: 'Excerpt not found' };
     }
 
-    // Get Include instance's lastSynced
+    // Get Embed instance's lastSynced
     const varsKey = `macro-vars:${localId}`;
     const macroVars = await storage.get(varsKey);
 
@@ -497,7 +497,7 @@ export async function getMultiExcerptScanProgress(req) {
 }
 
 /**
- * Save cached rendered content for an Include instance
+ * Save cached rendered content for an Embed instance
  */
 export async function saveCachedContent(req) {
   try {

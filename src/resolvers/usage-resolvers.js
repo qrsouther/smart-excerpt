@@ -24,7 +24,7 @@ import { findHeadingBeforeMacro } from '../utils/adf-utils.js';
 
 /**
  * Track excerpt usage - record when/where an excerpt is used
- * Called when Include macro is saved
+ * Called when Embed macro is saved
  */
 export async function trackExcerptUsage(req) {
   try {
@@ -51,7 +51,7 @@ export async function trackExcerptUsage(req) {
       const pageData = await response.json();
       pageTitle = pageData.title || 'Unknown Page';
 
-      // Parse the ADF to find the heading above this Include macro
+      // Parse the ADF to find the heading above this Embed macro
       if (pageData.body?.atlas_doc_format?.value) {
         const adfContent = JSON.parse(pageData.body.atlas_doc_format.value);
         const headingText = findHeadingBeforeMacro(adfContent, localId);
@@ -128,7 +128,7 @@ export async function trackExcerptUsage(req) {
 
 /**
  * Remove usage tracking
- * Called when Include macro is deleted or excerptId changes
+ * Called when Embed macro is deleted or excerptId changes
  */
 export async function removeExcerptUsage(req) {
   try {
@@ -161,7 +161,7 @@ export async function removeExcerptUsage(req) {
 }
 
 /**
- * Get excerpt usage - which Include macros reference this excerpt
+ * Get excerpt usage - which Embed macros reference this excerpt
  */
 export async function getExcerptUsage(req) {
   try {

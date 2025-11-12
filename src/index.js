@@ -62,7 +62,7 @@ import {
   pushUpdatesToPage as pushUpdatesToPageResolver
 } from './resolvers/usage-resolvers.js';
 
-// Import Include instance configuration resolver functions (Phase 7 modularization)
+// Import Embed instance configuration resolver functions (Phase 7 modularization)
 import {
   saveVariableValues as saveVariableValuesResolver
 } from './resolvers/include-resolvers.js';
@@ -147,19 +147,19 @@ resolver.define('updateExcerptContent', updateExcerptContentResolver);
 // We'll store this keyed by localId (unique ID for each macro instance)
 resolver.define('saveVariableValues', saveVariableValuesResolver);
 
-// Save cached rendered content for an Include instance
+// Save cached rendered content for an Embed instance
 resolver.define('saveCachedContent', saveCachedContentResolver);
 
-// Get cached rendered content for an Include instance (view mode)
+// Get cached rendered content for an Embed instance (view mode)
 resolver.define('getCachedContent', getCachedContentResolver);
 
-// Check if Include instance has stale content (update available)
+// Check if Embed instance has stale content (update available)
 resolver.define('checkVersionStaleness', checkVersionStalenessResolver);
 
-// Push updates to all Include instances of a specific excerpt (Admin function)
+// Push updates to all Embed instances of a specific excerpt (Admin function)
 resolver.define('pushUpdatesToAll', pushUpdatesToAllResolver);
 
-// Push updates to a specific page's Include instances (Admin function)
+// Push updates to a specific page's Embed instances (Admin function)
 resolver.define('pushUpdatesToPage', pushUpdatesToPageResolver);
 
 // Get page title via Confluence API
@@ -186,13 +186,13 @@ resolver.define('updateExcerptMetadata', updateExcerptMetadataResolver);
 // Mass update excerpts (e.g., change category for multiple excerpts)
 resolver.define('massUpdateExcerpts', massUpdateExcerptsResolver);
 
-// Track usage of an excerpt (called when Include macro is saved)
+// Track usage of an excerpt (called when Embed macro is saved)
 resolver.define('trackExcerptUsage', trackExcerptUsageResolver);
 
-// Remove usage tracking (called when Include macro is deleted)
+// Remove usage tracking (called when Embed macro is deleted)
 resolver.define('removeExcerptUsage', removeExcerptUsageResolver);
 
-// Get excerpt usage (which Include macros reference this excerpt)
+// Get excerpt usage (which Embed macros reference this excerpt)
 resolver.define('getExcerptUsage', getExcerptUsageResolver);
 
 // Get usage counts for all excerpts (lightweight for sorting in admin page)
@@ -208,7 +208,7 @@ resolver.define('checkAllSources', checkAllSourcesResolver);
 // Get all orphaned usage entries (usage data for excerpts that no longer exist)
 resolver.define('getOrphanedUsage', getOrphanedUsageResolver);
 
-// Check all Include instances (async via Forge Events API - uses checkIncludesWorker.js)
+// Check all Embed instances (async via Forge Events API - uses checkIncludesWorker.js)
 // Note: checkAllIncludes now redirects to startCheckAllIncludes (async queue-based)
 resolver.define('checkAllIncludes', checkAllIncludesResolver);
 
@@ -235,7 +235,7 @@ resolver.define('trackMigration', trackMigrationResolver);
 // Get migration status (ONE-TIME USE)
 resolver.define('getMigrationStatus', getMigrationStatusResolver);
 
-// Scan for old MultiExcerpt Include macros (ONE-TIME USE)
+// Scan for old MultiExcerpt Embed macros (ONE-TIME USE)
 resolver.define('scanMultiExcerptIncludes', scanMultiExcerptIncludesResolver);
 
 // Get progress for scanMultiExcerptIncludes operation (ONE-TIME USE)

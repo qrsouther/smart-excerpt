@@ -39,8 +39,8 @@ import {
 } from '@forge/react';
 import { invoke } from '@forge/bridge';
 
-// Item container styling
-const versionItemStyle = xcss({
+// Item container styling (matching Emergency Recovery design)
+const deletedItemStyle = xcss({
   padding: 'space.200',
   borderColor: 'color.border',
   borderStyle: 'solid',
@@ -265,7 +265,7 @@ export function VersionHistoryModal({ isOpen, onClose, embedUuid }) {
                     </Text>
 
                     {versions.map((version) => (
-                      <Box key={version.versionId} xcss={versionItemStyle}>
+                      <Box key={version.versionId} xcss={deletedItemStyle}>
                         <Stack space="space.100">
                           <Inline space="space.100" alignBlock="center" spread="space-between">
                             <Stack space="space.050">
@@ -313,7 +313,7 @@ export function VersionHistoryModal({ isOpen, onClose, embedUuid }) {
                   <Stack space="space.200">
                     {/* Header with back button */}
                     <Inline space="space.100" alignBlock="center" spread="space-between">
-                      <Text><Strong>Version Details</Strong></Text>
+                      <Text><Strong>Timestamp:</Strong> {formatTimestamp(selectedVersion.timestamp)}</Text>
                       <Inline space="space.100" alignBlock="center">
                         <Button
                           appearance="subtle"
@@ -333,40 +333,22 @@ export function VersionHistoryModal({ isOpen, onClose, embedUuid }) {
 
                     {/* Version metadata */}
                     <Stack space="space.050">
-                      <Text><Strong>Timestamp:</Strong> {formatTimestamp(selectedVersion.timestamp)}</Text>
-                      <Text><Strong>Change Type:</Strong> {selectedVersion.changeType}</Text>
-                      {selectedVersion.changedBy && (
-                        <Text><Strong>Changed By:</Strong> {selectedVersion.changedBy}</Text>
-                      )}
-                      <Text><Strong>Size:</Strong> {selectedVersion.size} bytes</Text>
-                      <Text><Strong>Content Hash:</Strong> <Text appearance="subtle">{selectedVersion.contentHash?.substring(0, 16)}...</Text></Text>
+                      <Text><Strong>Changed By:</Strong> {selectedVersion.changedBy}</Text>
                     </Stack>
 
                     {/* Stored data */}
                     {selectedVersion.data && (
                       <Stack space="space.100">
-                        <Text><Strong>Stored Configuration:</Strong></Text>
-
                         {/* Key metadata fields */}
                         <Box xcss={jsonPreviewStyle}>
-                          <Stack space="space.050">
-                            {selectedVersion.data.excerptId && (
-                              <Text><Strong>Source ID:</Strong> {selectedVersion.data.excerptId}</Text>
-                            )}
-                            {selectedVersion.data.pageId && (
-                              <Text><Strong>Page ID:</Strong> {selectedVersion.data.pageId}</Text>
-                            )}
-                            {selectedVersion.data.spaceId && (
-                              <Text><Strong>Space ID:</Strong> {selectedVersion.data.spaceId}</Text>
-                            )}
-
+                          <Stack space="space.100">
                             {/* Variable values */}
                             {selectedVersion.data.variableValues && Object.keys(selectedVersion.data.variableValues).length > 0 && (
                               <Box>
                                 <Text><Strong>Variable Values:</Strong></Text>
                                 <Box xcss={xcss({ paddingInlineStart: 'space.200' })}>
                                   {Object.entries(selectedVersion.data.variableValues).map(([key, value]) => (
-                                    <Text key={key}>• {key}: {value}</Text>
+                                    <Text key={key}><Strong>{key}</Strong>: {value}</Text>
                                   ))}
                                 </Box>
                               </Box>
@@ -378,7 +360,7 @@ export function VersionHistoryModal({ isOpen, onClose, embedUuid }) {
                                 <Text><Strong>Toggle States:</Strong></Text>
                                 <Box xcss={xcss({ paddingInlineStart: 'space.200' })}>
                                   {Object.entries(selectedVersion.data.toggleStates).map(([key, value]) => (
-                                    <Text key={key}>• {key}: {value ? 'ON' : 'OFF'}</Text>
+                                    <Text key={key}><Strong>{key}</Strong>: {value ? 'TRUE' : 'FALSE'}</Text>
                                   ))}
                                 </Box>
                               </Box>

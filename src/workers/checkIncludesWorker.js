@@ -252,7 +252,7 @@ export async function handler(event, context) {
       processed: 0
     });
 
-    // Collect all Include instances from ALL usage keys (not just existing Sources)
+    // Collect all Embed instances from ALL usage keys (not just existing Sources)
     // This ensures we clean up orphaned embeds even if their Source was deleted
     const allUsageQuery = await storage.query()
       .where('key', startsWith('usage:'))
@@ -297,12 +297,12 @@ export async function handler(event, context) {
     const pageIds = Object.keys(includesByPage);
     const totalPages = pageIds.length;
 
-    console.log(`[WORKER] Found ${uniqueIncludes.length} Include instances across ${totalPages} pages`);
+    console.log(`[WORKER] Found ${uniqueIncludes.length} Embed instances across ${totalPages} pages`);
 
     await updateProgress(progressId, {
       phase: 'collecting',
       percent: 25,
-      status: `Found ${uniqueIncludes.length} Include(s) on ${totalPages} page(s)...`,
+      status: `Found ${uniqueIncludes.length} Embed(s) on ${totalPages} page(s)...`,
       total: totalPages,
       processed: 0
     });
@@ -361,7 +361,7 @@ export async function handler(event, context) {
             }
           }
         } else {
-          // Page exists - check each Include instance
+          // Page exists - check each Embed instance
           const pageData = await response.json();
           const adfContent = JSON.parse(pageData.body?.atlas_doc_format?.value || '{}');
 

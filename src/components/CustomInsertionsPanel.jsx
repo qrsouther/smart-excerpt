@@ -165,6 +165,7 @@ export const CustomInsertionsPanel = ({
           key: 'content',
           content: (
             <Textfield
+              id={`custom-text-${insertionType}`}
               placeholder={insertionType === 'body' ? "Enter paragraph text..." : "Enter internal note..."}
               value={customText}
               onChange={(e) => setCustomText(e.target.value)}

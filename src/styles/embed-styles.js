@@ -87,3 +87,11 @@ export const excerptSelectorStyle = xcss({
   paddingInline: 'space.100',
   backgroundColor: 'color.background.neutral.subtle'
 });
+
+/**
+ * Textfield wrapper style with explicit caret color
+ * Ensures cursor is visible when editing text fields
+ */
+export const textfieldWrapperStyle = xcss({
+  caretColor: 'color.text'
+});
