@@ -101,7 +101,14 @@ export const useCategoriesQuery = () => {
 /**
  * Hook for saving categories
  *
- * Mutation for updating the categories list with optimistic cache updates.
+ * Mutation for updating the categories list with proper optimistic updates.
+ * Implements the 6-step optimistic update pattern:
+ * 1. Cancel outgoing queries
+ * 2. Snapshot previous state
+ * 3. Optimistically update cache
+ * 4. Return rollback context
+ * 5. Rollback on error
+ * 6. Invalidate on success/error
  *
  * @returns {Object} React Query mutation result
  */
@@ -110,15 +117,41 @@ export const useSaveCategoriesMutation = () => {
 
   return useMutation({
     mutationFn: async (categories) => {
+      console.log('[REACT-QUERY-ADMIN] 💾 Saving categories:', categories);
       await invoke('saveCategories', { categories });
       return categories;
     },
-    onSuccess: (categories) => {
-      // Update cache immediately
-      queryClient.setQueryData(['categories'], categories);
+    // STEP 1-4: onMutate runs before mutation, sets optimistic state
+    onMutate: async (newCategories) => {
+      console.log('[REACT-QUERY-ADMIN] 🔄 onMutate: Starting optimistic update');
+
+      // STEP 1: Cancel any outgoing refetches (prevents race conditions)
+      await queryClient.cancelQueries({ queryKey: ['categories'] });
+      console.log('[REACT-QUERY-ADMIN] ✅ Cancelled outgoing queries');
+
+      // STEP 2: Snapshot the previous value
+      const previousCategories = queryClient.getQueryData(['categories']);
+      console.log('[REACT-QUERY-ADMIN] 📸 Snapshot previous:', previousCategories);
+
+      // STEP 3: Optimistically update to the new value
+      queryClient.setQueryData(['categories'], newCategories);
+      console.log('[REACT-QUERY-ADMIN] ⚡ Optimistic update applied:', newCategories);
+
+      // STEP 4: Return context with rollback data
+      return { previousCategories };
     },
-    onError: (error) => {
-      console.error('[REACT-QUERY-ADMIN] Failed to save categories:', error);
+    // STEP 5: Rollback on error
+    onError: (error, newCategories, context) => {
+      console.error('[REACT-QUERY-ADMIN] ❌ Mutation failed, rolling back:', error);
+      if (context?.previousCategories) {
+        queryClient.setQueryData(['categories'], context.previousCategories);
+        console.log('[REACT-QUERY-ADMIN] ↩️ Rolled back to:', context.previousCategories);
+      }
+    },
+    // STEP 6: Always refetch after error or success to ensure sync with server
+    onSettled: () => {
+      console.log('[REACT-QUERY-ADMIN] 🔄 Invalidating categories query');
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
     }
   });
 };

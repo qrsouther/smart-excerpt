@@ -73,6 +73,7 @@ import { AdminToolbar } from './components/admin/AdminToolbar';
 import { OrphanedItemsSection } from './components/admin/OrphanedItemsSection';
 import { EmergencyRecoveryModal } from './components/admin/EmergencyRecoveryModal';
 import { VersionHistoryModal } from './components/admin/VersionHistoryModal';
+import { StorageUsageFooter } from './components/admin/StorageUsageFooter';
 
 // Import admin styles
 import {
@@ -213,6 +214,11 @@ const App = () => {
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const [versionHistoryUuid, setVersionHistoryUuid] = useState(null);
 
+  // Storage usage state
+  const [storageUsage, setStorageUsage] = useState(null);
+  const [storageUsageLoading, setStorageUsageLoading] = useState(true);
+  const [storageUsageError, setStorageUsageError] = useState(null);
+
   // Convert excerptsError to string for display
   const error = excerptsError ? String(excerptsError.message || 'Unknown error') : null;
 
@@ -270,6 +276,30 @@ const App = () => {
     };
 
     checkAndAutoVerify();
+  }, []); // Only run once on mount
+
+  // Fetch storage usage on mount
+  useEffect(() => {
+    const fetchStorageUsage = async () => {
+      try {
+        setStorageUsageLoading(true);
+        const result = await invoke('getStorageUsage');
+
+        if (result.success) {
+          setStorageUsage(result);
+          setStorageUsageError(null);
+        } else {
+          setStorageUsageError(result.error || 'Failed to calculate storage usage');
+        }
+      } catch (error) {
+        console.error('[ADMIN] Error fetching storage usage:', error);
+        setStorageUsageError(error.message);
+      } finally {
+        setStorageUsageLoading(false);
+      }
+    };
+
+    fetchStorageUsage();
   }, []); // Only run once on mount
 
   // Category management handlers (using React Query mutation)
@@ -330,24 +360,50 @@ const App = () => {
   };
 
   const handleMoveCategoryToPosition = (categoryName, targetPosition) => {
+    console.log(`[ADMIN-PAGE] ======================================`);
+    console.log(`[ADMIN-PAGE] handleMoveCategoryToPosition called`);
+    console.log(`[ADMIN-PAGE] Category to move: "${categoryName}"`);
+    console.log(`[ADMIN-PAGE] Target position (1-based): ${targetPosition}`);
+    console.log(`[ADMIN-PAGE] Categories array BEFORE move:`, JSON.stringify(categories));
+
     const currentIndex = categories.indexOf(categoryName);
-    if (currentIndex === -1) return; // Category not found
+    console.log(`[ADMIN-PAGE] Current index (0-based): ${currentIndex}`);
+    console.log(`[ADMIN-PAGE] Current position (1-based): ${currentIndex + 1}`);
+
+    if (currentIndex === -1) {
+      console.log(`[ADMIN-PAGE] ❌ ERROR: Category not found in array`);
+      return; // Category not found
+    }
 
     // Convert 1-based position to 0-based index
     const targetIndex = targetPosition - 1;
+    console.log(`[ADMIN-PAGE] Target index (0-based): ${targetIndex}`);
 
     // Validate target index
     if (targetIndex < 0 || targetIndex >= categories.length || targetIndex === currentIndex) {
+      console.log(`[ADMIN-PAGE] ❌ Invalid move - validation failed:`);
+      console.log(`[ADMIN-PAGE]   - targetIndex < 0: ${targetIndex < 0}`);
+      console.log(`[ADMIN-PAGE]   - targetIndex >= length: ${targetIndex >= categories.length}`);
+      console.log(`[ADMIN-PAGE]   - targetIndex === currentIndex: ${targetIndex === currentIndex}`);
       return;
     }
 
     const newCategories = [...categories];
+    console.log(`[ADMIN-PAGE] Created copy of categories array`);
+
     // Remove category from current position
     const [removed] = newCategories.splice(currentIndex, 1);
+    console.log(`[ADMIN-PAGE] Removed "${removed}" from index ${currentIndex}`);
+    console.log(`[ADMIN-PAGE] Array after removal:`, JSON.stringify(newCategories));
+
     // Insert at target position
     newCategories.splice(targetIndex, 0, removed);
+    console.log(`[ADMIN-PAGE] Inserted "${removed}" at index ${targetIndex}`);
+    console.log(`[ADMIN-PAGE] Categories array AFTER move:`, JSON.stringify(newCategories));
 
+    console.log(`[ADMIN-PAGE] Saving new category order via mutation...`);
     saveCategoriesMutation.mutate(newCategories);
+    console.log(`[ADMIN-PAGE] ======================================`);
   };
 
   const handleCheckAllSources = async () => {
@@ -1148,6 +1204,7 @@ const App = () => {
         {/* Left Sidebar - Excerpt List */}
         <ExcerptListSidebar
           sortedExcerpts={sortedExcerpts}
+          totalExcerptCount={excerpts.length}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           categoryFilter={categoryFilter}
@@ -1986,6 +2043,17 @@ const App = () => {
           setVersionHistoryUuid(null); // Reset UUID when closing
         }}
         embedUuid={versionHistoryUuid}
+      />
+
+      {/* Storage Usage Footer */}
+      <StorageUsageFooter
+        totalMB={storageUsage?.totalMB}
+        limitMB={storageUsage?.limitMB}
+        percentUsed={storageUsage?.percentUsed}
+        sourcesCount={storageUsage?.sourcesCount}
+        embedsCount={storageUsage?.embedsCount}
+        isLoading={storageUsageLoading}
+        error={storageUsageError}
       />
     </Fragment>
   );

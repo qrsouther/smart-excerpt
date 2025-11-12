@@ -49,7 +49,8 @@ import {
   sourceHeartbeat as sourceHeartbeatResolver,
   checkAllSources as checkAllSourcesResolver,
   checkAllIncludes as checkAllIncludesResolver,
-  startCheckAllIncludes as startCheckAllIncludesResolver
+  startCheckAllIncludes as startCheckAllIncludesResolver,
+  getStorageUsage as getStorageUsageResolver
 } from './resolvers/verification-resolvers.js';
 
 // Import usage tracking and update resolver functions (Phase 6 modularization)
@@ -214,6 +215,9 @@ resolver.define('checkAllIncludes', checkAllIncludesResolver);
 
 // Start Check All Includes (async trigger - immediately returns jobId + progressId)
 resolver.define('startCheckAllIncludes', startCheckAllIncludesResolver);
+
+// Get storage usage (calculate total storage used across all keys)
+resolver.define('getStorageUsage', getStorageUsageResolver);
 
 // Get progress for checkAllIncludes operation
 resolver.define('getCheckProgress', getCheckProgressResolver);

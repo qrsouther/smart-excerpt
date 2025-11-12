@@ -18,6 +18,8 @@ import api, { route } from '@forge/api';
 import { Queue } from '@forge/events';
 import { generateUUID } from '../utils.js';
 import { extractTextFromAdf } from '../utils/adf-utils.js';
+import { saveVersion, restoreVersion } from '../utils/version-manager.js';
+import { validateExcerptData } from '../utils/storage-validator.js';
 
 /**
  * Helper function to extract variables from ADF content
@@ -227,39 +229,39 @@ export async function checkAllSources(req) {
 
           /*
            * ═══════════════════════════════════════════════════════════════════════
-           * DANGEROUS AUTO-CONVERSION DISABLED (Phase 1 Safety Patch - v7.16.0)
+           * AUTO-CONVERSION RE-ENABLED (Phase 3 - v7.19.0)
            * ═══════════════════════════════════════════════════════════════════════
            *
-           * The following code automatically converted Storage Format (XML) → ADF JSON.
-           * This has caused data corruption in the past (variables disappearing, content
-           * becoming malformed, Embeds losing Source references).
+           * The Storage Format (XML) → ADF JSON conversion is now SAFE with:
            *
-           * REASON FOR DISABLING:
-           * - No versioning system to rollback corrupted data
-           * - No validation to catch conversion errors
-           * - Silent failures corrupt Sources permanently
+           * ✅ Pre-conversion version snapshots (saveVersion)
+           * ✅ Post-conversion validation (validateExcerptData)
+           * ✅ Automatic rollback on corruption detection (restoreVersion)
+           * ✅ Error handling with auto-rollback on conversion errors
            *
-           * This conversion will be RE-ENABLED in Phase 3 (v7.18.0) with:
-           * - Pre-conversion version snapshots
-           * - Post-conversion validation
-           * - Automatic rollback on corruption detection
+           * This prevents the data corruption issues that occurred in the past:
+           * - Variables disappearing → Now detected by validation
+           * - Content becoming malformed → Now detected by ADF structure validation
+           * - Silent failures → Now logged and auto-rolled back
            *
-           * For now, Check All Sources is a PURE CHECKER (no data modifications).
+           * Every conversion creates a version snapshot with 14-day retention.
+           * If validation fails, the Source is immediately restored to its pre-conversion
+           * state, and the conversion is cancelled.
            *
-           * See: DATA-SAFETY-VERSIONING-PROPOSAL.md for full implementation plan
+           * See: DATA-SAFETY-VERSIONING-PROPOSAL.md for full implementation details
            * ═══════════════════════════════════════════════════════════════════════
            */
 
           // Check if content needs conversion (Storage Format XML -> ADF JSON)
           const needsConversion = excerpt.content && typeof excerpt.content === 'string';
           if (needsConversion) {
-            console.warn(`⚠️ Source "${excerpt.name}" needs Storage Format → ADF conversion (DISABLED pending versioning system)`);
-            // sourcesToConvert.push(excerpt); // DISABLED - will be re-enabled in v7.18.0
+            console.log(`🔄 Source "${excerpt.name}" needs Storage Format → ADF conversion (ENABLED with versioning protection)`);
+            sourcesToConvert.push(excerpt);
           }
         }
 
-        /* DISABLED - Auto-conversion code (lines 235-316) - See comment block above
         // STEP 3: If any Sources need conversion, fetch page in ADF format
+        // PHASE 3 (v7.19.0): RE-ENABLED WITH VERSIONING PROTECTION
         if (sourcesToConvert.length > 0) {
           console.log(`🔄 ${sourcesToConvert.length} Sources need conversion, fetching ADF...`);
 
@@ -303,7 +305,7 @@ export async function checkAllSources(req) {
           const extensionNodes = findExtensions(adfDoc);
           console.log(`Found ${extensionNodes.length} Source macro extension nodes in ADF`);
 
-          // Convert each Source that needs it
+          // Convert each Source that needs it (with versioning protection)
           for (const excerpt of sourcesToConvert) {
             const extensionNode = extensionNodes.find(node =>
               node.attrs?.localId === excerpt.sourceLocalId
@@ -314,35 +316,106 @@ export async function checkAllSources(req) {
               continue;
             }
 
+            // ═══════════════════════════════════════════════════════════════════════
+            // PHASE 3 VERSIONING PROTECTION
+            // ═══════════════════════════════════════════════════════════════════════
+            console.log(`🛡️ [PHASE 3] Creating version snapshot BEFORE converting "${excerpt.name}"...`);
+
+            // STEP 1: Create pre-conversion version snapshot
+            const versionResult = await saveVersion(
+              storage,
+              `excerpt:${excerpt.id}`,
+              excerpt,
+              {
+                changeType: 'STORAGE_FORMAT_CONVERSION',
+                changedBy: 'checkAllSources',
+                trigger: 'automatic_conversion'
+              }
+            );
+
+            if (!versionResult.success) {
+              console.error(`❌ Failed to create version snapshot for "${excerpt.name}": ${versionResult.error}`);
+              console.error(`⚠️ Skipping conversion for safety (cannot rollback without version snapshot)`);
+              continue; // Skip conversion if we can't create backup
+            }
+
+            const backupVersionId = versionResult.versionId;
+            console.log(`✅ Version snapshot created: ${backupVersionId}`);
+
+            // STEP 2: Perform conversion
             console.log(`🔄 Converting "${excerpt.name}" from Storage Format to ADF JSON...`);
 
-            // Extract ADF content from the bodiedExtension node
-            const bodyContent = {
-              type: 'doc',
-              version: 1,
-              content: extensionNode.content
-            };
+            try {
+              // Extract ADF content from the bodiedExtension node
+              const bodyContent = {
+                type: 'doc',
+                version: 1,
+                content: extensionNode.content
+              };
 
-            // Extract variables from ADF content
-            const variables = extractVariablesFromAdf(bodyContent);
+              // Extract variables from ADF content
+              const variables = extractVariablesFromAdf(bodyContent);
 
-            // Generate content hash
-            const crypto = require('crypto');
-            const contentHash = crypto.createHash('sha256').update(JSON.stringify(bodyContent)).digest('hex');
+              // Generate content hash
+              const crypto = require('crypto');
+              const contentHash = crypto.createHash('sha256').update(JSON.stringify(bodyContent)).digest('hex');
 
-            // Update excerpt in storage
-            excerpt.content = bodyContent;
-            excerpt.variables = variables;
-            excerpt.contentHash = contentHash;
-            excerpt.updatedAt = new Date().toISOString();
+              // Create converted excerpt object
+              const convertedExcerpt = {
+                ...excerpt,
+                content: bodyContent,
+                variables: variables,
+                contentHash: contentHash,
+                updatedAt: new Date().toISOString()
+              };
 
-            await storage.set(`excerpt:${excerpt.id}`, excerpt);
+              // STEP 3: Post-conversion validation
+              console.log(`🔍 [PHASE 3] Validating converted data for "${excerpt.name}"...`);
+              const validation = validateExcerptData(convertedExcerpt);
 
-            console.log(`✅ Converted "${excerpt.name}" to ADF JSON (${variables.length} variables)`);
-            contentConversionsCount++;
+              if (!validation.valid) {
+                // VALIDATION FAILED - AUTO-ROLLBACK
+                console.error(`❌ [PHASE 3] Validation FAILED for "${excerpt.name}": ${validation.errors.join(', ')}`);
+                console.error(`🔄 [PHASE 3] AUTO-ROLLBACK: Restoring from version ${backupVersionId}...`);
+
+                const rollbackResult = await restoreVersion(storage, backupVersionId);
+
+                if (rollbackResult.success) {
+                  console.error(`✅ [PHASE 3] AUTO-ROLLBACK SUCCESSFUL for "${excerpt.name}"`);
+                  console.error(`⚠️ Conversion cancelled - Source remains in Storage Format`);
+                } else {
+                  console.error(`❌ [PHASE 3] AUTO-ROLLBACK FAILED: ${rollbackResult.error}`);
+                  console.error(`⚠️ MANUAL INTERVENTION REQUIRED for "${excerpt.name}" (excerptId: ${excerpt.id})`);
+                }
+
+                continue; // Skip to next Source
+              }
+
+              // STEP 4: Validation passed - save converted data
+              console.log(`✅ [PHASE 3] Validation passed for "${excerpt.name}"`);
+              await storage.set(`excerpt:${excerpt.id}`, convertedExcerpt);
+              console.log(`✅ Converted "${excerpt.name}" to ADF JSON (${variables.length} variables)`);
+              contentConversionsCount++;
+
+            } catch (conversionError) {
+              // CONVERSION ERROR - AUTO-ROLLBACK
+              console.error(`❌ [PHASE 3] Conversion ERROR for "${excerpt.name}": ${conversionError.message}`);
+              console.error(`🔄 [PHASE 3] AUTO-ROLLBACK: Restoring from version ${backupVersionId}...`);
+
+              const rollbackResult = await restoreVersion(storage, backupVersionId);
+
+              if (rollbackResult.success) {
+                console.error(`✅ [PHASE 3] AUTO-ROLLBACK SUCCESSFUL for "${excerpt.name}"`);
+                console.error(`⚠️ Conversion cancelled - Source remains in Storage Format`);
+              } else {
+                console.error(`❌ [PHASE 3] AUTO-ROLLBACK FAILED: ${rollbackResult.error}`);
+                console.error(`⚠️ MANUAL INTERVENTION REQUIRED for "${excerpt.name}" (excerptId: ${excerpt.id})`);
+              }
+
+              continue; // Skip to next Source
+            }
           }
         }
-        */ // END DISABLED AUTO-CONVERSION CODE
       } catch (apiError) {
         console.error(`Error checking page ${pageId}:`, apiError);
         pageExcerpts.forEach(excerpt => {
@@ -874,4 +947,159 @@ export async function startCheckAllIncludes(req) {
  */
 export async function checkAllIncludes(req) {
   return startCheckAllIncludes(req);
+}
+
+/**
+ * Helper: Fetch all pages from a storage query cursor
+ */
+async function getAllKeysWithPrefix(prefix) {
+  const allKeys = [];
+  let cursor = await storage.query().where('key', startsWith(prefix)).getMany();
+
+  // Add first page
+  allKeys.push(...(cursor.results || []));
+
+  // Paginate through remaining pages
+  while (cursor.nextCursor) {
+    cursor = await storage.query().where('key', startsWith(prefix)).cursor(cursor.nextCursor).getMany();
+    allKeys.push(...(cursor.results || []));
+  }
+
+  return allKeys;
+}
+
+/**
+ * Get Storage Usage - Calculate total storage used across all keys
+ *
+ * Forge storage limit: 250MB per app
+ * Returns usage in bytes, MB, and percentage of limit
+ */
+export async function getStorageUsage() {
+  try {
+    console.log('[STORAGE-USAGE] Calculating storage usage...');
+
+    // Query all keys from storage (with pagination)
+    const allKeys = [];
+
+    // Get excerpts (paginated)
+    const excerpts = await getAllKeysWithPrefix('excerpt:');
+    allKeys.push(...excerpts);
+    console.log(`[STORAGE-USAGE] Found ${excerpts.length} excerpt keys`);
+
+    // Get usage data (paginated)
+    const usage = await getAllKeysWithPrefix('usage:');
+    allKeys.push(...usage);
+    console.log(`[STORAGE-USAGE] Found ${usage.length} usage keys`);
+
+    // Get categories
+    const categories = await getAllKeysWithPrefix('categories');
+    allKeys.push(...categories);
+    console.log(`[STORAGE-USAGE] Found ${categories.length} category keys`);
+
+    // Get versions (paginated)
+    const versions = await getAllKeysWithPrefix('version:');
+    allKeys.push(...versions);
+    console.log(`[STORAGE-USAGE] Found ${versions.length} version keys`);
+
+    // Get deleted (recovery namespace) (paginated)
+    const deleted = await getAllKeysWithPrefix('deleted:');
+    allKeys.push(...deleted);
+    console.log(`[STORAGE-USAGE] Found ${deleted.length} deleted keys`);
+
+    // Get metadata keys
+    const metadata = await getAllKeysWithPrefix('meta:');
+    allKeys.push(...metadata);
+    console.log(`[STORAGE-USAGE] Found ${metadata.length} metadata keys`);
+
+    // Calculate total size in bytes
+    let totalBytes = 0;
+    const breakdown = {
+      excerpts: 0,
+      usage: 0,
+      categories: 0,
+      versions: 0,
+      deleted: 0,
+      metadata: 0
+    };
+
+    for (const item of allKeys) {
+      const key = item.key;
+      const value = item.value;
+
+      // Calculate size: key + value (as JSON string)
+      const keySize = new Blob([key]).size;
+      const valueSize = new Blob([JSON.stringify(value)]).size;
+      const itemSize = keySize + valueSize;
+
+      totalBytes += itemSize;
+
+      // Categorize
+      if (key.startsWith('excerpt:')) {
+        breakdown.excerpts += itemSize;
+      } else if (key.startsWith('usage:')) {
+        breakdown.usage += itemSize;
+      } else if (key.startsWith('categories')) {
+        breakdown.categories += itemSize;
+      } else if (key.startsWith('version:')) {
+        breakdown.versions += itemSize;
+      } else if (key.startsWith('deleted:')) {
+        breakdown.deleted += itemSize;
+      } else if (key.startsWith('meta:')) {
+        breakdown.metadata += itemSize;
+      }
+    }
+
+    // Convert to MB
+    const totalMB = totalBytes / (1024 * 1024);
+    const limitMB = 250;
+    const percentUsed = (totalMB / limitMB) * 100;
+
+    // Convert breakdown to MB
+    const breakdownMB = {
+      excerpts: breakdown.excerpts / (1024 * 1024),
+      usage: breakdown.usage / (1024 * 1024),
+      categories: breakdown.categories / (1024 * 1024),
+      versions: breakdown.versions / (1024 * 1024),
+      deleted: breakdown.deleted / (1024 * 1024),
+      metadata: breakdown.metadata / (1024 * 1024)
+    };
+
+    console.log(`[STORAGE-USAGE] Total: ${totalMB.toFixed(2)} MB / ${limitMB} MB (${percentUsed.toFixed(1)}%)`);
+    console.log('[STORAGE-USAGE] Breakdown:', breakdownMB);
+
+    // Count Sources (excerpts) and Embeds (usage references)
+    const sourcesCount = excerpts.length;
+    let embedsCount = 0;
+
+    // Count total embeds by summing all usage references
+    for (const usageItem of usage) {
+      if (usageItem.value && Array.isArray(usageItem.value)) {
+        embedsCount += usageItem.value.length;
+      }
+    }
+
+    console.log(`[STORAGE-USAGE] Sources: ${sourcesCount}, Embeds: ${embedsCount}`);
+
+    return {
+      success: true,
+      totalBytes,
+      totalMB: parseFloat(totalMB.toFixed(2)),
+      limitMB,
+      percentUsed: parseFloat(percentUsed.toFixed(1)),
+      keyCount: allKeys.length,
+      sourcesCount,
+      embedsCount,
+      breakdown: {
+        bytes: breakdown,
+        mb: breakdownMB
+      }
+    };
+
+  } catch (error) {
+    console.error('[STORAGE-USAGE] Error calculating storage usage:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
 }

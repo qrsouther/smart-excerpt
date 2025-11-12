@@ -49,6 +49,7 @@ const excerptItemStyle = (isSelected) => xcss({
 
 export function ExcerptListSidebar({
   sortedExcerpts,
+  totalExcerptCount,
   searchTerm,
   setSearchTerm,
   categoryFilter,
@@ -105,6 +106,15 @@ export function ExcerptListSidebar({
             />
           </Box>
         </Stack>
+
+        {/* Filtered Results Indicator */}
+        {totalExcerptCount > 0 && (searchTerm || categoryFilter !== 'All') && sortedExcerpts.length < totalExcerptCount && (
+          <Box>
+            <Text>
+              <Em>Showing {sortedExcerpts.length} of {totalExcerptCount} Sources</Em>
+            </Text>
+          </Box>
+        )}
 
         {/* Empty State - No Matches */}
         {sortedExcerpts.length === 0 && (searchTerm || categoryFilter !== 'All') && (

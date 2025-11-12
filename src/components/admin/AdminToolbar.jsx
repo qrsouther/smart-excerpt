@@ -101,7 +101,6 @@ export function AdminToolbar({
 
       <Tooltip content="View and restore soft-deleted Embeds from the recovery namespace. Use this if data was accidentally removed by Check All Embeds or other operations.">
         <Button
-          appearance="warning"
           onClick={onOpenEmergencyRecovery}
           xcss={buttonStyles}
         >
