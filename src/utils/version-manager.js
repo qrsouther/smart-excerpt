@@ -415,6 +415,21 @@ export async function restoreVersion(storageInstance, versionId) {
     await storageInstance.set(storageKey, data);
     logStorageOp(FUNCTION_NAME, 'WRITE', storageKey, true);
 
+    // Clear cached rendered content for macro-vars (Embeds)
+    if (entityType === 'macro-vars' && storageKey.startsWith('macro-vars:')) {
+      const localId = storageKey.replace('macro-vars:', '');
+      const cacheKey = `macro-cache:${localId}`;
+
+      try {
+        await storageInstance.delete(cacheKey);
+        logPhase(FUNCTION_NAME, `Invalidated cache: ${cacheKey}`);
+        logStorageOp(FUNCTION_NAME, 'DELETE', cacheKey, true);
+      } catch (cacheErr) {
+        // Non-fatal error - log but don't fail the restore
+        logPhase(FUNCTION_NAME, `Failed to invalidate cache (non-fatal): ${cacheErr.message}`);
+      }
+    }
+
     // Log CSV snapshot for audit trail
     logSnapshot(FUNCTION_NAME, 'RESTORE', storageKey, currentData, data);
 
