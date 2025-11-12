@@ -359,7 +359,7 @@ export function EmergencyRecoveryModal({ isOpen, onClose, initialTab = 'deleted-
             <ModalTitle>🚨 Emergency Recovery</ModalTitle>
           </ModalHeader>
           <ModalBody>
-            <Tabs selected={activeTab} onChange={setActiveTab}>
+            <Tabs key={`${initialTab}-${autoLoadEmbedUuid || 'none'}`} selected={activeTab} onChange={setActiveTab}>
               <TabList>
                 <Tab value="deleted-embeds">Deleted Embeds</Tab>
                 <Tab value="version-history">Version History</Tab>
