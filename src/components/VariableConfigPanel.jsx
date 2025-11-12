@@ -29,10 +29,17 @@ import {
 // Style for full-width variable table container
 const variableBoxStyle = xcss({
   width: '100%',
+  maxWidth: '100%',
   backgroundColor: 'color.background.neutral',
   paddingBlockStart: 'space.200',
   paddingBlockEnd: 'space.100',
   paddingInline: 'space.100'
+});
+
+// Style for DynamicTable to ensure full width
+const tableContainerStyle = xcss({
+  width: '100%',
+  maxWidth: '100%'
 });
 
 // Style for required field warning border
@@ -69,27 +76,28 @@ export const VariableConfigPanel = ({ excerpt, variableValues, setVariableValues
 
   return (
     <Box xcss={variableBoxStyle}>
-      <DynamicTable
-        head={{
-          cells: [
-            {
-              key: 'variable',
-              content: 'Variable',
-              width: 20
-            },
-            {
-              key: 'value',
-              content: 'Value',
-              width: 75
-            },
-            {
-              key: 'status',
-              content: 'Status',
-              width: 5
-            }
-          ]
-        }}
-        rows={excerpt.variables.map(variable => {
+      <Box xcss={tableContainerStyle}>
+        <DynamicTable
+          head={{
+            cells: [
+              {
+                key: 'variable',
+                content: 'Variable',
+                width: 20
+              },
+              {
+                key: 'value',
+                content: 'Value',
+                width: 75
+              },
+              {
+                key: 'status',
+                content: 'Status',
+                width: 5
+              }
+            ]
+          }}
+          rows={excerpt.variables.map(variable => {
           const isRequired = variable.required || false;
           const isEmpty = !variableValues[variable.name] || variableValues[variable.name].trim() === '';
           const showWarning = isRequired && isEmpty;
@@ -155,6 +163,7 @@ export const VariableConfigPanel = ({ excerpt, variableValues, setVariableValues
           };
         })}
       />
+      </Box>
     </Box>
   );
 };

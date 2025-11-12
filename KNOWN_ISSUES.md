@@ -30,6 +30,8 @@ to enable inline execution.
 1. ✅ **caretColor via xcss** - Successfully made cursor visible when field is empty
 2. ❌ **::selection via xcss** - Not supported by xcss system
 3. ❌ **CSS injection via JavaScript** - Blocked by CSP
+4. ❌ **Wrap DynamicTable in Form component** (v7.18.20) - No effect on selection
+5. ❌ **Standalone Form + Textfield test** (v7.18.21) - Selection still broken, confirming platform-wide bug
 
 **Impact**:
 - Users cannot see what text they have selected before cutting/copying/deleting
