@@ -2,7 +2,7 @@ modules:
   macro:
     - key: blueprint-standard-source
       title: Blueprint Standard - Source
-      description: Create a reusable Blueprint Standard that can be embedded on other pages (v7.20.6)
+      description: Create a reusable Blueprint Standard that can be embedded on other pages (v7.21.0)
       layout: bodied
       resource: source-display-resource
       render: native
@@ -15,7 +15,7 @@ modules:
 
     - key: blueprint-standard-embed
       title: Blueprint Standard - Embed
-      description: Embed a Blueprint Standard from another page (v7.20.6)
+      description: Embed a Blueprint Standard from another page (v7.21.0)
       resource: embed-display
       render: native
       resolver:
