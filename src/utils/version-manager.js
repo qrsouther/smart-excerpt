@@ -83,14 +83,57 @@ function parseVersionId(versionId) {
 }
 
 /**
- * Calculate SHA-256 content hash for change detection
+ * Calculate SHA-256 content hash for version deduplication
+ *
+ * NOTE: This is DISTINCT from excerpt.contentHash (calculated by hash-utils.js).
+ * There are TWO contentHash properties in this codebase with different purposes:
+ *
+ * 1. Source contentHash (hash-utils.js - WHITELIST approach):
+ *    - Purpose: Staleness detection (did Source change since last sync?)
+ *    - Applies to: excerpt:* objects (Sources)
+ *    - Includes ONLY: content, name, category, variables, toggles, documentationLinks
+ *    - Excludes: id, timestamps, source metadata (sourcePageId, etc.)
+ *    - Used in: embed-display.jsx staleness checks (excerpt.contentHash vs syncedContentHash)
+ *
+ * 2. Version contentHash (THIS function - BLACKLIST approach):
+ *    - Purpose: Version deduplication (prevent duplicate snapshots when only timestamps change)
+ *    - Applies to: version:* snapshot data (both Sources and Embeds)
+ *    - Includes: ALL fields in data object EXCEPT timestamps/metadata
+ *    - Excludes: updatedAt, lastSynced, cachedAt, restoredAt, restoredFrom, *At fields
+ *    - Used in: saveVersion() to detect if version snapshot already exists
+ *
+ * For Embed data (macro-vars:*), this function hashes:
+ * - excerptId, variableValues, toggleStates, customInsertions, internalNotes
+ * - pageId, spaceId, syncedContentHash, syncedContent
+ * But NOT: updatedAt, lastSynced, cachedAt, restoredAt, restoredFrom
+ *
+ * This prevents creating a new version snapshot when an Embed is re-saved
+ * with identical configuration but a newer timestamp.
  *
  * @param {Object} data - The data to hash
  * @returns {string} SHA-256 hash in hex format
  */
 function calculateContentHash(data) {
   const crypto = require('crypto');
-  const jsonString = JSON.stringify(data);
+
+  // Create a copy with timestamp/metadata fields excluded
+  const contentOnly = { ...data };
+
+  // Remove common timestamp fields
+  delete contentOnly.updatedAt;
+  delete contentOnly.lastSynced;
+  delete contentOnly.cachedAt;
+  delete contentOnly.restoredAt;
+  delete contentOnly.restoredFrom;
+
+  // Remove any other fields ending with "At" (timestamp convention)
+  Object.keys(contentOnly).forEach(key => {
+    if (key.endsWith('At') && key !== 'updatedAt') {
+      delete contentOnly[key];
+    }
+  });
+
+  const jsonString = JSON.stringify(contentOnly);
   return crypto.createHash('sha256').update(jsonString).digest('hex');
 }
 
