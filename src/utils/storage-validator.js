@@ -209,40 +209,36 @@ export function validateMacroVarsData(macroVars) {
   }
 
   // Custom insertions validation
+  // Data structure: { position: number, text: string }
   if (macroVars.customInsertions !== undefined) {
     if (!Array.isArray(macroVars.customInsertions)) {
       errors.push('customInsertions must be an array');
     } else {
       for (let i = 0; i < macroVars.customInsertions.length; i++) {
         const insertion = macroVars.customInsertions[i];
-        console.log(`[VALIDATOR] customInsertion[${i}]:`, JSON.stringify(insertion));
-        if (insertion.index === undefined || typeof insertion.index !== 'number') {
-          console.log(`[VALIDATOR] FAIL: index=${insertion.index}, type=${typeof insertion.index}`);
-          errors.push(`Custom insertion at index ${i} missing or invalid index (has: ${JSON.stringify(insertion.index)})`);
+        if (insertion.position === undefined || typeof insertion.position !== 'number') {
+          errors.push(`Custom insertion at index ${i} missing or invalid position`);
         }
         if (!insertion.text || typeof insertion.text !== 'string') {
-          console.log(`[VALIDATOR] FAIL: text=${insertion.text}, type=${typeof insertion.text}`);
-          errors.push(`Custom insertion at index ${i} missing or invalid text (has: ${JSON.stringify(insertion.text)})`);
+          errors.push(`Custom insertion at index ${i} missing or invalid text`);
         }
       }
     }
   }
 
-  // Internal notes validation (similar to custom insertions)
+  // Internal notes validation
+  // Data structure: { position: number, content: string }
   if (macroVars.internalNotes !== undefined) {
     if (!Array.isArray(macroVars.internalNotes)) {
       errors.push('internalNotes must be an array');
     } else {
       for (let i = 0; i < macroVars.internalNotes.length; i++) {
         const note = macroVars.internalNotes[i];
-        console.log(`[VALIDATOR] internalNote[${i}]:`, JSON.stringify(note));
-        if (note.index === undefined || typeof note.index !== 'number') {
-          console.log(`[VALIDATOR] FAIL: index=${note.index}, type=${typeof note.index}`);
-          errors.push(`Internal note at index ${i} missing or invalid index (has: ${JSON.stringify(note.index)})`);
+        if (note.position === undefined || typeof note.position !== 'number') {
+          errors.push(`Internal note at index ${i} missing or invalid position`);
         }
-        if (!note.text || typeof note.text !== 'string') {
-          console.log(`[VALIDATOR] FAIL: text=${note.text}, type=${typeof note.text}`);
-          errors.push(`Internal note at index ${i} missing or invalid text (has: ${JSON.stringify(note.text)})`);
+        if (!note.content || typeof note.content !== 'string') {
+          errors.push(`Internal note at index ${i} missing or invalid content`);
         }
       }
     }
