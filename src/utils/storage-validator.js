@@ -215,7 +215,7 @@ export function validateMacroVarsData(macroVars) {
     } else {
       for (let i = 0; i < macroVars.customInsertions.length; i++) {
         const insertion = macroVars.customInsertions[i];
-        if (!insertion.index || typeof insertion.index !== 'number') {
+        if (insertion.index === undefined || typeof insertion.index !== 'number') {
           errors.push(`Custom insertion at index ${i} missing or invalid index`);
         }
         if (!insertion.text || typeof insertion.text !== 'string') {
@@ -232,7 +232,7 @@ export function validateMacroVarsData(macroVars) {
     } else {
       for (let i = 0; i < macroVars.internalNotes.length; i++) {
         const note = macroVars.internalNotes[i];
-        if (!note.index || typeof note.index !== 'number') {
+        if (note.index === undefined || typeof note.index !== 'number') {
           errors.push(`Internal note at index ${i} missing or invalid index`);
         }
         if (!note.text || typeof note.text !== 'string') {
