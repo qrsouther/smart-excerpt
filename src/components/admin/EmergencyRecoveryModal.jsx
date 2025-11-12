@@ -79,8 +79,14 @@ const jsonPreviewStyle = xcss({
 
 /**
  * Emergency Recovery Modal
+ *
+ * @param {Object} props
+ * @param {boolean} props.isOpen - Whether modal is open
+ * @param {Function} props.onClose - Handler to close modal
+ * @param {string} [props.initialTab] - Optional initial tab ('deleted-embeds' or 'version-history')
+ * @param {string} [props.autoLoadEmbedUuid] - Optional UUID to auto-load version history for
  */
-export function EmergencyRecoveryModal({ isOpen, onClose }) {
+export function EmergencyRecoveryModal({ isOpen, onClose, initialTab = 'deleted-embeds', autoLoadEmbedUuid = null }) {
   const [deletedItems, setDeletedItems] = useState([]);
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -94,10 +100,10 @@ export function EmergencyRecoveryModal({ isOpen, onClose }) {
   const [deleteResult, setDeleteResult] = useState(null);
 
   // Tab state (Phase 4 - v7.18.0)
-  const [activeTab, setActiveTab] = useState('deleted-embeds');
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   // Version History state (Phase 4 - v7.18.0)
-  const [versionLocalId, setVersionLocalId] = useState('');
+  const [versionLocalId, setVersionLocalId] = useState(autoLoadEmbedUuid || '');
   const [versions, setVersions] = useState([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
   const [selectedVersion, setSelectedVersion] = useState(null);
@@ -110,6 +116,17 @@ export function EmergencyRecoveryModal({ isOpen, onClose }) {
       loadDeletedItems();
     }
   }, [isOpen]);
+
+  // Auto-load version history when UUID is provided
+  useEffect(() => {
+    if (isOpen && autoLoadEmbedUuid && initialTab === 'version-history') {
+      console.log('[EmergencyRecovery] Auto-loading versions for UUID:', autoLoadEmbedUuid);
+      // Small delay to ensure state is set
+      setTimeout(() => {
+        handleLoadVersions();
+      }, 100);
+    }
+  }, [isOpen, autoLoadEmbedUuid, initialTab]);
 
   /**
    * Load all soft-deleted items from storage
@@ -198,34 +215,43 @@ export function EmergencyRecoveryModal({ isOpen, onClose }) {
    * Load version history for a specific Embed localId
    */
   const handleLoadVersions = async () => {
+    console.log('[EmergencyRecovery] handleLoadVersions called with localId:', versionLocalId);
+
     if (!versionLocalId.trim()) {
+      console.log('[EmergencyRecovery] Empty localId, showing error');
       setVersionError('Please enter a valid Embed UUID (localId)');
       return;
     }
 
+    console.log('[EmergencyRecovery] Starting version load...');
     setLoadingVersions(true);
     setVersionError(null);
     setVersions([]);
     setSelectedVersion(null);
 
     try {
-      const response = await invoke('getVersionHistory', {
-        entityId: `macro-vars:${versionLocalId.trim()}`
-      });
+      const entityId = versionLocalId.trim(); // Just the UUID, not the storage key
+      console.log('[EmergencyRecovery] Invoking getVersionHistory with entityId:', entityId);
+
+      const response = await invoke('getVersionHistory', { entityId });
+      console.log('[EmergencyRecovery] getVersionHistory response:', response);
 
       if (response.success) {
+        console.log('[EmergencyRecovery] Success! Found versions:', response.versions?.length || 0);
         setVersions(response.versions || []);
         if (response.versions.length === 0) {
           setVersionError('No version history found for this Embed UUID');
         }
       } else {
+        console.error('[EmergencyRecovery] Response not successful:', response.error);
         setVersionError(response.error || 'Failed to load version history');
       }
     } catch (err) {
-      setVersionError(err.message);
       console.error('[EmergencyRecovery] Error loading versions:', err);
+      setVersionError(err.message);
     } finally {
       setLoadingVersions(false);
+      console.log('[EmergencyRecovery] Loading complete');
     }
   };
 

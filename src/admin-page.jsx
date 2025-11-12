@@ -208,6 +208,7 @@ const App = () => {
 
   // Emergency Recovery Modal UI (Phase 1 Safety Patch - v7.16.0)
   const [isEmergencyRecoveryOpen, setIsEmergencyRecoveryOpen] = useState(false);
+  const [versionHistoryEmbedUuid, setVersionHistoryEmbedUuid] = useState(null);
 
   // Convert excerptsError to string for display
   const error = excerptsError ? String(excerptsError.message || 'Unknown error') : null;
@@ -1318,22 +1319,22 @@ const App = () => {
                               });
 
                               if (result.success) {
-                                alert(`Successfully pushed updates to ${result.updated} of ${result.total} instance(s)`);
+                                alert(`Successfully force updated ${result.updated} of ${result.total} instance(s)`);
                                 // Refresh usage data
                                 const refreshedUsage = await invoke('getExcerptUsage', { excerptId: selectedExcerptForDetails.id });
                                 if (refreshedUsage.success) {
                                   setUsageData({ [selectedExcerptForDetails.id]: refreshedUsage.usage || [] });
                                 }
                               } else {
-                                alert(`Failed to push updates: ${result.error}`);
+                                alert(`Failed to force updates: ${result.error}`);
                               }
                             } catch (err) {
-                              console.error('Error pushing updates to all:', err);
-                              alert('Error pushing updates to all pages');
+                              console.error('Error force updating to all:', err);
+                              alert('Error force updating to all pages');
                             }
                           }}
                         >
-                          Push to All Pages
+                          Force Update to All Pages
                         </Button>
                       </Inline>
                     </Inline>
@@ -1346,7 +1347,7 @@ const App = () => {
                         The <Strong>{selectedExcerptForDetails.name}</Strong> Blueprint Standard is referenced using the Blueprint Standard - Embed macro on <Strong>{uniqueUsage.length}</Strong> {uniqueUsage.length === 1 ? 'page' : 'pages'}, with the following variables and/or toggles set within those pages.
                       </Text>
                       <Text>
-                        The Status column shows whether each Embed instance is up to date with the latest Source content. Use <Strong>Push Update</Strong> to update specific pages, or <Strong>Push to All Pages</Strong> to update all instances at once.
+                        The Status column shows whether each Embed instance is up to date with the latest Source content. Use <Strong>Force Update</Strong> to update specific pages, or <Strong>Force Update to All Pages</Strong> to update all instances at once.
                       </Text>
                       <Text>
                         To edit variable values or toggle settings, navigate to the page by clicking its name and edit the Embed macro directly.
@@ -1443,27 +1444,21 @@ const App = () => {
                           )
                         });
 
-                        // Add actions cell with Copy UUID and Push Update buttons
+                        // Add actions cell with Copy UUID and Force Update buttons
                         rowCells.push({
                           key: 'actions',
                           content: (
                             <Inline space="space.100" alignBlock="center">
-                              <Tooltip content={`Copy UUID: ${ref.localId}`}>
-                                <Button
-                                  appearance="default"
-                                  spacing="compact"
-                                  iconBefore={() => <Icon glyph="copy" label="Copy UUID" color="color.icon" />}
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(ref.localId).then(() => {
-                                      // Success feedback
-                                      console.log('UUID copied to clipboard:', ref.localId);
-                                    }).catch(err => {
-                                      console.error('Failed to copy UUID:', err);
-                                      alert(`Failed to copy. UUID: ${ref.localId}`);
-                                    });
-                                  }}
-                                />
-                              </Tooltip>
+                              <Button
+                                appearance="default"
+                                spacing="compact"
+                                onClick={() => {
+                                  setVersionHistoryEmbedUuid(ref.localId);
+                                  setIsEmergencyRecoveryOpen(true);
+                                }}
+                              >
+                                Recovery Options
+                              </Button>
                               <Button
                                 appearance="primary"
                                 spacing="compact"
@@ -1476,7 +1471,7 @@ const App = () => {
                                     });
 
                                     if (result.success) {
-                                      alert(`Successfully pushed update to ${result.updated} instance(s) on this page`);
+                                      alert(`Successfully force updated ${result.updated} instance(s) on this page`);
                                       // Refresh usage data
                                       const refreshedUsage = await invoke('getExcerptUsage', { excerptId: selectedExcerptForDetails.id });
                                       if (refreshedUsage.success) {
@@ -1486,15 +1481,15 @@ const App = () => {
                                         }));
                                       }
                                     } else {
-                                      alert(`Failed to push update: ${result.error}`);
+                                      alert(`Failed to force update: ${result.error}`);
                                     }
                                   } catch (err) {
-                                    console.error('Error pushing update:', err);
-                                    alert('Error pushing update');
+                                    console.error('Error force updating:', err);
+                                    alert('Error force updating');
                                   }
                                 }}
                               >
-                                Push Update
+                                Force Update
                               </Button>
                             </Inline>
                           )
@@ -1843,27 +1838,21 @@ const App = () => {
                                       )
                                     });
 
-                                    // Add Actions cell with Copy UUID and Push Update buttons
+                                    // Add Actions cell with Recovery Options and Force Update buttons
                                     rowCells.push({
                                       key: 'actions',
                                       content: (
                                         <Inline space="space.100" alignBlock="center">
-                                          <Tooltip content={`Copy UUID: ${ref.localId}`}>
-                                            <Button
-                                              appearance="default"
-                                              spacing="compact"
-                                              iconBefore={() => <Icon glyph="copy" label="Copy UUID" color="color.icon" />}
-                                              onClick={() => {
-                                                navigator.clipboard.writeText(ref.localId).then(() => {
-                                                  // Success feedback
-                                                  console.log('UUID copied to clipboard:', ref.localId);
-                                                }).catch(err => {
-                                                  console.error('Failed to copy UUID:', err);
-                                                  alert(`Failed to copy. UUID: ${ref.localId}`);
-                                                });
-                                              }}
-                                            />
-                                          </Tooltip>
+                                          <Button
+                                            appearance="default"
+                                            spacing="compact"
+                                            onClick={() => {
+                                              setVersionHistoryEmbedUuid(ref.localId);
+                                              setIsEmergencyRecoveryOpen(true);
+                                            }}
+                                          >
+                                            Recovery Options
+                                          </Button>
                                           <Button
                                             appearance="primary"
                                             spacing="compact"
@@ -1876,22 +1865,22 @@ const App = () => {
                                                 });
 
                                                 if (result.success) {
-                                                  alert(`Successfully pushed update to ${result.updated} instance(s) on this page`);
+                                                  alert(`Successfully force updated ${result.updated} instance(s) on this page`);
                                                   // Refresh usage data
                                                   const refreshedUsage = await invoke('getExcerptUsage', { excerptId: selectedExcerpt.id });
                                                   if (refreshedUsage.success) {
                                                     setUsageData({ [selectedExcerpt.id]: refreshedUsage.usage || [] });
                                                   }
                                                 } else {
-                                                  alert(`Failed to push update: ${result.error}`);
+                                                  alert(`Failed to force update: ${result.error}`);
                                                 }
                                               } catch (err) {
-                                                console.error('Error pushing update:', err);
-                                                alert('Error pushing update');
+                                                console.error('Error force updating:', err);
+                                                alert('Error force updating');
                                               }
                                             }}
                                           >
-                                            Push Update
+                                            Force Update
                                           </Button>
                                         </Inline>
                                       )
@@ -1978,7 +1967,12 @@ const App = () => {
       {/* Emergency Recovery Modal (Phase 1 Safety Patch - v7.16.0) */}
       <EmergencyRecoveryModal
         isOpen={isEmergencyRecoveryOpen}
-        onClose={() => setIsEmergencyRecoveryOpen(false)}
+        onClose={() => {
+          setIsEmergencyRecoveryOpen(false);
+          setVersionHistoryEmbedUuid(null); // Reset UUID when closing
+        }}
+        initialTab={versionHistoryEmbedUuid ? 'version-history' : 'deleted-embeds'}
+        autoLoadEmbedUuid={versionHistoryEmbedUuid}
       />
     </Fragment>
   );
