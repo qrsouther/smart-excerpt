@@ -72,6 +72,7 @@ import { CheckAllProgressBar } from './components/admin/CheckAllProgressBar';
 import { AdminToolbar } from './components/admin/AdminToolbar';
 import { OrphanedItemsSection } from './components/admin/OrphanedItemsSection';
 import { EmergencyRecoveryModal } from './components/admin/EmergencyRecoveryModal';
+import { VersionHistoryModal } from './components/admin/VersionHistoryModal';
 
 // Import admin styles
 import {
@@ -209,6 +210,8 @@ const App = () => {
   // Emergency Recovery Modal UI (Phase 1 Safety Patch - v7.16.0)
   const [isEmergencyRecoveryOpen, setIsEmergencyRecoveryOpen] = useState(false);
   const [versionHistoryEmbedUuid, setVersionHistoryEmbedUuid] = useState(null);
+  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
+  const [versionHistoryUuid, setVersionHistoryUuid] = useState(null);
 
   // Convert excerptsError to string for display
   const error = excerptsError ? String(excerptsError.message || 'Unknown error') : null;
@@ -1453,8 +1456,8 @@ const App = () => {
                                 appearance="default"
                                 spacing="compact"
                                 onClick={() => {
-                                  setVersionHistoryEmbedUuid(ref.localId);
-                                  setIsEmergencyRecoveryOpen(true);
+                                  setVersionHistoryUuid(ref.localId);
+                                  setIsVersionHistoryOpen(true);
                                 }}
                               >
                                 Recovery Options
@@ -1847,8 +1850,8 @@ const App = () => {
                                             appearance="default"
                                             spacing="compact"
                                             onClick={() => {
-                                              setVersionHistoryEmbedUuid(ref.localId);
-                                              setIsEmergencyRecoveryOpen(true);
+                                              setVersionHistoryUuid(ref.localId);
+                                              setIsVersionHistoryOpen(true);
                                             }}
                                           >
                                             Recovery Options
@@ -1973,6 +1976,16 @@ const App = () => {
         }}
         initialTab={versionHistoryEmbedUuid ? 'version-history' : 'deleted-embeds'}
         autoLoadEmbedUuid={versionHistoryEmbedUuid}
+      />
+
+      {/* Version History Modal (Phase 4 - v7.18.8) */}
+      <VersionHistoryModal
+        isOpen={isVersionHistoryOpen}
+        onClose={() => {
+          setIsVersionHistoryOpen(false);
+          setVersionHistoryUuid(null); // Reset UUID when closing
+        }}
+        embedUuid={versionHistoryUuid}
       />
     </Fragment>
   );
