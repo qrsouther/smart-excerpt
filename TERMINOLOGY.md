@@ -1,4 +1,4 @@
-# SeatGeek Blueprint - Terminology Reference
+# Blueprint App - Terminology Reference
 
 **Purpose:** This document maps user-facing terminology (new branding) to internal code terminology (legacy naming) to ensure clear communication during development.
 
@@ -10,11 +10,11 @@
 
 | User-Facing Term | Internal Code Term | Description |
 |------------------|-------------------|-------------|
-| **SeatGeek Blueprint** | SmartExcerpt | Overall product/app name |
+| **Blueprint App** | excerpt/include (internal code) | Overall product/app name |
 | **Blueprint Standard** | Excerpt | A reusable content block with variables/toggles |
 | **Embed** | Include | An instance that displays a Blueprint Standard on a page |
 | **Source** | Source | The macro where Blueprint Standards are created/edited |
-| **Blueprint App Admin** | SmartExcerpt Admin | Admin interface for managing Blueprint Standards |
+| **Blueprint App Admin** | admin-page | Admin interface for managing Blueprint Standards |
 
 ---
 
@@ -26,9 +26,9 @@
 - **Blueprint Standards Admin** - Admin interface
 
 ### Internal (Module Keys - DO NOT CHANGE)
-- `smart-excerpt-source` - Module key for Source macro
-- `smart-excerpt-include` - Module key for Embed macro
-- `smart-excerpt-admin` - Module key for Admin page
+- `blueprint-standard-source` - Module key for Source macro
+- `blueprint-standard-embed` - Module key for Embed macro
+- `blueprint-standards-admin` - Module key for Admin page
 
 **IMPORTANT:** Module keys must remain unchanged for backward compatibility with existing page content.
 

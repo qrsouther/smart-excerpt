@@ -1,17 +1,17 @@
 /**
- * MultiExcerpt to SmartExcerpt Migration Content Script
+ * MultiExcerpt to Blueprint App Migration Content Script
  *
  * This script runs directly on the Confluence edit page in the user's authenticated session.
- * It migrates MultiExcerpt Source macros to SmartExcerpt Source macros by:
+ * It migrates MultiExcerpt Source macros to Blueprint App Source macros by:
  * 1. Finding all MultiExcerpt macros
  * 2. Copying their content
- * 3. Creating new SmartExcerpt macros via slash command
+ * 3. Creating new Blueprint App macros via slash command
  * 4. Pasting the content
  * 5. Deleting the old MultiExcerpt macros
  */
 
 (async function() {
-  console.log('🚀 SmartExcerpt Migration Script Starting...');
+  console.log('🚀 Blueprint App Migration Script Starting...');
 
   // Helper function to wait
   function sleep(ms) {
@@ -202,7 +202,7 @@
       await sleep(2000);
 
       // TODO: Steps 4-6 will be implemented after testing
-      // Step 4: Select SmartExcerpt from menu
+      // Step 4: Select Blueprint App from menu
       // Step 5: Fill in config modal (name, category)
       // Step 6: Paste content and delete old macro
 

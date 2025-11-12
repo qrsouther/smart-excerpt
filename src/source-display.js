@@ -7,7 +7,7 @@ const App = () => {
   if (!config || !config.excerptName) {
     return (
       <Fragment>
-        <Text>_SmartExcerpt not configured. Click Edit to set up this excerpt._</Text>
+        <Text>_Blueprint App not configured. Click Edit to set up this excerpt._</Text>
       </Fragment>
     );
   }
@@ -15,7 +15,7 @@ const App = () => {
   // Show the excerpt info in read view
   return (
     <Fragment>
-      <Text>**SmartExcerpt: {config.excerptName}**</Text>
+      <Text>**Blueprint App: {config.excerptName}**</Text>
       <Text>Category: {config.category || 'General'}</Text>
       <Text>ID: `{config.excerptId}`</Text>
       <Text>---</Text>

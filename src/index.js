@@ -98,7 +98,7 @@ import {
 
 // ⚠️ ONE-TIME USE MIGRATION FUNCTIONS - DELETE AFTER PRODUCTION MIGRATION ⚠️
 // Import migration resolver functions (Phase 4 modularization)
-// These are one-time use functions for migrating from MultiExcerpt to SmartExcerpt
+// These are one-time use functions for migrating from MultiExcerpt to Blueprint App
 // Will be used ONCE during initial production setup, then can be safely deleted
 // See migration-resolvers.js header for full deletion checklist
 import {
@@ -226,11 +226,11 @@ resolver.define('getCheckProgress', getCheckProgressResolver);
 // MIGRATION RESOLVERS (Phase 4 modularization)
 // ⚠️ ONE-TIME USE ONLY - DELETE ENTIRE SECTION AFTER PRODUCTION MIGRATION ⚠️
 // ============================================================================
-// These are one-time use functions for migrating from MultiExcerpt to SmartExcerpt
+// These are one-time use functions for migrating from MultiExcerpt to Blueprint App
 // Will be used ONCE during initial production setup, then this entire section can be deleted
 // See migration-resolvers.js header for full deletion checklist
 
-// Import from MultiExcerpt and create SmartExcerpt (ONE-TIME USE)
+// Import from MultiExcerpt and create Blueprint App (ONE-TIME USE)
 resolver.define('importFromMultiExcerpt', importFromMultiExcerptResolver);
 
 // Track migration status manually (ONE-TIME USE)
@@ -251,7 +251,7 @@ resolver.define('bulkImportSources', bulkImportSourcesResolver);
 // Create Source macros on a Confluence page for migrated excerpts (ONE-TIME USE)
 resolver.define('createSourceMacrosOnPage', createSourceMacrosOnPageResolver);
 
-// Convert MultiExcerpt macros to SmartExcerpt macros on a page (ONE-TIME USE)
+// Convert MultiExcerpt macros to Blueprint App macros on a page (ONE-TIME USE)
 resolver.define('convertMultiExcerptsOnPage', convertMultiExcerptsOnPageResolver);
 
 // Import Blueprint Standards directly from parsed JSON (ONE-TIME USE)

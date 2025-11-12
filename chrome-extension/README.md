@@ -1,6 +1,6 @@
 # MultiExcerpt Include Scanner - Chrome Extension
 
-A Chrome extension to scan for MultiExcerpt Includes in Confluence and export them to CSV format. This tool helps with migrating from MultiExcerpt to SmartExcerpt by extracting all Include instances and their variable values.
+A Chrome extension to scan for MultiExcerpt Includes in Confluence and export them to CSV format. This tool helps with migrating from MultiExcerpt to Blueprint App by extracting all Include instances and their variable values.
 
 ## Features
 
@@ -114,7 +114,7 @@ Each row represents one MultiExcerpt Include instance.
 
 ### Code Recycling
 
-This extension reuses code from the SmartExcerpt Forge app:
+This extension reuses code from the Blueprint App Forge app:
 
 - **`decodeTemplateData()` function** (lines 30-52) - Ported from `src/index.js:1816-1837`
   - Decodes base64-encoded, zlib-compressed JSON from MultiExcerpt's `templateData` parameter
@@ -164,4 +164,4 @@ For issues or questions:
 
 ## License
 
-This extension is part of the SmartExcerpt project.
+This extension is part of the Blueprint App project.

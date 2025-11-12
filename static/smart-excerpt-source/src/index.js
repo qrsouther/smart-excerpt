@@ -4,7 +4,7 @@ let currentExcerptId = null;
 
 // Wait for DOM to be ready, then initialize
 function initializeApp() {
-    console.log('Initializing SmartExcerpt Source');
+    console.log('Initializing Blueprint App Source');
 
     // Load existing config from macro context
     view.getContext().then(context => {
@@ -84,7 +84,7 @@ function initializeApp() {
                 document.getElementById('excerptIdDisplay').style.display = 'block';
                 document.getElementById('excerptIdValue').textContent = result.excerptId;
 
-                showStatus('success', `SmartExcerpt "${excerptName}" saved successfully! (ID: ${result.excerptId})`);
+                showStatus('success', `Blueprint App "${excerptName}" saved successfully! (ID: ${result.excerptId})`);
             } else {
                 showStatus('error', 'Failed to save: ' + (result.error || 'Unknown error'));
             }
@@ -93,7 +93,7 @@ function initializeApp() {
             showStatus('error', 'Failed to save excerpt: ' + (error.message || JSON.stringify(error)));
         } finally {
             saveBtn.disabled = false;
-            saveBtn.textContent = 'Save SmartExcerpt';
+            saveBtn.textContent = 'Save Blueprint App';
         }
     });
 }

@@ -33,7 +33,7 @@
        26            viewportSize: max
        27    
        28 +      - key: smart-excerpt-include-poc
-       29 +        title: SmartExcerpt POC (Native Injection)
+       29 +        title: Blueprint App POC (Native Injection)
        30 +        description: Proof-of-concept for injecting content directly into page
        31 +        resource: include-poc
        32 +        render: native
@@ -41,8 +41,8 @@
        34 +          function: resolver
        35 +  
        36      confluence:globalSettings:
-       37        - key: smartexcerpt-admin
-       38          title: SmartExcerpt Admin
+       37        - key: blueprint-standards-admin
+       38          title: Blueprint App Admin
 
 ⏺ Update(manifest.yml)
   ⎿  Updated manifest.yml with 3 additions                                      
@@ -95,7 +95,7 @@
   How to Test the POC
 
   1. Add the POC macro to a test Confluence page:
-    - Edit a page → Insert → "SmartExcerpt POC (Native Injection)"
+    - Edit a page → Insert → "Blueprint App POC (Native Injection)"
   2. Configure and inject:
     - Optionally enter custom text in the input field
     - Click "Inject Hello World into Page"
@@ -116,7 +116,7 @@
   - ✅ Can insert/update content in page body (src/resolvers/poc-injection-resolver.js:90)
   - ✅ Can PUT modified content back (src/resolvers/poc-injection-resolver.js:106)
 
-  If this works, we've proven the fundamental approach is viable. Next steps would be testing with real SmartExcerpt content, handling edge
+  If this works, we've proven the fundamental approach is viable. Next steps would be testing with real Blueprint App content, handling edge
    cases, and measuring actual performance gains.
 
 > Great! I know you deployed, do we also have to run an install command too? 
@@ -159,14 +159,14 @@
   1. Prompt you to select your development Confluence site
   2. Upgrade the app to version 6.79.0 (with the new POC macro)
 
-  After running this, the "SmartExcerpt POC (Native Injection)" macro should appear in your macro browser when you edit a page. Then you
+  After running this, the "Blueprint App POC (Native Injection)" macro should appear in your macro browser when you edit a page. Then you
   can test the injection workflow!
 
 > Okay, done. Checking now... 
 
 ⏺ Great! Let me know what you see. You should be able to:
 
-  1. Add the "SmartExcerpt POC (Native Injection)" macro to a page
+  1. Add the "Blueprint App POC (Native Injection)" macro to a page
   2. Click the "Inject Hello World into Page" button
   3. Save the page and refresh
   4. See an Expand macro with "📄 Injected Content (POC)" title containing the injected content
@@ -188,7 +188,7 @@
 
 ⏺ Update(manifest.yml)
   ⎿  Updated manifest.yml with 1 removal                                                 
-       29          title: SmartExcerpt POC (Native Injection)
+       29          title: Blueprint App POC (Native Injection)
        30          description: Proof-of-concept for injecting content directly into page
        31          resource: include-poc
        32 -        render: native
@@ -252,7 +252,7 @@
 
 ⏺ Update(manifest.yml)
   ⎿  Updated manifest.yml with 1 addition                                                
-       29          title: SmartExcerpt POC (Native Injection)
+       29          title: Blueprint App POC (Native Injection)
        30          description: Proof-of-concept for injecting content directly into page
        31          resource: include-poc
        32 +        render: native
@@ -295,7 +295,7 @@
      Running forge lint...
      No issues found.
 
-     Deploying SmartExcerpts to development...
+     Deploying Blueprint Apps to development...
 
      ℹ Packaging app files
 
@@ -309,7 +309,7 @@
 
 ⏺ Update(manifest.yml)
   ⎿  Updated manifest.yml with 1 removal                                                 
-       29          title: SmartExcerpt POC (Native Injection)
+       29          title: Blueprint App POC (Native Injection)
        30          description: Proof-of-concept for injecting content directly into page
        31          resource: include-poc
        32 -        render: native
@@ -576,7 +576,7 @@
      <head>
        <meta charset="UTF-8">
        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-       <title>SmartExcerpt POC</title>
+       <title>Blueprint App POC</title>
      </head>
      <body>
        <div id="root"></div>
@@ -988,7 +988,7 @@ https://tdp-os.services.atlassian.com/fop/cdn/upload/". The request has been blo
 
 ⏺ Update(manifest.yml)
   ⎿  Updated manifest.yml with 1 addition                                                
-       29          title: SmartExcerpt POC (Native Injection)
+       29          title: Blueprint App POC (Native Injection)
        30          description: Proof-of-concept for injecting content directly into page
        31          resource: include-poc
        32 +        render: native

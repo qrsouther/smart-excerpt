@@ -2,7 +2,7 @@
  * Migration Utility Functions
  *
  * This module provides utilities for migrating content from MultiExcerpt
- * plugin to SmartExcerpt, including data decoding, XML parsing, and content cleaning.
+ * plugin to Blueprint App, including data decoding, XML parsing, and content cleaning.
  */
 
 /**
@@ -45,7 +45,7 @@ export function decodeTemplateData(templateDataString) {
  * Convert Confluence Storage Format XML to plain text
  *
  * Strips XML tags and decodes HTML entities to produce plain text suitable
- * for SmartExcerpt content display and search. Used during MultiExcerpt migration.
+ * for Blueprint App content display and search. Used during MultiExcerpt migration.
  *
  * @param {string} storageContent - Confluence Storage Format XML content
  * @returns {string} Plain text with tags removed and entities decoded
@@ -81,7 +81,7 @@ export function storageToPlainText(storageContent) {
  *
  * Removes MultiExcerpt macro tags from Confluence Storage Format XML while
  * preserving the actual content. Handles nested macros and orphaned closing tags.
- * Used when creating SmartExcerpt Source macros from migrated content.
+ * Used when creating Blueprint App Source macros from migrated content.
  *
  * @param {string} storageContent - Confluence Storage Format XML with MultiExcerpt macros
  * @returns {string} Cleaned XML with MultiExcerpt macros removed

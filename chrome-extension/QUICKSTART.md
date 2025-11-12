@@ -24,7 +24,7 @@ A CSV file with all MultiExcerpt Includes in the 'cs' space:
 - MultiExcerpt name being used
 - All variable values filled in by users
 
-Perfect for planning your migration from MultiExcerpt to SmartExcerpt!
+Perfect for planning your migration from MultiExcerpt to Blueprint App!
 
 ## Troubleshooting
 

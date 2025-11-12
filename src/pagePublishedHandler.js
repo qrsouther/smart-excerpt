@@ -2,7 +2,7 @@
  * Page Published Handler
  *
  * This function is triggered when a Confluence page is published.
- * It scans the page for SmartExcerpt Include macros and automatically injects
+ * It scans the page for Blueprint App Include macros and automatically injects
  * their rendered content into the page storage as native Confluence content.
  */
 
@@ -91,7 +91,7 @@ export async function handler(event, context) {
 
     console.log(`[PAGE-PUBLISH] Got page version ${currentVersion}, body length: ${currentBody.length}`);
 
-    // Step 2: Find all SmartExcerpt Include macros in the page
+    // Step 2: Find all Blueprint App Include macros in the page
     const includeMacroPattern = /<ac:structured-macro[^>]*ac:name="smart-excerpt-include"[^>]*ac:macro-id="([^"]+)"[^>]*>(.*?)<\/ac:structured-macro>/gs;
     const macros = [];
     let match;
@@ -147,14 +147,14 @@ export async function handler(event, context) {
 
       // Create injected content (native Confluence storage format)
       const injectedContent = `
-<!-- INJECTED BY SMARTEXCERPT -->
+<!-- INJECTED BY BLUEPRINT APP -->
 ${renderedContent}
-<!-- END SMARTEXCERPT INJECTION -->
+<!-- END BLUEPRINT APP INJECTION -->
 `;
 
       // Check if injected content already exists for this macro
       const injectedPattern = new RegExp(
-        `<!-- INJECTED BY SMARTEXCERPT -->.*?<!-- END SMARTEXCERPT INJECTION -->`,
+        `<!-- INJECTED BY BLUEPRINT APP -->.*?<!-- END BLUEPRINT APP INJECTION -->`,
         'gs'
       );
 
@@ -208,7 +208,7 @@ ${renderedContent}
           },
           version: {
             number: currentVersion + 1,
-            message: 'SmartExcerpt: Auto-injected excerpt content'
+            message: 'Blueprint App: Auto-injected excerpt content'
           }
         })
       }

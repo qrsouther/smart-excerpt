@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
 /**
- * MultiExcerpt to SmartExcerpt Migration Script
+ * MultiExcerpt to Blueprint App Migration Script
  *
- * This script automates the migration of MultiExcerpt macros to SmartExcerpt macros
+ * This script automates the migration of MultiExcerpt macros to Blueprint App macros
  * by using Puppeteer to interact with the Confluence editor UI.
  *
  * Usage:
@@ -13,7 +13,7 @@
  * 1. Open the Confluence edit page in a visible browser
  * 2. Find each MultiExcerpt macro
  * 3. Copy its content
- * 4. Insert a SmartExcerpt macro using slash command
+ * 4. Insert a Blueprint App macro using slash command
  * 5. Paste the content
  * 6. Delete the old MultiExcerpt macro
  *
@@ -253,7 +253,7 @@ async function migrateSingleMacro(page, macro, macroIndex, totalMacros) {
 
     // TODO: Steps 3-6 will be implemented next
     log('   ⚠️  Steps 3-6 not yet implemented:', colors.yellow);
-    log('     3. Select SmartExcerpt from menu', colors.yellow);
+    log('     3. Select Blueprint App from menu', colors.yellow);
     log('     4. Fill in config modal (name, category)', colors.yellow);
     log('     5. Paste content into macro body', colors.yellow);
     log('     6. Delete old MultiExcerpt macro', colors.yellow);
@@ -269,7 +269,7 @@ async function migrateSingleMacro(page, macro, macroIndex, totalMacros) {
 
 async function main() {
   log('╔════════════════════════════════════════════════════════════╗', colors.cyan);
-  log('║   MultiExcerpt → SmartExcerpt Migration Tool              ║', colors.cyan);
+  log('║   MultiExcerpt → Blueprint App Migration Tool              ║', colors.cyan);
   log('╚════════════════════════════════════════════════════════════╝', colors.cyan);
 
   log('\n🚀 Starting migration script...', colors.green);

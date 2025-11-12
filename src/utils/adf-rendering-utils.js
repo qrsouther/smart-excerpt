@@ -3,7 +3,7 @@
  *
  * Utility functions for manipulating and processing Atlassian Document Format (ADF) content.
  * These functions handle cleaning, filtering, variable substitution, and content insertion
- * for the Blueprint Standard (SmartExcerpt) application.
+ * for the Blueprint Standard (Blueprint App) application.
  *
  * Key operations:
  * - Cleaning ADF for Forge's AdfRenderer compatibility

@@ -78,7 +78,7 @@ These resolvers are actively called by frontend components and MUST be preserved
 | `getMultiExcerptScanProgress` | 2023-2046 | admin-page.jsx | Real-time progress for scan operation |
 | `bulkImportSources` | 2119-2216 | admin-page.jsx | Bulk import MultiExcerpt Sources from JSON |
 | `createSourceMacrosOnPage` | 2219-2436 | admin-page.jsx | Create Source macros on Confluence page |
-| `convertMultiExcerptsOnPage` | 2439-2671 | admin-page.jsx | Convert MultiExcerpt macros to SmartExcerpt on page |
+| `convertMultiExcerptsOnPage` | 2439-2671 | admin-page.jsx | Convert MultiExcerpt macros to Blueprint App on page |
 
 ---
 

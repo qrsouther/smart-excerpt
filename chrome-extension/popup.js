@@ -1,5 +1,5 @@
 // MultiExcerpt Include Scanner - Chrome Extension
-// Ported from SmartExcerpt Forge app
+// Ported from Blueprint App Forge app
 
 let scanResults = null;
 

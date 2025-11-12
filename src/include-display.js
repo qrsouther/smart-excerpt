@@ -103,7 +103,7 @@ const App = () => {
 
   return (
     <Fragment>
-      <Text>**SmartExcerpt Include**</Text>
+      <Text>**Blueprint App Include**</Text>
 
       <Form onSubmit={onExcerptSelect} submitButtonText="Load Excerpt">
         <Select name="excerptSelect" label="Select Excerpt" isRequired>

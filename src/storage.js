@@ -2,16 +2,16 @@ import { storage } from '@forge/api';
 import { v4 as uuidv4 } from 'uuid';
 
 /**
- * Storage utilities for SmartExcerpt
+ * Storage utilities for Blueprint App
  * Handles excerpts, includes, usage tracking, and caching
  */
 
 // ============================================================================
-// EXCERPTS - Source SmartExcerpt definitions
+// EXCERPTS - Source Blueprint App definitions
 // ============================================================================
 
 /**
- * Save or update a SmartExcerpt source
+ * Save or update a Blueprint App source
  */
 export async function saveExcerpt(excerptData) {
   const id = excerptData.id || uuidv4();
@@ -46,7 +46,7 @@ export async function saveExcerpt(excerptData) {
 }
 
 /**
- * Get a SmartExcerpt by ID
+ * Get a Blueprint App by ID
  */
 export async function getExcerpt(excerptId) {
   // Try cache first
@@ -114,7 +114,7 @@ async function updateExcerptIndex(excerpt) {
 }
 
 // ============================================================================
-// INCLUDES - SmartExcerpt Include configurations
+// INCLUDES - Blueprint App Include configurations
 // ============================================================================
 
 /**

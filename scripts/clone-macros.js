@@ -109,7 +109,7 @@ function findBlueprintStandardMacro(storageContent) {
 // Clone the Blueprint Standard macro and update its name
 function cloneBlueprintStandardWithName(macroXML, newName) {
   // The name is stored in guest-params as excerpt-name
-  // Find: <ac:adf-parameter key="excerpt-name">SmartExcerpt0</ac:adf-parameter>
+  // Find: <ac:adf-parameter key="excerpt-name">Blueprint App0</ac:adf-parameter>
   // Replace the value between the tags
 
   const nameRegex = /(<ac:adf-parameter key="excerpt-name">)(.*?)(<\/ac:adf-parameter>)/;

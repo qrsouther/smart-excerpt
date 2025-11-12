@@ -1,4 +1,4 @@
-# Bulk Initialize 147 SmartExcerpts
+# Bulk Initialize 147 Blueprint Apps
 
 ## Quick Summary
 Add ~50 lines of code to your existing Forge app, deploy, and click one button to initialize all 147 macros.
@@ -80,7 +80,7 @@ forge deploy
 ```
 
 Then:
-1. Go to Settings → Manage apps → SmartExcerpt Admin
+1. Go to Settings → Manage apps → Blueprint App Admin
 2. Click the "🚀 Bulk Initialize All Excerpts" button at the top
 3. Wait for confirmation
 4. All 147 macros will be initialized!

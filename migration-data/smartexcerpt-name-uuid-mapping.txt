@@ -1,4 +1,4 @@
-SmartExcerpt Name to UUID Mapping
+Blueprint App Name to UUID Mapping
 ================================================================================
 
 1. [ALL] Fundamentals - Key dates, Stack model

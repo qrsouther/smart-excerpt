@@ -1,4 +1,4 @@
-# SmartExcerpt - Confluence Forge App
+# Blueprint App - Confluence Forge App
 
 A high-performance Forge app for Confluence that enables reusable content blocks with variable substitution and automatic updates.
 
@@ -218,8 +218,8 @@ All one-time migration code is clearly marked with `⚠️ ONE-TIME USE` warning
 
 ### How It Works
 
-1. **SmartExcerpt Source Macro** - Create reusable content blocks with variables
-2. **SmartExcerpt Embed Macro** - Reference and display excerpts with variable substitution
+1. **Blueprint App Source Macro** - Create reusable content blocks with variables
+2. **Blueprint App Embed Macro** - Reference and display excerpts with variable substitution
 3. **Performance Strategy:**
    - Cached content stored in Embed config for instant display
    - Background refresh from source ensures content stays up-to-date
@@ -283,7 +283,7 @@ The `cachedContent` is the fully rendered excerpt with all variables substituted
 ### Deploy & Install
 
 ```bash
-cd "/Users/quinnsouther/Documents/Code projects/smart-excerpt"
+cd "/Users/quinnsouther/Documents/Code projects/blueprint-app"
 forge deploy
 forge install --site qrsouther.atlassian.net
 ```
@@ -299,7 +299,7 @@ forge install --upgrade
 When installing to a new Confluence environment (e.g., moving from development to production), you must update the Admin View link URL:
 
 1. **Install the app** to your production Confluence site
-2. **Access the Admin page** via: Settings → Manage apps → SmartExcerpt Admin
+2. **Access the Admin page** via: Settings → Manage apps → Blueprint App Admin
 3. **Copy the full URL** from your browser's address bar
 4. **Update the code** in `src/embed-display.jsx` (around line 459):
    ```javascript
@@ -312,16 +312,16 @@ When installing to a new Confluence environment (e.g., moving from development t
 
 ---
 
-## 🔄 MultiExcerpt to SmartExcerpt Migration
+## 🔄 MultiExcerpt to Blueprint App Migration
 
 ### Migration Overview
 
-This project includes tools to migrate existing Confluence pages from the MultiExcerpt macro plugin to SmartExcerpt. The migration was successfully completed for a test page with 147 MultiExcerpt macros.
+This project includes tools to migrate existing Confluence pages from the MultiExcerpt macro plugin to Blueprint App. The migration was successfully completed for a test page with 147 MultiExcerpt macros.
 
 ### What the Migration Does
 
-1. **Clones MultiExcerpt Macros** - Creates SmartExcerpt Source macros alongside existing MultiExcerpt macros
-2. **Preserves Content** - Copies all content, including rich text formatting, from MultiExcerpt to SmartExcerpt
+1. **Clones MultiExcerpt Macros** - Creates Blueprint App Source macros alongside existing MultiExcerpt macros
+2. **Preserves Content** - Copies all content, including rich text formatting, from MultiExcerpt to Blueprint App
 3. **Assigns UUIDs** - Generates unique identifiers for each excerpt for ID-based referencing
 4. **Bulk Initialization** - Populates Forge storage with all excerpt data and metadata
 5. **Enables Admin Features** - Makes all excerpts available in the Admin UI with full functionality
@@ -331,13 +331,13 @@ This project includes tools to migrate existing Confluence pages from the MultiE
 The following scripts are included in the project root:
 
 #### Core Migration Scripts
-- **`clone-macros.js`** - Clones MultiExcerpt macros to SmartExcerpt Source macros on a page
+- **`clone-macros.js`** - Clones MultiExcerpt macros to Blueprint App Source macros on a page
 - **`migrate-content.js`** - Updates page content via Confluence API (optional migration path)
 - **`migrate-macros.js`** - Main migration orchestrator (combines clone + content operations)
 - **`fix-excerpt-ids.js`** - Assigns unique UUIDs to cloned excerpts
 
 #### Reference Data
-- **`smartexcerpt-name-uuid-mapping.csv`** - Critical mapping file containing excerpt names, UUIDs, and categories for all 147 migrated excerpts
+- **`blueprint-app-name-uuid-mapping.csv`** - Critical mapping file containing excerpt names, UUIDs, and categories for all 147 migrated excerpts
 
 ### Migration Process for Corporate Deployment
 
@@ -352,7 +352,7 @@ export CONFLUENCE_API_TOKEN="your-api-token"
 
 #### Step 1: Clone Macros to Target Page
 ```bash
-# Clone all MultiExcerpt macros to SmartExcerpt Source macros
+# Clone all MultiExcerpt macros to Blueprint App Source macros
 node clone-macros.js --page-id YOUR_CORPORATE_PAGE_ID
 ```
 
@@ -394,7 +394,7 @@ After bulk initialization:
 
 2. **Environment Differences** - Test instance is on `qrsouther.atlassian.net`, production will be on `seatgeek.atlassian.net`
 
-3. **UUID Preservation** - Keep the `smartexcerpt-name-uuid-mapping.csv` file as a backup reference for all excerpt UUIDs
+3. **UUID Preservation** - Keep the `blueprint-app-name-uuid-mapping.csv` file as a backup reference for all excerpt UUIDs
 
 4. **Content Format** - Migration scripts handle Confluence Storage Format (XML) to ADF conversion automatically
 
@@ -410,11 +410,11 @@ After bulk initialization:
 - Fetches page content via Confluence REST API v2
 - Parses Confluence Storage Format XML
 - Finds all `multiexcerpt-macro` instances
-- Creates corresponding `smart-excerpt-source` macros
+- Creates corresponding `blueprint-app-source` macros
 - Preserves all content formatting
 
 #### `fix-excerpt-ids.js`
-- Scans page for SmartExcerpt Source macros without UUIDs
+- Scans page for Blueprint App Source macros without UUIDs
 - Generates UUID v4 for each excerpt
 - Extracts excerpt names from macro parameters
 - Creates CSV mapping file for bulk initialization
@@ -650,7 +650,7 @@ Current recommendation: **Stick with Option 4** unless performance issues emerge
 ## 📁 Project Structure
 
 ```
-smart-excerpt/
+blueprint-app/
 ├── manifest.yml              # Forge app configuration
 ├── package.json              # Dependencies
 ├── src/
@@ -827,7 +827,7 @@ When viewing a published page with Embed macros, the app automatically detects i
 
 ## 🎛️ Admin UI Features
 
-Access the Admin UI via: **Settings → Manage apps → SmartExcerpt Admin**
+Access the Admin UI via: **Settings → Manage apps → Blueprint App Admin**
 
 ### Search, Filter & Sort
 - **Search by Name:** Real-time search across all excerpt names
@@ -947,7 +947,7 @@ For each excerpt, you can:
 
 ### Centralized Logging System
 
-SmartExcerpt uses a centralized logging utility built on the industry-standard [`debug`](https://www.npmjs.com/package/debug) library. This provides namespace-based filtering and rate limiting to prevent console floods.
+Blueprint App uses a centralized logging utility built on the industry-standard [`debug`](https://www.npmjs.com/package/debug) library. This provides namespace-based filtering and rate limiting to prevent console floods.
 
 **How to Use:**
 
@@ -1108,7 +1108,7 @@ forge install --upgrade
 ## 📝 Development Log
 
 **v7.15.0** - Progressive Disclosure Staleness UI: Implemented subtle "Checking..." indicator during staleness check (8px gray monospace with spinner in top-right corner), added prominent green "Review Update" button when updates detected, implemented progressive disclosure pattern where UpdateAvailableBanner only appears on user request (not automatically), added jittered staleness check (0-500ms random delay) to prevent thundering herd when pages have many Embeds, created StalenessCheckIndicator component with position-relative wrapper for proper indicator placement
-**v4.300.1** - MultiExcerpt Migration: Added bulk excerpt initialization with excerpt-index support, cleaned up failed sync code (~173 lines removed), added migration reference scripts (clone-macros.js, migrate-content.js, migrate-macros.js, fix-excerpt-ids.js), created UUID mapping CSV for 147 migrated excerpts, enabled "View Source" functionality via sourcePageId, successfully migrated test page from MultiExcerpt to SmartExcerpt
+**v4.300.1** - MultiExcerpt Migration: Added bulk excerpt initialization with excerpt-index support, cleaned up failed sync code (~173 lines removed), added migration reference scripts (clone-macros.js, migrate-content.js, migrate-macros.js, fix-excerpt-ids.js), created UUID mapping CSV for 147 migrated excerpts, enabled "View Source" functionality via sourcePageId, successfully migrated test page from MultiExcerpt to Blueprint App
 **v4.208.0** - Check All Embeds Feature: Comprehensive Embed verification system with real-time progress tracking (visual progress bar, ETA calculation, page-by-page status updates), CSV export of all Embed instances with full metadata (page URLs, variable values, toggle states, rendered content), automatic cleanup of orphaned Embed entries, broken reference detection, and staleness reporting
 **v4.300.0** - Comprehensive Admin UI: Added advanced search & filtering, excerpt usage reporting with variable/toggle display, bulk operations (mass category updates, push to all/specific pages), orphaned Source/Embed detection with active checking and cleanup, category management UI (add/edit/delete/reorder), heading anchor navigation, usage deduplication, and timestamp tracking
 **v4.203.0** - Added staleness detection and diff view: visual notifications when Source is updated, side-by-side comparison of cached vs latest content with all toggle tags visible

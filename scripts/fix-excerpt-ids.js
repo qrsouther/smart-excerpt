@@ -110,8 +110,8 @@ function updateExcerptIds(storageContent) {
     const nameMatch = macroMatch.match(/<ac:adf-parameter key="excerpt-name">([^<]+)<\/ac:adf-parameter>/);
     const excerptName = nameMatch ? nameMatch[1] : 'Unknown';
 
-    // Skip SmartExcerpt0 (the template) - keep its ID
-    if (excerptName === 'SmartExcerpt0') {
+    // Skip Blueprint App0 (the template) - keep its ID
+    if (excerptName === 'Blueprint App0') {
       return macroMatch;
     }
 

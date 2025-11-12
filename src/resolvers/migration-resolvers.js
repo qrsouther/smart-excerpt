@@ -4,7 +4,7 @@
  * ⚠️ ONE-TIME USE ONLY - READY FOR DELETION AFTER PRODUCTION MIGRATION ⚠️
  *
  * This module contains all one-time migration operations for converting from
- * MultiExcerpt to SmartExcerpt. These functions will be used ONCE during the
+ * MultiExcerpt to Blueprint App. These functions will be used ONCE during the
  * initial production setup, then can be safely deleted.
  *
  * DELETION CHECKLIST (after production migration complete):
@@ -18,12 +18,12 @@
  * Extracted during Phase 4 of index.js modularization.
  *
  * Functions in this file (all one-time use):
- * - importFromMultiExcerpt: Create SmartExcerpt from MultiExcerpt data
+ * - importFromMultiExcerpt: Create Blueprint App from MultiExcerpt data
  * - trackMigration: Manually track migration status
  * - scanMultiExcerptIncludes: Scan pages for old MultiExcerpt include macros
  * - bulkImportSources: Import multiple sources from JSON export
  * - createSourceMacrosOnPage: Create Source macros on a destination page
- * - convertMultiExcerptsOnPage: Convert MultiExcerpt macros to SmartExcerpt
+ * - convertMultiExcerptsOnPage: Convert MultiExcerpt macros to Blueprint App
  * - bulkInitializeAllExcerpts: Initialize all 147 excerpts with hardcoded mappings
  */
 
@@ -34,7 +34,7 @@ import { updateExcerptIndex } from '../utils/storage-utils.js';
 import { storageToPlainText, cleanMultiExcerptMacros } from '../utils/migration-utils.js';
 
 /**
- * Import a MultiExcerpt as a SmartExcerpt
+ * Import a MultiExcerpt as a Blueprint App
  */
 export async function importFromMultiExcerpt(req) {
   try {
@@ -535,7 +535,7 @@ export async function createSourceMacrosOnPage(req) {
           },
           version: {
             number: pageVersion + 1,
-            message: `Added ${createdMacros.length} SmartExcerpt Source macros`
+            message: `Added ${createdMacros.length} Blueprint App Source macros`
           }
         })
       }
@@ -579,7 +579,7 @@ export async function createSourceMacrosOnPage(req) {
 }
 
 /**
- * Convert MultiExcerpt macros to SmartExcerpt macros on a page
+ * Convert MultiExcerpt macros to Blueprint App macros on a page
  */
 export async function convertMultiExcerptsOnPage(req) {
   try {
@@ -825,7 +825,7 @@ export async function convertMultiExcerptsOnPage(req) {
           },
           version: {
             number: pageVersion + 1,
-            message: `Converted ${converted.length} MultiExcerpt macros to SmartExcerpt`
+            message: `Converted ${converted.length} MultiExcerpt macros to Blueprint App`
           }
         })
       }
@@ -938,8 +938,8 @@ export async function bulkInitializeAllExcerpts(req) {
       console.warn(`⚠️ No content found for ${excerptName}`);
     }
 
-    // Skip the template macro (Test0 or SmartExcerpt0)
-    if (excerptId && excerptName && excerptName !== 'Test0' && excerptName !== 'SmartExcerpt0') {
+    // Skip the template macro (Test0 or Blueprint App0)
+    if (excerptId && excerptName && excerptName !== 'Test0' && excerptName !== 'Blueprint App0') {
       mappings.push({
         uuid: excerptId,
         name: excerptName,
@@ -2543,7 +2543,7 @@ export async function migrateStep3FixExcerptIds(req) {
       const excerptName = nameMatch ? nameMatch[1] : 'Unknown';
 
       // Skip template macros
-      if (excerptName === 'SmartExcerpt0' || excerptName === 'Test0') {
+      if (excerptName === 'Blueprint App0' || excerptName === 'Test0') {
         return macroMatch;
       }
 

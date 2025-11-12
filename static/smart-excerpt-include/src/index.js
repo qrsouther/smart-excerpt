@@ -6,7 +6,7 @@ let variableValues = {};
 
 // Initialize
 function initializeApp() {
-    console.log('Initializing SmartExcerpt Include');
+    console.log('Initializing Blueprint App Include');
 
     // Request initial resize
     requestResize('100%');

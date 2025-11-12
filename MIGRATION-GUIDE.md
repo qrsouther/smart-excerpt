@@ -447,7 +447,7 @@ Blueprint Standard Source macros store configuration in Forge storage. The migra
 ## Version History
 
 - **v7.15.0** (2025-11-09) - Updated for Blueprint Standard macros
-- **v4.300.1** (2024) - Original SmartExcerpt migration
+- **v4.300.1** (2024) - Original Blueprint App migration
 - Scripts updated to use `blueprint-standard-source` instead of `smart-excerpt-source`
 - Page ID updated from `80150529` to `99909654`
 

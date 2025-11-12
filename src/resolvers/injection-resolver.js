@@ -141,8 +141,8 @@ export async function injectIncludeContent(req) {
     console.log(`[INJECT] Total structured macros in page: ${allStructuredMacros.length}`);
 
     // Look for any smart-excerpt macros (Include OR Source)
-    const smartExcerptMacros = currentBody.match(/<ac:structured-macro[^>]*ac:name="smart-excerpt-[^"]*"/g) || [];
-    console.log(`[INJECT] SmartExcerpt macros found:`, smartExcerptMacros);
+    const blueprintAppMacros = currentBody.match(/<ac:structured-macro[^>]*ac:name="smart-excerpt-[^"]*"/g) || [];
+    console.log(`[INJECT] Blueprint App macros found:`, blueprintAppMacros);
 
     // Step 2: Check if page uses new ADF format or old storage format
     const isAdfFormat = currentBody.includes('<ac:adf-extension>');
@@ -234,8 +234,8 @@ export async function injectIncludeContent(req) {
 
     // Create injected content with simple markers
     // Use a unique marker ID based on localId so each macro instance has its own injection
-    const markerStart = `<!-- SMARTEXCERPT-START-${localId} -->`;
-    const markerEnd = `<!-- SMARTEXCERPT-END-${localId} -->`;
+    const markerStart = `<!-- BLUEPRINT-APP-START-${localId} -->`;
+    const markerEnd = `<!-- BLUEPRINT-APP-END-${localId} -->`;
     const injectedContent = `${markerStart}\n${renderedContent}\n${markerEnd}`;
 
     console.log(`[INJECT] Creating injection for localId: ${localId}`);
@@ -248,7 +248,7 @@ export async function injectIncludeContent(req) {
     // CRITICAL: Search for the marker in what Confluence actually has stored, not what we think we saved
     // Confluence might encode the comment, so look for the pattern flexibly
     const markerPattern = new RegExp(
-      `<!--\\s*SMARTEXCERPT-START-${escapeRegex(localId)}\\s*-->[\\s\\S]*?<!--\\s*SMARTEXCERPT-END-${escapeRegex(localId)}\\s*-->`,
+      `<!--\\s*BLUEPRINT-APP-START-${escapeRegex(localId)}\\s*-->[\\s\\S]*?<!--\\s*BLUEPRINT-APP-END-${escapeRegex(localId)}\\s*-->`,
       'g'
     );
 
@@ -309,7 +309,7 @@ export async function injectIncludeContent(req) {
           },
           version: {
             number: currentVersion + 1,
-            message: `SmartExcerpt: Injected "${excerpt.name}"`
+            message: `Blueprint App: Injected "${excerpt.name}"`
           }
         })
       }
@@ -343,14 +343,14 @@ export async function injectIncludeContent(req) {
       const savedBody = verifyData.body.storage.value;
 
       // Look for our injection in the saved content
-      const injectionIdPattern = new RegExp(`smartexcerpt-injection-${localId}`, 'i');
+      const injectionIdPattern = new RegExp(`blueprint-app-injection-${localId}`, 'i');
       const hasInjectionId = injectionIdPattern.test(savedBody);
 
       console.log(`[INJECT] Injection ID present in saved content: ${hasInjectionId}`);
 
       // Find and log what's around our injection ID (if it exists)
       if (hasInjectionId) {
-        const match = savedBody.match(new RegExp(`.{0,200}smartexcerpt-injection-${localId}.{0,200}`, 'i'));
+        const match = savedBody.match(new RegExp(`.{0,200}blueprint-app-injection-${localId}.{0,200}`, 'i'));
         if (match) {
           console.log(`[INJECT] Content around injection ID (±200 chars):`, match[0]);
         }

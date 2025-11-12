@@ -102,7 +102,7 @@ export async function injectContentPOC(req) {
     // Step 3: Create injected content wrapper
     // Use an Expand macro as a container to make it visible and identifiable
     const injectedContent = `
-<!-- INJECTED BY SMARTEXCERPT POC -->
+<!-- INJECTED BY BLUEPRINT APP POC -->
 <ac:structured-macro ac:name="expand" ac:schema-version="1" ac:macro-id="injected-${macroId}">
   <ac:parameter ac:name="title">📄 Injected Content (POC)</ac:parameter>
   <ac:rich-text-body>
@@ -117,7 +117,7 @@ export async function injectContentPOC(req) {
 
     // Step 4: Check if injected content already exists (update case)
     const injectedPattern = new RegExp(
-      `<!-- INJECTED BY SMARTEXCERPT POC -->.*?<!-- END INJECTED CONTENT -->`,
+      `<!-- INJECTED BY BLUEPRINT APP POC -->.*?<!-- END INJECTED CONTENT -->`,
       'gs'
     );
 
@@ -158,7 +158,7 @@ export async function injectContentPOC(req) {
           },
           version: {
             number: currentVersion + 1,
-            message: 'SmartExcerpt POC: Content injection via native rendering'
+            message: 'Blueprint App POC: Content injection via native rendering'
           }
         })
       }

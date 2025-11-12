@@ -1,6 +1,6 @@
-# SmartExcerpt Performance Testing Guide
+# Blueprint App Performance Testing Guide
 
-You now have **three versions** of SmartExcerpt to compare:
+You now have **three versions** of Blueprint App to compare:
 
 ## 1. Original (smart-excerpt)
 **Location:** `/Users/quinnsouther/Documents/Code projects/smart-excerpt`
@@ -31,7 +31,7 @@ You now have **three versions** of SmartExcerpt to compare:
 ```bash
 cd "/Users/quinnsouther/Documents/Code projects/smart-excerpt-option1"
 forge register
-# Name it: SmartExcerpts-Option1
+# Name it: Blueprint Apps-Option1
 forge deploy
 forge install
 ```
@@ -57,7 +57,7 @@ forge install
 ```bash
 cd "/Users/quinnsouther/Documents/Code projects/smart-excerpt-option4"
 forge register
-# Name it: SmartExcerpts-Option4
+# Name it: Blueprint Apps-Option4
 forge deploy
 forge install
 ```

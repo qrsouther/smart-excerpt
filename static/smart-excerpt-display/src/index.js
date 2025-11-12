@@ -4,7 +4,7 @@ let currentExcerptId = null;
 
 // Initialize
 function initializeApp() {
-    console.log('Initializing SmartExcerpt display');
+    console.log('Initializing Blueprint App display');
 
     // Request initial resize
     requestResize('100%');
@@ -77,7 +77,7 @@ function initializeApp() {
                 document.getElementById('headerTitle').textContent = excerptName;
                 document.getElementById('headerExcerptId').textContent = `ID: ${result.excerptId}`;
 
-                showStatus('success', `SmartExcerpt "${excerptName}" saved successfully! (ID: ${result.excerptId})`);
+                showStatus('success', `Blueprint App "${excerptName}" saved successfully! (ID: ${result.excerptId})`);
 
                 // Request resize after showing success message
                 setTimeout(() => requestResize('100%'), 100);
@@ -89,7 +89,7 @@ function initializeApp() {
             showStatus('error', 'Failed to save excerpt: ' + (error.message || JSON.stringify(error)));
         } finally {
             saveBtn.disabled = false;
-            saveBtn.textContent = 'Save SmartExcerpt';
+            saveBtn.textContent = 'Save Blueprint App';
         }
     });
 }

@@ -528,7 +528,7 @@ const App = () => {
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
             link.setAttribute('href', url);
-            link.setAttribute('download', `smartexcerpt-includes-report-${new Date().toISOString().split('T')[0]}.csv`);
+            link.setAttribute('download', `blueprint-app-includes-report-${new Date().toISOString().split('T')[0]}.csv`);
             link.style.visibility = 'hidden';
             document.body.appendChild(link);
             link.click();
@@ -732,7 +732,7 @@ const App = () => {
       return;
     }
 
-    if (!confirm(`Import ${importJsonData.sourceCount} MultiExcerpt Sources into SmartExcerpt?`)) {
+    if (!confirm(`Import ${importJsonData.sourceCount} MultiExcerpt Sources into Blueprint App?`)) {
       return;
     }
 
@@ -804,7 +804,7 @@ const App = () => {
     }
 
     const confirmed = confirm(
-      `Create ${migrated.length} SmartExcerpt Source macros on the "Migrated Content" page?\n\n` +
+      `Create ${migrated.length} Blueprint App Source macros on the "Migrated Content" page?\n\n` +
       `This will:\n` +
       `• Add each Source as a bodied macro with heading\n` +
       `• Organize them alphabetically\n` +
@@ -860,7 +860,7 @@ const App = () => {
     }
   };
 
-  // Handle converting MultiExcerpt macros to SmartExcerpt on page
+  // Handle converting MultiExcerpt macros to Blueprint App on page
   const [isConverting, setIsConverting] = useState(false);
   const [conversionResult, setConversionResult] = useState(null);
 
@@ -868,11 +868,11 @@ const App = () => {
     const pageId = '80150529'; // Migrated Content page
 
     const confirmed = confirm(
-      `Convert all MultiExcerpt macros on the "Migrated Content" page to SmartExcerpt Source macros?\n\n` +
+      `Convert all MultiExcerpt macros on the "Migrated Content" page to Blueprint App Source macros?\n\n` +
       `This will:\n` +
       `• Find all MultiExcerpt macros on the page\n` +
       `• Extract their content (preserving all formatting)\n` +
-      `• Replace them with SmartExcerpt Source macros\n` +
+      `• Replace them with Blueprint App Source macros\n` +
       `• Link to existing storage entries by name\n\n` +
       `Continue?`
     );
@@ -899,7 +899,7 @@ const App = () => {
         }
         message += `• Page ID: ${result.summary.pageId}\n`;
         message += `• Page version: ${result.summary.pageVersion}\n\n`;
-        message += `View the page to see the converted SmartExcerpt macros.`;
+        message += `View the page to see the converted Blueprint App macros.`;
 
         if (result.skipped && result.skipped.length > 0) {
           message += `\n\nSkipped:\n`;
@@ -964,7 +964,7 @@ const App = () => {
   if (isLoading) {
     return (
       <Fragment>
-        <Text><Strong>SmartExcerpt Admin</Strong></Text>
+        <Text><Strong>Blueprint App Admin</Strong></Text>
         <Text>Loading...</Text>
       </Fragment>
     );
@@ -973,7 +973,7 @@ const App = () => {
   if (error) {
     return (
       <Fragment>
-        <Text><Strong>SmartExcerpt Admin</Strong></Text>
+        <Text><Strong>Blueprint App Admin</Strong></Text>
         <Text>Error: {error}</Text>
       </Fragment>
     );
@@ -1185,7 +1185,7 @@ const App = () => {
 
                 <Text>{' '}</Text>
                 <Text><Strong>Step 3: Convert MultiExcerpt Macros (Alternative)</Strong></Text>
-                <Text>If you've pasted MultiExcerpt macros onto the page, convert them to SmartExcerpt macros.</Text>
+                <Text>If you've pasted MultiExcerpt macros onto the page, convert them to Blueprint App macros.</Text>
 
                 <Inline space="space.200" alignBlock="center">
                   <Button
@@ -1310,8 +1310,8 @@ const App = () => {
             <Text>No excerpts match your filters</Text>
           ) : !excerpts || excerpts.length === 0 ? (
             <Fragment>
-              <Text>No SmartExcerpt Sources found.</Text>
-              <Text>Create a SmartExcerpt Source macro on a page to get started.</Text>
+              <Text>No Blueprint App Sources found.</Text>
+              <Text>Create a Blueprint App Source macro on a page to get started.</Text>
             </Fragment>
           ) : (
             <Stack space="space.100">
@@ -1524,7 +1524,7 @@ const App = () => {
                   <SectionMessage appearance="information">
                     <Stack space="space.100">
                       <Text>
-                        The <Strong>{selectedExcerptForDetails.name}</Strong> excerpt is referenced using the SmartExcerpt Include macro on <Strong>{uniqueUsage.length}</Strong> {uniqueUsage.length === 1 ? 'page' : 'pages'}, with the following variables and/or toggles set within those pages.
+                        The <Strong>{selectedExcerptForDetails.name}</Strong> excerpt is referenced using the Blueprint App Include macro on <Strong>{uniqueUsage.length}</Strong> {uniqueUsage.length === 1 ? 'page' : 'pages'}, with the following variables and/or toggles set within those pages.
                       </Text>
                       <Text>
                         The Status column shows whether each Include instance is up to date with the latest Source content. Use <Strong>Push Update</Strong> to update specific pages, or <Strong>Push to All Pages</Strong> to update all instances at once.
@@ -2277,7 +2277,7 @@ const App = () => {
                   <SectionMessage appearance="information">
                     <Stack space="space.100">
                       <Text>
-                        The following preview is pulled from the SmartExcerpt Source macro's body content. The variables (in double curly braces) are filled out by users via the SmartExcerpt Include macros.
+                        The following preview is pulled from the Blueprint App Source macro's body content. The variables (in double curly braces) are filled out by users via the Blueprint App Include macros.
                       </Text>
                       <Text>
                         The toggle tags allow users to opt into certain settings or options within each excerpted solution, and by enabling a toggle all content that exists in the space between the opening toggle tag and closing toggle tag is revealed within the Include macro. Variables can be defined within toggles as well; as a result, generally a variable that is utilized ONLY within a toggle in a given Source macro will be optional rather than required.

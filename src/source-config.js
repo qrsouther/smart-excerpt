@@ -38,7 +38,7 @@ const App = () => {
   };
 
   return (
-    <Form onSubmit={onSubmit} submitButtonText="Save SmartExcerpt">
+    <Form onSubmit={onSubmit} submitButtonText="Save Blueprint App">
       <TextField
         name="excerptName"
         label="Excerpt Name"
