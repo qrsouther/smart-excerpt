@@ -117,6 +117,22 @@ export function EmergencyRecoveryModal({ isOpen, onClose, initialTab = 'deleted-
     }
   }, [isOpen]);
 
+  // Update active tab when modal opens with new initialTab
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      console.log('[EmergencyRecovery] Setting active tab to:', initialTab);
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
+
+  // Update version localId when UUID is provided
+  useEffect(() => {
+    if (isOpen && autoLoadEmbedUuid) {
+      console.log('[EmergencyRecovery] Setting version localId to:', autoLoadEmbedUuid);
+      setVersionLocalId(autoLoadEmbedUuid);
+    }
+  }, [isOpen, autoLoadEmbedUuid]);
+
   // Auto-load version history when UUID is provided
   useEffect(() => {
     if (isOpen && autoLoadEmbedUuid && initialTab === 'version-history') {
