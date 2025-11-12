@@ -1,8 +1,8 @@
 modules:
   macro:
     - key: blueprint-standard-source
-      title: Blueprint Standard - Source
-      description: Create a reusable Blueprint Standard that can be embedded on other pages (v7.21.0)
+      title: Blueprint App - Source
+      description: Create a reusable Source excerpt that can be embedded on other pages (v7.22.0)
       layout: bodied
       resource: source-display-resource
       render: native
@@ -14,8 +14,8 @@ modules:
         viewportSize: max
 
     - key: blueprint-standard-embed
-      title: Blueprint Standard - Embed
-      description: Embed a Blueprint Standard from another page (v7.21.0)
+      title: Blueprint App - Embed
+      description: Embed a Source excerpt from another page (v7.22.0)
       resource: embed-display
       render: native
       resolver:
@@ -23,7 +23,7 @@ modules:
 
   confluence:globalSettings:
     - key: blueprint-standards-admin
-      title: Blueprint Standards Admin
+      title: Blueprint App Admin
       resource: admin-page
       render: native
       resolver:

@@ -1,7 +1,7 @@
 {
-  "name": "blueprint-standards-app",
-  "version": "7.21.0",
-  "description": "Blueprint Standards App - A high-performance content reuse system for Confluence",
+  "name": "blueprint-app",
+  "version": "7.22.0",
+  "description": "Blueprint App - A high-performance content reuse system for Confluence",
   "main": "src/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -11,7 +11,7 @@
   "keywords": [
     "confluence",
     "macro",
-    "blueprint-standards",
+    "blueprint-app",
     "content-reuse",
     "documentation"
   ],

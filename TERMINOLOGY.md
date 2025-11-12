@@ -14,7 +14,7 @@
 | **Blueprint Standard** | Excerpt | A reusable content block with variables/toggles |
 | **Embed** | Include | An instance that displays a Blueprint Standard on a page |
 | **Source** | Source | The macro where Blueprint Standards are created/edited |
-| **Blueprint Standards Admin** | SmartExcerpt Admin | Admin interface for managing Blueprint Standards |
+| **Blueprint App Admin** | SmartExcerpt Admin | Admin interface for managing Blueprint Standards |
 
 ---
 
