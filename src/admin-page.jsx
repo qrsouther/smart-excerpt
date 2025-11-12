@@ -1061,28 +1061,6 @@ const App = () => {
 
   return (
     <Fragment>
-      {/* Page Header with Icon Tile */}
-      <Box xcss={xcss({ marginBlockEnd: 'space.100' })}>
-        <Inline space="space.100" alignBlock="center">
-          {/* Icon Tile - Large size */}
-          <Box
-            xcss={xcss({
-              width: '48px',
-              height: '48px',
-              borderRadius: 'border.radius.200',
-              backgroundColor: 'color.background.brand.bold',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center'
-            })}
-          >
-            <Icon glyph="page" size="large" label="Blueprint Standards Admin" />
-          </Box>
-          {/* Page Title */}
-          <Text><Strong>Blueprint Standards Admin</Strong></Text>
-        </Inline>
-      </Box>
-
       {/* Top Toolbar - Action Buttons */}
       <Box xcss={xcss({ marginBlockEnd: 'space.100' })}>
         <AdminToolbar
@@ -1472,9 +1450,9 @@ const App = () => {
                             <Inline space="space.100" alignBlock="center">
                               <Tooltip content={`Copy UUID: ${ref.localId}`}>
                                 <Button
-                                  appearance="subtle"
+                                  appearance="default"
                                   spacing="compact"
-                                  iconBefore={() => <Icon glyph="copy" label="Copy UUID" />}
+                                  iconBefore={() => <Icon glyph="copy" label="Copy UUID" color="color.icon" />}
                                   onClick={() => {
                                     navigator.clipboard.writeText(ref.localId).then(() => {
                                       // Success feedback
@@ -1872,9 +1850,9 @@ const App = () => {
                                         <Inline space="space.100" alignBlock="center">
                                           <Tooltip content={`Copy UUID: ${ref.localId}`}>
                                             <Button
-                                              appearance="subtle"
+                                              appearance="default"
                                               spacing="compact"
-                                              iconBefore={() => <Icon glyph="copy" label="Copy UUID" />}
+                                              iconBefore={() => <Icon glyph="copy" label="Copy UUID" color="color.icon" />}
                                               onClick={() => {
                                                 navigator.clipboard.writeText(ref.localId).then(() => {
                                                   // Success feedback
