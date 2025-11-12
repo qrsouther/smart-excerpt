@@ -215,11 +215,14 @@ export function validateMacroVarsData(macroVars) {
     } else {
       for (let i = 0; i < macroVars.customInsertions.length; i++) {
         const insertion = macroVars.customInsertions[i];
+        console.log(`[VALIDATOR] customInsertion[${i}]:`, JSON.stringify(insertion));
         if (insertion.index === undefined || typeof insertion.index !== 'number') {
-          errors.push(`Custom insertion at index ${i} missing or invalid index`);
+          console.log(`[VALIDATOR] FAIL: index=${insertion.index}, type=${typeof insertion.index}`);
+          errors.push(`Custom insertion at index ${i} missing or invalid index (has: ${JSON.stringify(insertion.index)})`);
         }
         if (!insertion.text || typeof insertion.text !== 'string') {
-          errors.push(`Custom insertion at index ${i} missing or invalid text`);
+          console.log(`[VALIDATOR] FAIL: text=${insertion.text}, type=${typeof insertion.text}`);
+          errors.push(`Custom insertion at index ${i} missing or invalid text (has: ${JSON.stringify(insertion.text)})`);
         }
       }
     }
@@ -232,11 +235,14 @@ export function validateMacroVarsData(macroVars) {
     } else {
       for (let i = 0; i < macroVars.internalNotes.length; i++) {
         const note = macroVars.internalNotes[i];
+        console.log(`[VALIDATOR] internalNote[${i}]:`, JSON.stringify(note));
         if (note.index === undefined || typeof note.index !== 'number') {
-          errors.push(`Internal note at index ${i} missing or invalid index`);
+          console.log(`[VALIDATOR] FAIL: index=${note.index}, type=${typeof note.index}`);
+          errors.push(`Internal note at index ${i} missing or invalid index (has: ${JSON.stringify(note.index)})`);
         }
         if (!note.text || typeof note.text !== 'string') {
-          errors.push(`Internal note at index ${i} missing or invalid text`);
+          console.log(`[VALIDATOR] FAIL: text=${note.text}, type=${typeof note.text}`);
+          errors.push(`Internal note at index ${i} missing or invalid text (has: ${JSON.stringify(note.text)})`);
         }
       }
     }
