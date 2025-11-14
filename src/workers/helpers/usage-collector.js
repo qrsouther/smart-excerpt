@@ -1,0 +1,112 @@
+/**
+ * Usage Collector Module
+ *
+ * Handles collection and aggregation of Embed usage data.
+ * Collects all Embed instances from usage tracking keys for verification.
+ */
+
+import { storage, startsWith } from '@forge/api';
+
+/**
+ * Collect all Embed instances from ALL usage keys
+ * This ensures we clean up orphaned embeds even if their Source was deleted
+ *
+ * @param {Array} excerptIds - Array of existing excerpt IDs
+ * @returns {Promise<{
+ *   allIncludes: Array,
+ *   uniqueIncludes: Array,
+ *   orphanedUsageKeys: Array
+ * }>}
+ */
+export async function collectAllEmbedInstances(excerptIds) {
+  const allUsageQuery = await storage.query()
+    .where('key', startsWith('usage:'))
+    .getMany();
+
+  console.log(`[WORKER] Found ${allUsageQuery.results.length} usage key(s) to check`);
+
+  const allIncludes = [];
+  const orphanedUsageKeys = []; // Track usage keys for deleted Sources
+
+  for (const entry of allUsageQuery.results) {
+    const excerptId = entry.key.replace('usage:', '');
+    const usageData = entry.value;
+    const references = usageData ? usageData.references || [] : [];
+
+    // Check if this Source still exists
+    const sourceExists = excerptIds.includes(excerptId);
+
+    if (!sourceExists) {
+      console.log(`[WORKER] ⚠️ Found orphaned usage key for deleted Source: ${excerptId} (${references.length} references)`);
+      orphanedUsageKeys.push({ excerptId, key: entry.key, references });
+    }
+
+    // Collect all references (whether Source exists or not)
+    allIncludes.push(...references);
+  }
+
+  // Deduplicate by localId (in case an Include references multiple excerpts)
+  const uniqueIncludes = Array.from(
+    new Map(allIncludes.map(inc => [inc.localId, inc])).values()
+  );
+
+  return {
+    allIncludes,
+    uniqueIncludes,
+    orphanedUsageKeys
+  };
+}
+
+/**
+ * Check if an Embed is stale (Source updated after last sync)
+ * @param {string} lastSynced - ISO timestamp of last sync
+ * @param {string} excerptUpdated - ISO timestamp of excerpt update
+ * @returns {boolean} True if Embed is stale
+ */
+export function checkStalenessstatus(lastSynced, excerptUpdated) {
+  if (!lastSynced || !excerptUpdated) {
+    return false;
+  }
+  return new Date(excerptUpdated) > new Date(lastSynced);
+}
+
+/**
+ * Build active Embed record with all metadata
+ * @param {Object} include - Include reference
+ * @param {Object} pageData - Confluence page data
+ * @param {Object} excerpt - Source excerpt data
+ * @param {Object} macroVars - Embed configuration data
+ * @param {Object} cacheData - Cached content data
+ * @returns {Object} Active include record
+ */
+export function buildActiveIncludeRecord(include, pageData, excerpt, macroVars, cacheData) {
+  const lastSynced = macroVars?.lastSynced;
+  const excerptUpdated = excerpt.updatedAt;
+  const isStale = checkStalenessstatus(lastSynced, excerptUpdated);
+
+  // Construct page URL for CSV export
+  const pageUrl = pageData._links?.webui ? `/wiki${pageData._links.webui}` : null;
+
+  return {
+    localId: include.localId,
+    pageId: include.pageId,
+    pageTitle: include.pageTitle || pageData.title,
+    pageUrl: pageUrl,
+    spaceKey: include.spaceKey,
+    headingAnchor: include.headingAnchor,
+    excerptId: include.excerptId,
+    excerptName: excerpt.name,
+    excerptCategory: excerpt.category,
+    status: isStale ? 'Stale (update available)' : 'Active',
+    lastSynced,
+    excerptUpdated,
+    excerptLastModified: excerpt.updatedAt,
+    isStale,
+    variables: excerpt.variables || [],
+    toggles: excerpt.toggles || [],
+    variableValues: macroVars?.variableValues || {},
+    toggleStates: macroVars?.toggleStates || {},
+    customInsertions: macroVars?.customInsertions || [],
+    renderedContent: cacheData?.content || null
+  };
+}

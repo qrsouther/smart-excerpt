@@ -1,4 +1,4 @@
-import React, { Fragment, useState, useEffect } from 'react';
+import React, { Fragment, useState, useEffect, useRef } from 'react';
 import ForgeReconciler, {
   Text,
   Strong,
@@ -56,6 +56,7 @@ import {
   escapeCSV,
   generateIncludesCSV,
   generateMultiExcerptCSV,
+  generateSourceUsageCSV,
   filterExcerpts,
   sortExcerpts,
   calculateStalenessStatus
@@ -71,6 +72,7 @@ import { ExcerptPreviewModal } from './components/admin/ExcerptPreviewModal';
 import { CategoryManager } from './components/admin/CategoryManager';
 import { CheckAllProgressBar } from './components/admin/CheckAllProgressBar';
 import { AdminToolbar } from './components/admin/AdminToolbar';
+import { ScrollFadeIndicator } from './components/admin/ScrollFadeIndicator';
 import { OrphanedItemsSection } from './components/admin/OrphanedItemsSection';
 import { EmergencyRecoveryModal } from './components/admin/EmergencyRecoveryModal';
 import { VersionHistoryModal } from './components/admin/VersionHistoryModal';
@@ -307,6 +309,49 @@ const App = () => {
 
     fetchStorageUsage();
   }, []); // Only run once on mount
+
+  // Force scrollbars to always be visible (override OS behavior)
+  useEffect(() => {
+    // Create a style element to force scrollbars to always be visible
+    const styleId = 'force-visible-scrollbars';
+    let styleElement = document.getElementById(styleId);
+    
+    if (!styleElement) {
+      styleElement = document.createElement('style');
+      styleElement.id = styleId;
+      styleElement.textContent = `
+        /* Force horizontal scrollbars to always be visible on webkit browsers */
+        [data-scroll-container] {
+          overflow-x: scroll !important;
+          scrollbar-gutter: stable; /* Reserve space for scrollbar */
+        }
+        /* Style horizontal scrollbar - height property controls horizontal scrollbar size */
+        [data-scroll-container]::-webkit-scrollbar {
+          height: 12px; /* Controls horizontal scrollbar height */
+          width: 12px; /* Controls vertical scrollbar width */
+        }
+        [data-scroll-container]::-webkit-scrollbar-thumb {
+          background-color: rgba(0, 0, 0, 0.3);
+          border-radius: 6px;
+        }
+        [data-scroll-container]::-webkit-scrollbar-thumb:hover {
+          background-color: rgba(0, 0, 0, 0.5);
+        }
+        [data-scroll-container]::-webkit-scrollbar-track {
+          background-color: rgba(0, 0, 0, 0.1);
+        }
+      `;
+      document.head.appendChild(styleElement);
+    }
+
+    return () => {
+      // Cleanup: remove style element when component unmounts
+      const element = document.getElementById(styleId);
+      if (element) {
+        element.remove();
+      }
+    };
+  }, []);
 
   // Category management handlers (using React Query mutation)
   const handleDeleteCategory = (categoryName) => {
@@ -1386,6 +1431,43 @@ const App = () => {
                           View Source
                         </Button>
                         <Button
+                          appearance="default"
+                          onClick={() => {
+                            try {
+                              // Use the full usage data (all instances) for CSV export
+                              const usage = selectedExcerptUsage || [];
+                              if (!usage || usage.length === 0) {
+                                alert('No usage data to export');
+                                return;
+                              }
+
+                              const csv = generateSourceUsageCSV(usage, selectedExcerptForDetails);
+                              if (!csv) {
+                                alert('No data to export');
+                                return;
+                              }
+
+                              const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                              const link = document.createElement('a');
+                              const url = URL.createObjectURL(blob);
+                              link.setAttribute('href', url);
+                              const excerptName = (selectedExcerptForDetails.name || 'source').replace(/[^a-z0-9]/gi, '-').toLowerCase();
+                              link.setAttribute('download', `blueprint-standard-${excerptName}-usage-${new Date().toISOString().split('T')[0]}.csv`);
+                              link.style.visibility = 'hidden';
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                              URL.revokeObjectURL(url);
+                            } catch (err) {
+                              console.error('Error exporting CSV:', err);
+                              alert('Error exporting CSV: ' + err.message);
+                            }
+                          }}
+                          iconBefore={() => <Icon glyph="download" label="Export" />}
+                        >
+                          Export to CSV
+                        </Button>
+                        <Button
                           appearance="danger"
                           onClick={async () => {
                             const excerptName = selectedExcerptForDetails.name;
@@ -1472,10 +1554,19 @@ const App = () => {
                   {uniqueUsage.length === 0 ? (
                     <Text><Em>This Source excerpt is not used on any pages yet</Em></Text>
                   ) : (
-                    <Box xcss={tableScrollContainerStyle}>
-                      <DynamicTable
-                        head={{ cells: headerCells }}
-                        rows={uniqueUsage.map((ref) => {
+                    <Box
+                      xcss={tableScrollContainerStyle}
+                      data-scroll-container
+                      style={{
+                        // Force scrollbars to always be visible (override OS behavior)
+                        scrollbarWidth: 'thin', // Firefox - always show thin scrollbar
+                      }}
+                    >
+                      <ScrollFadeIndicator />
+                      <Box xcss={xcss({ width: '100%' })}>
+                        <DynamicTable
+                          head={{ cells: headerCells }}
+                          rows={uniqueUsage.map((ref) => {
                         // Calculate status first (needed for ordering)
                         const excerptLastModified = new Date(selectedExcerptForDetails.updatedAt || 0);
                         const includeLastSynced = ref.lastSynced ? new Date(ref.lastSynced) : new Date(0);
@@ -1626,6 +1717,7 @@ const App = () => {
                         };
                       })}
                       />
+                      </Box>
                     </Box>
                   )}
                 </Stack>
@@ -1889,7 +1981,14 @@ const App = () => {
                           <Stack space="space.200">
                             <Text>Included in the following {usageCount} page(s)</Text>
                             {usageCount > 0 && (
-                              <Box xcss={tableScrollContainerStyle}>
+                              <Box 
+                                xcss={tableScrollContainerStyle}
+                                data-scroll-container
+                                style={{
+                                  // Force scrollbars to always be visible (override OS behavior)
+                                  scrollbarWidth: 'thin', // Firefox - always show thin scrollbar
+                                }}
+                              >
                                 <DynamicTable
                                   head={{
                                     cells: headerCells

@@ -6,6 +6,93 @@ This file tracks ongoing tasks, future enhancements, and technical debt for the 
 
 ## Current Sprint / Active Work
 
+### README Rewrite & Simplification
+**Status:** Not Started
+**Priority:** Medium (documentation quality)
+**Estimated Effort:** Medium (4-6 hours)
+
+**Problem:**
+The current README.md is bloated with irrelevant content, outdated information, and lacks clear structure. It needs a comprehensive section-by-section rewrite to be useful for new developers and users.
+
+**Current Issues:**
+- Contains obsolete information about old features/implementations
+- Lacks clear "Getting Started" section
+- Too much low-level technical detail that belongs in code comments
+- Missing high-level architecture overview
+- No clear user-facing feature documentation
+- Unclear separation between developer docs and user docs
+
+**Proposed Structure:**
+
+1. **Overview** (2-3 paragraphs)
+   - What is Blueprint App?
+   - Core use case and value proposition
+   - High-level architecture (Source → Embed model)
+
+2. **Features** (bullet list)
+   - Content reuse with variables and toggles
+   - Redlining/review workflow
+   - Version history and recovery
+   - Usage tracking and staleness detection
+   - Admin management interface
+
+3. **Installation** (Forge-specific)
+   - Prerequisites (Forge CLI, Atlassian account)
+   - Installation steps
+   - Configuration basics
+
+4. **User Guide** (high-level)
+   - Creating a Source
+   - Embedding content on pages
+   - Managing variables and toggles
+   - Using the Redlining Queue
+   - Admin operations
+
+5. **Developer Guide** (for contributors)
+   - Project structure overview
+   - Key architectural patterns
+   - Important files and their purposes
+   - Testing and deployment
+   - Link to TODO.md for detailed work items
+
+6. **Storage Schema** (simplified)
+   - Brief overview of storage keys
+   - Link to detailed schema documentation if needed
+
+7. **Troubleshooting** (common issues)
+   - FAQ section
+   - Common error messages and fixes
+   - Where to find logs
+
+8. **Contributing**
+   - How to report bugs
+   - How to submit PRs
+   - Code style guidelines
+
+**What to Remove:**
+- Detailed implementation notes (belongs in code comments)
+- Old migration instructions (if no longer relevant)
+- Excessive technical minutiae
+- Outdated feature descriptions
+- Redundant information that's better documented in code
+
+**Success Criteria:**
+- [ ] New developer can understand the app in <10 minutes of reading
+- [ ] Clear separation of user docs vs developer docs
+- [ ] All information is current and accurate
+- [ ] File reduced to <500 lines (from current ~800+)
+- [ ] Each section has a clear purpose
+- [ ] No outdated or obsolete information
+
+**Next Steps:**
+1. Audit current README.md - identify what to keep vs remove
+2. Draft new structure outline
+3. Rewrite section by section
+4. Review for clarity and accuracy
+5. Get feedback from fresh eyes
+
+---
+
 ### Data Safety & Versioning System (CRITICAL PRIORITY 🔴)
 **Status:** Approved - Phase 1 Ready to Start
 **Priority:** CRITICAL (prevents data loss)

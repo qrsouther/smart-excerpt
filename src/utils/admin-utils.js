@@ -137,6 +137,94 @@ export const generateIncludesCSV = (includesData) => {
 };
 
 /**
+ * Generate CSV export for a single Source's usage data
+ *
+ * Creates a CSV file with all embed instances for a specific Source.
+ * Similar to generateIncludesCSV but works with the usage data structure
+ * from the Usage details table.
+ *
+ * @param {Array} usageData - Array of usage reference objects from getExcerptUsage
+ * @param {Object} excerpt - The Source excerpt object (contains name, category, variables, toggles)
+ * @returns {string} CSV string ready for download
+ */
+export const generateSourceUsageCSV = (usageData, excerpt) => {
+  if (!usageData || usageData.length === 0) {
+    return '';
+  }
+
+  const excerptName = excerpt?.name || 'Unknown Source';
+  const excerptCategory = excerpt?.category || 'General';
+  const excerptLastModified = excerpt?.updatedAt || '';
+  const variables = Array.isArray(excerpt?.variables) ? excerpt.variables : [];
+  const toggles = Array.isArray(excerpt?.toggles) ? excerpt.toggles : [];
+
+  // Build page URL from pageId
+  const buildPageUrl = (pageId, headingAnchor) => {
+    let url = `/wiki/pages/viewpage.action?pageId=${pageId}`;
+    if (headingAnchor) {
+      url += `#${headingAnchor}`;
+    }
+    return url;
+  };
+
+  // Determine status (stale or up-to-date)
+  const getStatus = (ref) => {
+    const sourceDate = new Date(excerptLastModified || 0);
+    const embedDate = ref.lastSynced ? new Date(ref.lastSynced) : new Date(0);
+    return sourceDate > embedDate ? 'Stale' : 'Up-to-date';
+  };
+
+  // Build CSV header
+  const headers = [
+    'Page URL',
+    'Page Title',
+    'Heading Anchor',
+    'Standard Name',
+    'Standard Category',
+    'Status',
+    'Last Synced',
+    'Standard Last Modified',
+    ...variables.map(v => `Variable: ${v.name}`),
+    ...toggles.map(t => `Toggle: ${t.name}`),
+    'Embed UUID'
+  ];
+
+  // Build CSV rows
+  const rows = usageData.map(ref => {
+    const row = [
+      escapeCSV(buildPageUrl(ref.pageId, ref.headingAnchor)),
+      escapeCSV(ref.pageTitle || 'Unknown Page'),
+      escapeCSV(ref.headingAnchor || ''),
+      escapeCSV(excerptName),
+      escapeCSV(excerptCategory),
+      escapeCSV(getStatus(ref)),
+      escapeCSV(ref.lastSynced || ''),
+      escapeCSV(excerptLastModified)
+    ];
+
+    // Add variable values
+    variables.forEach(variable => {
+      const value = ref.variableValues?.[variable.name] || '';
+      row.push(escapeCSV(value));
+    });
+
+    // Add toggle states
+    toggles.forEach(toggle => {
+      const state = ref.toggleStates?.[toggle.name] || false;
+      row.push(escapeCSV(state ? 'Enabled' : 'Disabled'));
+    });
+
+    // Add Embed UUID
+    row.push(escapeCSV(ref.localId || ''));
+
+    return row.join(',');
+  });
+
+  // Combine header and rows
+  return [headers.join(','), ...rows].join('\n');
+};
+
+/**
  * Generate CSV export for MultiExcerpt migration data
  *
  * Creates a CSV file for legacy MultiExcerpt macro data to aid in migration.

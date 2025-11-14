@@ -45,17 +45,18 @@ export const fullWidthTableStyle = xcss({
 /**
  * Scrollable table container
  * Used for: usage details table that may have many variable/toggle columns
- * Adds horizontal scrollbar when table content overflows
+ * Always shows horizontal scrollbar (even when no overflow)
  * Constrained to parent width to prevent page-level horizontal scrolling
  */
 export const tableScrollContainerStyle = xcss({
   width: '100%',
   maxWidth: '100%',
   minWidth: 0, // Critical: Allow flex item to shrink below its content size
-  overflow: 'auto', // Allow scrolling when content overflows
+  overflowX: 'scroll', // Always show horizontal scrollbar
+  overflowY: 'auto', // Show vertical scrollbar only when needed
   boxSizing: 'border-box', // Include padding/borders in width calculation
   display: 'block', // Ensure block-level behavior for proper overflow handling
-  position: 'relative' // Establish positioning context for scrollbar
+  position: 'relative' // Establish positioning context for scrollbar and fade indicator
 });
 
 /**

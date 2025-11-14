@@ -1,0 +1,191 @@
+/**
+ * Orphan Detector Module
+ *
+ * Handles detection and cleanup of orphaned Embed configurations.
+ * Orphaned Embeds are those that no longer exist on their pages or reference deleted Sources.
+ *
+ * Cleanup Strategy:
+ * - Soft delete: Move data to `macro-vars-deleted:*` namespace for 90-day recovery window
+ * - Version snapshot: Create version before deletion for additional recovery
+ * - Usage tracking: Remove orphaned references from usage data
+ */
+
+import { storage } from '@forge/api';
+import { saveVersion } from '../../utils/version-manager.js';
+
+// SAFETY: Dry-run mode configuration
+// Default is true (preview mode) - must be explicitly set to false for cleanup
+const DEFAULT_DRY_RUN_MODE = true;
+
+/**
+ * Soft Delete: Move Embed configuration to deleted namespace
+ * Allows recovery for 90 days before automatic expiration
+ *
+ * @param {string} localId - Embed macro localId
+ * @param {string} reason - Reason for deletion (for audit trail)
+ * @param {Object} metadata - Additional metadata to store with deleted item
+ * @param {boolean} dryRun - If true, only log what would be deleted
+ */
+export async function softDeleteMacroVars(localId, reason, metadata = {}, dryRun = DEFAULT_DRY_RUN_MODE) {
+  const data = await storage.get(`macro-vars:${localId}`);
+
+  if (data) {
+    // Phase 3: Create version snapshot before soft delete (v7.17.0)
+    const versionResult = await saveVersion(
+      storage,
+      `macro-vars:${localId}`,
+      data,
+      {
+        changeType: 'DELETE',
+        changedBy: 'checkAllIncludes',
+        deletionReason: reason,
+        localId: localId
+      }
+    );
+    if (versionResult.success) {
+      console.log(`[SOFT-DELETE] ✅ Version snapshot created: ${versionResult.versionId}`);
+    } else {
+      console.warn(`[SOFT-DELETE] ⚠️  Version snapshot failed: ${versionResult.error}`);
+    }
+
+    // Move to deleted namespace with recovery metadata
+    await storage.set(`macro-vars-deleted:${localId}`, {
+      ...data,
+      deletedAt: new Date().toISOString(),
+      deletedBy: 'checkAllIncludes',
+      deletionReason: reason,
+      canRecover: true,
+      ...metadata
+    });
+
+    console.log(`[SOFT-DELETE] Moved macro-vars:${localId} to deleted namespace`);
+    console.log(`[SOFT-DELETE] Reason: ${reason}`);
+    console.log(`[SOFT-DELETE] Data can be recovered for 90 days`);
+  }
+
+  // Remove from active namespace
+  if (!dryRun) {
+    await storage.delete(`macro-vars:${localId}`);
+    console.log(`[DELETE] Removed macro-vars:${localId} from active storage`);
+  } else {
+    console.log(`[DRY-RUN] Would delete macro-vars:${localId} (SKIPPED)`);
+  }
+}
+
+/**
+ * Soft Delete for cached content
+ * Cache can be safely deleted without version snapshot since it's regenerable
+ *
+ * @param {string} localId - Embed macro localId
+ * @param {string} reason - Reason for deletion
+ * @param {boolean} dryRun - If true, only log what would be deleted
+ */
+export async function softDeleteMacroCache(localId, reason, dryRun = DEFAULT_DRY_RUN_MODE) {
+  if (!dryRun) {
+    await storage.delete(`macro-cache:${localId}`);
+    console.log(`[DELETE] Removed macro-cache:${localId}`);
+  } else {
+    console.log(`[DRY-RUN] Would delete macro-cache:${localId} (SKIPPED)`);
+  }
+}
+
+/**
+ * Remove orphaned Embed from usage tracking
+ * Updates the `usage:{excerptId}` key to remove the orphaned reference
+ *
+ * @param {string} localId - Embed macro localId
+ * @param {string} excerptId - Source excerpt ID
+ * @returns {Promise<boolean>} True if removed from usage tracking
+ */
+export async function removeFromUsageTracking(localId, excerptId) {
+  if (!excerptId) {
+    console.log(`[USAGE-TRACKING] No excerptId for localId ${localId}, skipping usage cleanup`);
+    return false;
+  }
+
+  const usageKey = `usage:${excerptId}`;
+  const usageData = await storage.get(usageKey);
+
+  if (usageData) {
+    usageData.references = usageData.references.filter(
+      r => r.localId !== localId
+    );
+
+    if (usageData.references.length === 0) {
+      // No more references, delete the usage key entirely
+      await storage.delete(usageKey);
+      console.log(`[USAGE-TRACKING] Deleted empty usage key: ${usageKey}`);
+    } else {
+      // Still has references, update
+      await storage.set(usageKey, usageData);
+      console.log(`[USAGE-TRACKING] Removed localId ${localId} from ${usageKey}`);
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Detect orphaned Embeds on a page that doesn't exist
+ * All Embeds on the page are considered orphaned
+ *
+ * @param {Array} pageIncludes - Array of includes on the page
+ * @param {string} reason - Reason page is inaccessible
+ * @param {boolean} dryRun - If true, only preview cleanup
+ * @returns {Promise<Array>} Array of orphaned include objects
+ */
+export async function handlePageNotFound(pageIncludes, reason, dryRun) {
+  const orphanedIncludes = [];
+
+  for (const include of pageIncludes) {
+    orphanedIncludes.push({
+      ...include,
+      reason: reason || 'Page deleted or inaccessible',
+      pageExists: false
+    });
+
+    // Clean up orphaned data
+    await softDeleteMacroCache(include.localId, reason, dryRun);
+    await softDeleteMacroVars(include.localId, reason, {
+      pageId: include.pageId,
+      pageExists: false
+    }, dryRun);
+
+    // Remove from usage tracking
+    await removeFromUsageTracking(include.localId, include.excerptId);
+  }
+
+  return orphanedIncludes;
+}
+
+/**
+ * Detect orphaned Embed (macro not found in page ADF)
+ *
+ * @param {Object} include - Include reference object
+ * @param {Object} pageData - Confluence page data
+ * @param {boolean} dryRun - If true, only preview cleanup
+ * @returns {Promise<Object>} Orphaned include object
+ */
+export async function handleOrphanedMacro(include, pageData, dryRun) {
+  console.log(`[WORKER] ⚠️ ORPHAN DETECTED: localId ${include.localId} not found in page ${include.pageId}`);
+
+  const orphanedInclude = {
+    ...include,
+    reason: 'Macro not found in page content',
+    pageExists: true
+  };
+
+  // Clean up orphaned data
+  await softDeleteMacroCache(include.localId, 'Macro not found in page content', dryRun);
+  await softDeleteMacroVars(include.localId, 'Macro not found in page content', {
+    pageId: include.pageId,
+    pageTitle: pageData.title,
+    pageExists: true
+  }, dryRun);
+
+  // Remove from usage tracking
+  await removeFromUsageTracking(include.localId, include.excerptId);
+
+  return orphanedInclude;
+}
