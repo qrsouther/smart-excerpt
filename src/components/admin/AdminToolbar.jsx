@@ -65,7 +65,7 @@ export function AdminToolbar({
           onClick={onOpenMigrationModal}
           xcss={buttonStyles}
         >
-          Migration Tools
+          🔀 Migration Tools
         </Button>
       )}
 
@@ -74,7 +74,7 @@ export function AdminToolbar({
         onClick={onOpenCategoryModal}
         xcss={buttonStyles}
       >
-        Manage Categories
+        🆔 Manage Categories
       </Button>
 
       <Tooltip content={verificationTooltip}>
@@ -84,7 +84,7 @@ export function AdminToolbar({
           isDisabled={isCheckingAllSources}
           xcss={buttonStyles}
         >
-          {isCheckingAllSources ? 'Checking...' : '🔍 Check All Sources'}
+          {isCheckingAllSources ? 'Checking...' : '🔎 Check All Sources'}
         </Button>
       </Tooltip>
 
@@ -104,7 +104,7 @@ export function AdminToolbar({
           onClick={onOpenEmergencyRecovery}
           xcss={buttonStyles}
         >
-          🚨 Emergency Recovery
+          ⤴️ Restore Version
         </Button>
       </Tooltip>
 

@@ -772,6 +772,11 @@ const App = () => {
       variableValues={variableValues}
       toggleStates={toggleStates}
       excerpt={excerpt}
+      internalNotes={internalNotes}
+      redlineStatus={variableValuesData?.redlineStatus}
+      approvedBy={variableValuesData?.approvedBy}
+      approvedAt={variableValuesData?.approvedAt}
+      lastChangedBy={variableValuesData?.lastChangedBy}
     />
   );
 };

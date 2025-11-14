@@ -26,3 +26,6 @@ npm-debug.log*
 # Build outputs
 dist/
 build/
+
+# Deprecated code (marked for deletion)
+src/deprecated/

@@ -103,12 +103,12 @@ export function CategoryManager({
       },
       {
         key: 'name',
-        content: <Text><Strong>{category}</Strong></Text>
+        content: <Text>{category}</Text>
       },
       {
         key: 'actions',
         content: (
-          <Inline space="space.100">
+          <Inline space="space.050">
             <Button
               appearance="subtle"
               onClick={() => onEditCategory(category)}

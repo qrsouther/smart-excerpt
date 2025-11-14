@@ -29,6 +29,7 @@ import ForgeReconciler, {
   Tooltip,
   Pressable,
   ProgressBar,
+  Heading,
   xcss
 } from '@forge/react';
 import { invoke, router } from '@forge/bridge';
@@ -74,12 +75,15 @@ import { OrphanedItemsSection } from './components/admin/OrphanedItemsSection';
 import { EmergencyRecoveryModal } from './components/admin/EmergencyRecoveryModal';
 import { VersionHistoryModal } from './components/admin/VersionHistoryModal';
 import { StorageUsageFooter } from './components/admin/StorageUsageFooter';
+import { RedlineQueuePage } from './components/admin/RedlineQueuePage';
+import { StorageBrowser } from './components/admin/StorageBrowser';
 
 // Import admin styles
 import {
   cardStyles,
   fullWidthTableStyle,
   tableScrollContainerStyle,
+  tableCellSeparatorStyle,
   previewBoxStyle,
   selectStyles,
   leftSidebarStyles,
@@ -87,7 +91,8 @@ import {
   middleSectionStyles,
   rightContentStyles,
   sectionSeparatorStyles,
-  sectionMarginStyles
+  sectionMarginStyles,
+  tabPanelContentStyles
 } from './styles/admin-styles';
 
 // Create a client
@@ -160,6 +165,7 @@ const App = () => {
   // LOCAL UI STATE (not data fetching)
   // ============================================================================
 
+  const [selectedTab, setSelectedTab] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('All');
   const [sortBy, setSortBy] = useState('name-asc');
@@ -1199,8 +1205,29 @@ const App = () => {
         </Box>
       )}
 
-      {/* Main Content Area - Split into sidebar and main */}
-      <Inline space="space.200" alignBlock="start" shouldWrap={false}>
+      {/* Tabbed Navigation - Sources and Redline Queue */}
+      <Tabs 
+        space="space.200"
+        id="admin-tabs"
+        onChange={(index) => {
+          setSelectedTab(index);
+          // Clear selections when switching tabs
+          setSelectedExcerpt(null);
+          setSelectedExcerptForDetails(null);
+        }}
+        selected={selectedTab}
+      >
+        <TabList space="space.100">
+          <Tab>📢 Sources</Tab>
+          <Tab>☑️ Redlines</Tab>
+          <Tab>💾 Storage</Tab>
+        </TabList>
+
+        <TabPanel>
+          {/* Main Content Area - Split into sidebar and main */}
+          <Box xcss={xcss({ width: '100%', maxWidth: '100%', overflow: 'hidden' })}>
+            <Box xcss={tabPanelContentStyles}>
+              <Inline space="space.200" alignBlock="start" shouldWrap={false} xcss={xcss({ width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden' })}>
         {/* Left Sidebar - Excerpt List */}
         <ExcerptListSidebar
           sortedExcerpts={sortedExcerpts}
@@ -1256,29 +1283,55 @@ const App = () => {
               // Build table header cells
               const headerCells = [{ key: 'page', content: 'Page', isSortable: true }];
 
-              if (hasVariables) {
-                selectedExcerptForDetails.variables.forEach(variable => {
-                  headerCells.push({
-                    key: `var-${variable.name}`,
-                    content: variable.name,
-                    isSortable: true
-                  });
-                });
-              }
+              // Status column
+              headerCells.push({ 
+                key: 'status', 
+                content: (
+                  <Box xcss={tableCellSeparatorStyle}>
+                    <Text>Staleness Status</Text>
+                  </Box>
+                ), 
+                isSortable: true 
+              });
 
               if (hasToggles) {
                 selectedExcerptForDetails.toggles.forEach(toggle => {
                   headerCells.push({
                     key: `toggle-${toggle.name}`,
-                    content: toggle.name,
+                    content: (
+                      <Box xcss={tableCellSeparatorStyle}>
+                        <Text>{toggle.name}</Text>
+                      </Box>
+                    ),
                     isSortable: true
                   });
                 });
               }
 
-              // Add Status and Actions columns
-              headerCells.push({ key: 'status', content: 'Status', isSortable: true });
-              headerCells.push({ key: 'actions', content: 'Actions', isSortable: false });
+              if (hasVariables) {
+                selectedExcerptForDetails.variables.forEach(variable => {
+                  headerCells.push({
+                    key: `var-${variable.name}`,
+                    content: (
+                      <Box xcss={tableCellSeparatorStyle}>
+                        <Text>{variable.name}</Text>
+                      </Box>
+                    ),
+                    isSortable: true
+                  });
+                });
+              }
+
+              // Actions column
+              headerCells.push({ 
+                key: 'actions', 
+                content: (
+                  <Box xcss={tableCellSeparatorStyle}>
+                    <Text>Actions</Text>
+                  </Box>
+                ), 
+                isSortable: false 
+              });
 
               // Calculate usage count and staleness
               const usageCount = uniqueUsage.length;
@@ -1289,12 +1342,12 @@ const App = () => {
               });
 
               return (
-                <Stack space="space.300">
+                <Stack space="space.300" xcss={xcss({ width: '100%', maxWidth: '100%', minWidth: 0 })}>
                   {/* Excerpt Header */}
                   <Box>
                     <Inline space="space.100" alignBlock="center" spread="space-between">
                       <Inline space="space.100" alignBlock="center">
-                        <Text size="xlarge"><Strong>Blueprint Standard:</Strong> {selectedExcerptForDetails.name}</Text>
+                        <Heading size="small">Source excerpt: {selectedExcerptForDetails.name}</Heading>
                         <Lozenge>{selectedExcerptForDetails.category || 'General'}</Lozenge>
                       </Inline>
                       <Inline space="space.100" alignBlock="center">
@@ -1404,7 +1457,7 @@ const App = () => {
                   <SectionMessage appearance="information">
                     <Stack space="space.100">
                       <Text>
-                        The <Strong>{selectedExcerptForDetails.name}</Strong> Blueprint Standard is referenced using the Blueprint Standard - Embed macro on <Strong>{uniqueUsage.length}</Strong> {uniqueUsage.length === 1 ? 'page' : 'pages'}, with the following variables and/or toggles set within those pages.
+                        The <Strong>{selectedExcerptForDetails.name}</Strong> Source excerpt is referenced using the Blueprint Standard - Embed macro on <Strong>{uniqueUsage.length}</Strong> {uniqueUsage.length === 1 ? 'page' : 'pages'}, with the following variables and/or toggles set within those pages.
                       </Text>
                       <Text>
                         The Status column shows whether each Embed instance is up to date with the latest Source content. Use <Strong>Force Update</Strong> to update specific pages, or <Strong>Force Update to All Pages</Strong> to update all instances at once.
@@ -1417,12 +1470,17 @@ const App = () => {
 
                   {/* Usage Table */}
                   {uniqueUsage.length === 0 ? (
-                    <Text><Em>This Blueprint Standard is not used on any pages yet</Em></Text>
+                    <Text><Em>This Source excerpt is not used on any pages yet</Em></Text>
                   ) : (
                     <Box xcss={tableScrollContainerStyle}>
                       <DynamicTable
                         head={{ cells: headerCells }}
                         rows={uniqueUsage.map((ref) => {
+                        // Calculate status first (needed for ordering)
+                        const excerptLastModified = new Date(selectedExcerptForDetails.updatedAt || 0);
+                        const includeLastSynced = ref.lastSynced ? new Date(ref.lastSynced) : new Date(0);
+                        const isStale = excerptLastModified > includeLastSynced;
+
                         const rowCells = [
                           {
                             key: 'page',
@@ -1445,10 +1503,42 @@ const App = () => {
                                 {ref.pageTitle || 'Unknown Page'}
                               </Button>
                             )
+                          },
+                          // Status cell (second column)
+                          {
+                            key: 'status',
+                            content: (
+                              <Box xcss={tableCellSeparatorStyle}>
+                                <StalenessBadge
+                                  isStale={isStale}
+                                  sourceLastModified={excerptLastModified}
+                                  embedLastSynced={includeLastSynced}
+                                />
+                              </Box>
+                            )
                           }
                         ];
 
-                        // Add variable cells (read-only)
+                        // Add toggle cells (third column group)
+                        if (hasToggles) {
+                          selectedExcerptForDetails.toggles.forEach(toggle => {
+                            const toggleState = ref.toggleStates?.[toggle.name] || false;
+                            rowCells.push({
+                              key: `toggle-${toggle.name}`,
+                              content: (
+                                <Box xcss={tableCellSeparatorStyle}>
+                                  {toggleState ? (
+                                    <Icon glyph="check-circle" label="Enabled" color="color.icon.success" />
+                                  ) : (
+                                    <Icon glyph="cross-circle" label="Disabled" color="color.icon.danger" />
+                                  )}
+                                </Box>
+                              )
+                            });
+                          });
+                        }
+
+                        // Add variable cells (fourth column group)
                         if (hasVariables) {
                           selectedExcerptForDetails.variables.forEach(variable => {
                             const value = ref.variableValues?.[variable.name] || '';
@@ -1458,57 +1548,31 @@ const App = () => {
 
                             rowCells.push({
                               key: `var-${variable.name}`,
-                              content: value ? (
-                                isTruncated ? (
-                                  <Tooltip content={value}>
-                                    <Text>{displayValue}</Text>
-                                  </Tooltip>
-                                ) : (
-                                  <Text>{displayValue}</Text>
-                                )
-                              ) : (
-                                <Text><Em>(empty)</Em></Text>
+                              content: (
+                                <Box xcss={tableCellSeparatorStyle}>
+                                  {value ? (
+                                    isTruncated ? (
+                                      <Tooltip content={value}>
+                                        <Text>{displayValue}</Text>
+                                      </Tooltip>
+                                    ) : (
+                                      <Text>{displayValue}</Text>
+                                    )
+                                  ) : (
+                                    <Text><Em>(empty)</Em></Text>
+                                  )}
+                                </Box>
                               )
                             });
                           });
                         }
-
-                        // Add toggle cells (read-only icon display)
-                        if (hasToggles) {
-                          selectedExcerptForDetails.toggles.forEach(toggle => {
-                            const toggleState = ref.toggleStates?.[toggle.name] || false;
-                            rowCells.push({
-                              key: `toggle-${toggle.name}`,
-                              content: toggleState ? (
-                                <Icon glyph="check-circle" label="Enabled" color="color.icon.success" />
-                              ) : (
-                                <Icon glyph="cross-circle" label="Disabled" color="color.icon.danger" />
-                              )
-                            });
-                          });
-                        }
-
-                        // Add Status cell
-                        const excerptLastModified = new Date(selectedExcerptForDetails.updatedAt || 0);
-                        const includeLastSynced = ref.lastSynced ? new Date(ref.lastSynced) : new Date(0);
-                        const isStale = excerptLastModified > includeLastSynced;
-
-                        rowCells.push({
-                          key: 'status',
-                          content: (
-                            <StalenessBadge
-                              isStale={isStale}
-                              sourceLastModified={excerptLastModified}
-                              embedLastSynced={includeLastSynced}
-                            />
-                          )
-                        });
 
                         // Add actions cell with Copy UUID and Force Update buttons
                         rowCells.push({
                           key: 'actions',
                           content: (
-                            <Inline space="space.100" alignBlock="center">
+                            <Box xcss={tableCellSeparatorStyle}>
+                              <Inline space="space.100" alignBlock="center">
                               <Button
                                 appearance="default"
                                 spacing="compact"
@@ -1551,9 +1615,10 @@ const App = () => {
                               >
                                 Force Update
                               </Button>
-                            </Inline>
-                          )
-                        });
+                              </Inline>
+                            </Box>
+                            )
+                          });
 
                         return {
                           key: ref.localId,
@@ -1577,7 +1642,23 @@ const App = () => {
           })()}
         </Box>
 
-      </Inline>
+          </Inline>
+          </Box>
+          </Box>
+        </TabPanel>
+
+        <TabPanel>
+          <Box xcss={tabPanelContentStyles}>
+            <RedlineQueuePage />
+          </Box>
+        </TabPanel>
+
+        <TabPanel>
+          <Box xcss={tabPanelContentStyles}>
+            <StorageBrowser />
+          </Box>
+        </TabPanel>
+      </Tabs>
 
       {/* Orphaned items sections */}
       {sortedExcerpts.length > 0 && (

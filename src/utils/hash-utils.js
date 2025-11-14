@@ -94,3 +94,14 @@ export function hasContentChanged(hash1, hash2) {
 
   return hash1 !== hash2;
 }
+
+/**
+ * NOTE: Embed content hashing is handled by the version system's calculateContentHash()
+ * in version-manager.js, which automatically excludes timestamps and metadata fields.
+ *
+ * The redlining system uses contentHash from version snapshots rather than calculating
+ * it separately, ensuring consistency across the application and avoiding duplicate
+ * hash calculation logic.
+ *
+ * See: src/utils/version-manager.js -> calculateContentHash()
+ */

@@ -31,7 +31,9 @@ import {
   checkVersionStaleness as checkVersionStalenessResolver,
   getOrphanedUsage as getOrphanedUsageResolver,
   getLastVerificationTime as getLastVerificationTimeResolver,
-  setLastVerificationTime as setLastVerificationTimeResolver
+  setLastVerificationTime as setLastVerificationTimeResolver,
+  getCurrentUser as getCurrentUserResolver,
+  queryStorage as queryStorageResolver
 } from './resolvers/simple-resolvers.js';
 
 // Import excerpt CRUD resolver functions (Phase 3 modularization)
@@ -95,6 +97,22 @@ import {
   pruneVersionsNow,
   getVersioningStatsResolver
 } from './resolvers/version-resolvers.js';
+
+// Import redline system resolver functions (Phase 1 - Redlining System)
+import {
+  getRedlineQueue as getRedlineQueueResolver,
+  setRedlineStatus as setRedlineStatusResolver,
+  bulkSetRedlineStatus as bulkSetRedlineStatusResolver,
+  checkRedlineStale as checkRedlineStaleResolver,
+  getConfluenceUser as getConfluenceUserResolver,
+  getRedlineStats as getRedlineStatsResolver,
+  postRedlineComment as postRedlineCommentResolver
+} from './resolvers/redline-resolvers.js';
+
+// Import redline migration utilities
+import {
+  backfillRedlineFields as backfillRedlineFieldsResolver
+} from './resolvers/redline-migration.js';
 
 // ⚠️ ONE-TIME USE MIGRATION FUNCTIONS - DELETE AFTER PRODUCTION MIGRATION ⚠️
 // Import migration resolver functions (Phase 4 modularization)
@@ -221,6 +239,35 @@ resolver.define('getStorageUsage', getStorageUsageResolver);
 
 // Get progress for checkAllIncludes operation
 resolver.define('getCheckProgress', getCheckProgressResolver);
+
+// ============================================================================
+// REDLINE SYSTEM RESOLVERS (Phase 1 - Redlining System)
+// ============================================================================
+// Queue-based review and approval workflow for Embed instances
+
+// Get redline queue with filtering, sorting, and grouping
+resolver.define('getRedlineQueue', getRedlineQueueResolver);
+
+// Set redline status for a single Embed
+resolver.define('setRedlineStatus', setRedlineStatusResolver);
+
+// Bulk status update for multiple Embeds
+resolver.define('bulkSetRedlineStatus', bulkSetRedlineStatusResolver);
+
+// Check if Embed needs re-review (content changed after approval)
+resolver.define('checkRedlineStale', checkRedlineStaleResolver);
+
+// Get Confluence user data for avatar/name display
+resolver.define('getConfluenceUser', getConfluenceUserResolver);
+
+// Get redline statistics (counts by status)
+resolver.define('getRedlineStats', getRedlineStatsResolver);
+
+// Post inline comment to Confluence page near Embed
+resolver.define('postRedlineComment', postRedlineCommentResolver);
+
+// Backfill redline fields for existing Embeds (one-time migration)
+resolver.define('backfillRedlineFields', backfillRedlineFieldsResolver);
 
 // ============================================================================
 // MIGRATION RESOLVERS (Phase 4 modularization)
@@ -812,6 +859,12 @@ resolver.define('getLastVerificationTime', getLastVerificationTimeResolver);
 
 // Set last verification timestamp (called after Check All Includes completes)
 resolver.define('setLastVerificationTime', setLastVerificationTimeResolver);
+
+// Get current user context (accountId for redline actions)
+resolver.define('getCurrentUser', getCurrentUserResolver);
+
+// Query Forge storage by key (debugging tool)
+resolver.define('queryStorage', queryStorageResolver);
 
 // ============================================================================
 // RESTORE AND RECOVERY RESOLVERS (Phase 8 modularization)

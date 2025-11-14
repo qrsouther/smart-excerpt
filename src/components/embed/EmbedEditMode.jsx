@@ -41,7 +41,7 @@
  * @returns {JSX.Element} - Edit mode JSX
  */
 
-import React, { Fragment } from 'react';
+import React, { Fragment, useState } from 'react';
 import {
   Text,
   Em,
@@ -97,6 +97,59 @@ export function EmbedEditMode({
   getPreviewContent,
   getRawPreviewContent
 }) {
+  const [copySuccess, setCopySuccess] = useState(false);
+
+  // Get localId from context
+  const localId = context?.localId || context?.extension?.localId;
+
+  // Handler for copying UUID to clipboard using native Clipboard API
+  const handleCopyUuid = async () => {
+    if (!localId) return;
+
+    // Focus the window first to satisfy Clipboard API requirements
+    try {
+      window.focus();
+    } catch (e) {
+      // Focus failed, continue anyway
+    }
+
+    try {
+      await navigator.clipboard.writeText(localId);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+    } catch (error) {
+      // Fallback to legacy method if Clipboard API fails
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = localId;
+        textarea.style.position = 'fixed';
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.width = '2em';
+        textarea.style.height = '2em';
+        textarea.style.padding = '0';
+        textarea.style.border = 'none';
+        textarea.style.outline = 'none';
+        textarea.style.boxShadow = 'none';
+        textarea.style.background = 'transparent';
+        document.body.appendChild(textarea);
+
+        textarea.focus();
+        textarea.select();
+
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textarea);
+
+        if (successful) {
+          setCopySuccess(true);
+          setTimeout(() => setCopySuccess(false), 2000);
+        }
+      } catch (fallbackError) {
+        // Both methods failed, silently fail
+      }
+    }
+  };
+
   // Use different preview based on selected tab
   // Toggles tab (0): Raw with markers
   // Write tab (1): Rendered without markers
@@ -159,6 +212,15 @@ export function EmbedEditMode({
           >
             View Source
           </Button>
+          {localId && (
+            <Button
+              appearance="subtle"
+              onClick={handleCopyUuid}
+              iconBefore={copySuccess ? undefined : <Text>📋</Text>}
+            >
+              {copySuccess ? '✓ Copied!' : `${localId.substring(0, 8)}...`}
+            </Button>
+          )}
         </Inline>
         <Inline space="space.100" alignBlock="center">
           {saveStatus === 'saving' && (

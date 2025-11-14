@@ -2,7 +2,7 @@ modules:
   macro:
     - key: blueprint-standard-source
       title: Blueprint App - Source
-      description: Create a reusable Source excerpt that can be embedded on other pages (v7.22.0)
+      description: Create a reusable Source excerpt that can be embedded on other pages (v8.0.0)
       layout: bodied
       resource: source-display-resource
       render: native
@@ -15,7 +15,7 @@ modules:
 
     - key: blueprint-standard-embed
       title: Blueprint App - Embed
-      description: Embed a Source excerpt from another page (v7.22.0)
+      description: Embed a Source excerpt from another page (v8.0.0)
       resource: embed-display
       render: native
       resolver:
@@ -76,6 +76,7 @@ permissions:
     - read:page:confluence
     - write:page:confluence
     - write:confluence-content
+    - write:comment:confluence
     - delete:page:confluence
     - read:confluence-user
     - search:confluence

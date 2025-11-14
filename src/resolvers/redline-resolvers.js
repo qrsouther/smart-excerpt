@@ -1,0 +1,806 @@
+/**
+ * Redline Resolvers
+ *
+ * Backend API for the Redlining system - a queue-based review and approval workflow
+ * for tracking the completeness/readiness of individual Embed instances.
+ *
+ * Core Features:
+ * - Granular status tracking per Embed instance
+ * - Automatic status transitions when approved content is modified
+ * - Queue filtering, sorting, and grouping
+ * - User avatar integration via Confluence API
+ * - Audit trail for all status changes
+ *
+ * Status Types:
+ * - "reviewable" - Ready for initial review
+ * - "pre-approved" - Content finalized but not fully approved
+ * - "needs-revision" - Requires changes/corrections
+ * - "approved" - Fully approved and good-to-go
+ *
+ * Storage Schema (added to macro-vars:{localId}):
+ * {
+ *   redlineStatus: "reviewable" | "pre-approved" | "needs-revision" | "approved",
+ *   approvedContentHash: "abc123...",  // Hash when status set to "approved"
+ *   approvedBy: "5e7f419c...",         // Confluence accountId
+ *   approvedAt: "2025-01-15T10:30:00.000Z",
+ *   statusHistory: [
+ *     { status, changedBy, changedAt, reason }
+ *   ]
+ * }
+ */
+
+import { storage, startsWith } from '@forge/api';
+import api, { route } from '@forge/api';
+import { listVersions } from '../utils/version-manager.js';
+
+/**
+ * Get redline queue with filtering, sorting, and grouping
+ *
+ * @param {Object} req.payload
+ * @param {Object} req.payload.filters - Filter criteria { status: [], pageIds: [], excerptIds: [] }
+ * @param {string} req.payload.sortBy - Sort field: "status" | "page" | "source" | "updated"
+ * @param {string|null} req.payload.groupBy - Group field: "status" | "page" | "source" | null
+ * @returns {Object} { embeds: [...], groups: {...} }
+ */
+export async function getRedlineQueue(req) {
+  const { filters = {}, sortBy = 'status', groupBy = null } = req.payload;
+
+  try {
+    // Get all macro-vars:* keys (Embed configs)
+    // Note: getMany() has a default limit, so we need to paginate through all results
+    let allKeys = [];
+    let cursor = undefined;
+
+    do {
+      const batch = await storage.query()
+        .where('key', startsWith('macro-vars:'))
+        .limit(100)
+        .cursor(cursor)
+        .getMany();
+
+      allKeys = allKeys.concat(batch.results);
+      cursor = batch.nextCursor;
+    } while (cursor);
+
+    console.log(`[getRedlineQueue] Fetched ${allKeys.length} total Embed configs`);
+
+    // Load all Embed configs
+    const embedConfigs = await Promise.all(
+      allKeys.map(async (item) => {
+        const localId = item.key.replace('macro-vars:', '');
+        const config = item.value;
+
+        // Fetch excerpt details for display
+        let excerptData = null;
+        if (config.excerptId) {
+          const excerptKey = `excerpt:${config.excerptId}`;
+          excerptData = await storage.get(excerptKey);
+        }
+
+        // Fetch page details via Confluence API (v2)
+        let pageData = null;
+        if (config.pageId) {
+          try {
+            const pageResponse = await api.asApp().requestConfluence(
+              route`/wiki/api/v2/pages/${config.pageId}`
+            );
+            pageData = await pageResponse.json();
+          } catch (error) {
+            console.error(`Failed to fetch page ${config.pageId}:`, error);
+          }
+        }
+
+        return {
+          localId,
+          excerptId: config.excerptId,
+          sourceName: excerptData?.name || 'Unknown Source',
+          sourceCategory: excerptData?.category || 'Uncategorized',
+          pageId: config.pageId,
+          pageTitle: pageData?.title || (config.pageId ? `Page ${config.pageId}` : 'Unknown Page'),
+          spaceKey: pageData?.spaceId || 'Unknown',
+          variableValues: config.variableValues || {},
+          toggleStates: config.toggleStates || {},
+          customInsertions: config.customInsertions || [],
+          internalNotes: config.internalNotes || [],
+          cachedContent: config.cachedContent,
+          syncedContent: config.syncedContent,
+          redlineStatus: config.redlineStatus || 'reviewable', // Default to reviewable
+          approvedContentHash: config.approvedContentHash,
+          approvedBy: config.approvedBy,
+          approvedAt: config.approvedAt,
+          lastSynced: config.lastSynced,
+          updatedAt: config.updatedAt
+        };
+      })
+    );
+
+    // Apply filters
+    let filteredEmbeds = embedConfigs;
+
+    if (filters.status && filters.status.length > 0 && filters.status[0] !== 'all') {
+      filteredEmbeds = filteredEmbeds.filter(embed =>
+        filters.status.includes(embed.redlineStatus)
+      );
+    }
+
+    if (filters.pageIds && filters.pageIds.length > 0) {
+      filteredEmbeds = filteredEmbeds.filter(embed =>
+        filters.pageIds.includes(embed.pageId)
+      );
+    }
+
+    if (filters.excerptIds && filters.excerptIds.length > 0) {
+      filteredEmbeds = filteredEmbeds.filter(embed =>
+        filters.excerptIds.includes(embed.excerptId)
+      );
+    }
+
+    // Search filter - matches Page Title or Embed UUID
+    if (filters.searchTerm && filters.searchTerm.trim()) {
+      const searchLower = filters.searchTerm.toLowerCase().trim();
+      filteredEmbeds = filteredEmbeds.filter(embed => {
+        const pageTitleMatch = embed.pageTitle?.toLowerCase().includes(searchLower);
+        const uuidMatch = embed.localId?.toLowerCase().includes(searchLower);
+        return pageTitleMatch || uuidMatch;
+      });
+    }
+
+    // Sort
+    filteredEmbeds.sort((a, b) => {
+      switch (sortBy) {
+        case 'status':
+          const statusOrder = { 'needs-revision': 0, 'reviewable': 1, 'pre-approved': 2, 'approved': 3 };
+          return statusOrder[a.redlineStatus] - statusOrder[b.redlineStatus];
+
+        case 'page':
+          return a.pageTitle.localeCompare(b.pageTitle);
+
+        case 'source':
+          return a.sourceName.localeCompare(b.sourceName);
+
+        case 'updated':
+          return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+
+        default:
+          return 0;
+      }
+    });
+
+    // Group if requested
+    if (groupBy) {
+      const groups = {};
+
+      filteredEmbeds.forEach(embed => {
+        let groupKey;
+        switch (groupBy) {
+          case 'status':
+            groupKey = embed.redlineStatus;
+            break;
+          case 'page':
+            groupKey = embed.pageTitle;
+            break;
+          case 'source':
+            groupKey = embed.sourceName;
+            break;
+          default:
+            groupKey = 'Other';
+        }
+
+        if (!groups[groupKey]) {
+          groups[groupKey] = [];
+        }
+        groups[groupKey].push(embed);
+      });
+
+      return { embeds: filteredEmbeds, groups };
+    }
+
+    return { embeds: filteredEmbeds, groups: null };
+
+  } catch (error) {
+    console.error('[getRedlineQueue] Error:', error);
+    throw new Error(`Failed to load redline queue: ${error.message}`);
+  }
+}
+
+/**
+ * Set redline status for a single Embed
+ *
+ * @param {Object} req.payload
+ * @param {string} req.payload.localId - Embed instance ID
+ * @param {string} req.payload.status - New status
+ * @param {string} req.payload.userId - Confluence accountId of user making change
+ * @param {string} req.payload.reason - Reason for status change
+ * @returns {Object} { success: true, localId, newStatus }
+ */
+export async function setRedlineStatus(req) {
+  const { localId, status, userId, reason = '' } = req.payload;
+
+  if (!localId) {
+    throw new Error('localId is required');
+  }
+
+  if (!['reviewable', 'pre-approved', 'needs-revision', 'approved'].includes(status)) {
+    throw new Error(`Invalid status: ${status}`);
+  }
+
+  try {
+    // Load current Embed config
+    const configKey = `macro-vars:${localId}`;
+    const config = await storage.get(configKey);
+
+    if (!config) {
+      throw new Error(`Embed config not found for localId: ${localId}`);
+    }
+
+    const now = new Date().toISOString();
+    const previousStatus = config.redlineStatus || 'reviewable';
+
+    // Initialize statusHistory if it doesn't exist
+    const statusHistory = config.statusHistory || [];
+
+    // If setting to "approved", get contentHash from version system
+    let approvedContentHash = config.approvedContentHash;
+    let approvedBy = config.approvedBy;
+    let approvedAt = config.approvedAt;
+
+    if (status === 'approved') {
+      // Query version system for latest Embed version
+      const versionsResult = await listVersions(storage, localId);
+
+      if (versionsResult.success && versionsResult.versions.length > 0) {
+        // Get latest version's contentHash (versions are sorted newest first)
+        const latestVersion = versionsResult.versions[0];
+        approvedContentHash = latestVersion.contentHash;
+
+        console.log(`[setRedlineStatus] Approving Embed ${localId} with contentHash: ${approvedContentHash}`);
+      } else {
+        console.warn(`[setRedlineStatus] No version history found for Embed ${localId}, cannot set approvedContentHash`);
+        // Still allow approval, but without contentHash tracking
+        approvedContentHash = null;
+      }
+
+      approvedBy = userId;
+      approvedAt = now;
+    }
+
+    // Add to status history
+    statusHistory.push({
+      status,
+      previousStatus,
+      changedBy: userId,
+      changedAt: now,
+      reason
+    });
+
+    // Update config
+    const updatedConfig = {
+      ...config,
+      redlineStatus: status,
+      approvedContentHash,
+      approvedBy,
+      approvedAt,
+      lastChangedBy: userId, // Track who made the current status change
+      lastChangedAt: now,
+      statusHistory,
+      updatedAt: now
+    };
+
+    await storage.set(configKey, updatedConfig);
+
+    console.log(`[setRedlineStatus] Embed ${localId}: ${previousStatus} → ${status} (by ${userId})`);
+
+    return {
+      success: true,
+      localId,
+      newStatus: status,
+      previousStatus,
+      approvedContentHash
+    };
+
+  } catch (error) {
+    console.error('[setRedlineStatus] Error:', error);
+    throw new Error(`Failed to set redline status: ${error.message}`);
+  }
+}
+
+/**
+ * Bulk status update for multiple Embeds
+ *
+ * @param {Object} req.payload
+ * @param {string[]} req.payload.localIds - Array of Embed instance IDs
+ * @param {string} req.payload.status - New status for all
+ * @param {string} req.payload.userId - Confluence accountId
+ * @param {string} req.payload.reason - Reason for bulk change
+ * @returns {Object} { success: true, updated: 10, failed: 2, errors: [...] }
+ */
+export async function bulkSetRedlineStatus(req) {
+  const { localIds, status, userId, reason = 'Bulk status update' } = req.payload;
+
+  if (!localIds || localIds.length === 0) {
+    throw new Error('localIds array is required and must not be empty');
+  }
+
+  const results = {
+    success: true,
+    updated: 0,
+    failed: 0,
+    errors: []
+  };
+
+  for (const localId of localIds) {
+    try {
+      await setRedlineStatus({
+        payload: { localId, status, userId, reason }
+      });
+      results.updated++;
+    } catch (error) {
+      results.failed++;
+      results.errors.push({
+        localId,
+        error: error.message
+      });
+      console.error(`[bulkSetRedlineStatus] Failed for ${localId}:`, error);
+    }
+  }
+
+  console.log(`[bulkSetRedlineStatus] Completed: ${results.updated} updated, ${results.failed} failed`);
+
+  return results;
+}
+
+/**
+ * Check if an Embed needs re-review (content changed after approval)
+ *
+ * @param {Object} req.payload
+ * @param {string} req.payload.localId - Embed instance ID
+ * @returns {Object} { isStale: boolean, currentHash, approvedHash }
+ */
+export async function checkRedlineStale(req) {
+  const { localId } = req.payload;
+
+  if (!localId) {
+    throw new Error('localId is required');
+  }
+
+  try {
+    // Load Embed config
+    const configKey = `macro-vars:${localId}`;
+    const config = await storage.get(configKey);
+
+    if (!config) {
+      throw new Error(`Embed config not found for localId: ${localId}`);
+    }
+
+    // If not approved, can't be stale
+    if (config.redlineStatus !== 'approved' || !config.approvedContentHash) {
+      return {
+        isStale: false,
+        reason: 'Not approved yet',
+        currentHash: null,
+        approvedHash: null
+      };
+    }
+
+    // Query version system for latest Embed version
+    const versionsResult = await listVersions(storage, localId);
+
+    if (!versionsResult.success || versionsResult.versions.length === 0) {
+      console.warn(`[checkRedlineStale] No version history found for Embed ${localId}`);
+      return {
+        isStale: false,
+        reason: 'No version history available',
+        currentHash: null,
+        approvedHash: config.approvedContentHash
+      };
+    }
+
+    // Get latest version's contentHash
+    const latestVersion = versionsResult.versions[0];
+    const currentHash = latestVersion.contentHash;
+
+    const isStale = currentHash !== config.approvedContentHash;
+
+    return {
+      isStale,
+      currentHash,
+      approvedHash: config.approvedContentHash,
+      reason: isStale ? 'Content modified after approval' : 'Content unchanged'
+    };
+
+  } catch (error) {
+    console.error('[checkRedlineStale] Error:', error);
+    throw new Error(`Failed to check redline staleness: ${error.message}`);
+  }
+}
+
+/**
+ * Get Confluence user data for avatar/name display
+ *
+ * @param {Object} req.payload
+ * @param {string} req.payload.accountId - Confluence user accountId
+ * @returns {Object} User data with avatar URL
+ */
+export async function getConfluenceUser(req) {
+  const { accountId } = req.payload;
+
+  if (!accountId) {
+    throw new Error('accountId is required');
+  }
+
+  // System user (for automatic transitions)
+  if (accountId === 'system') {
+    return {
+      accountId: 'system',
+      displayName: 'System',
+      publicName: 'System',
+      profilePicture: {
+        path: null,
+        isDefault: true
+      }
+    };
+  }
+
+  try {
+    const response = await api.asApp().requestConfluence(
+      route`/wiki/rest/api/user?accountId=${accountId}`
+    );
+
+    if (!response.ok) {
+      throw new Error(`Confluence API returned ${response.status}: ${response.statusText}`);
+    }
+
+    const userData = await response.json();
+
+    return {
+      accountId: userData.accountId,
+      displayName: userData.displayName || userData.publicName,
+      publicName: userData.publicName,
+      email: userData.email,
+      profilePicture: userData.profilePicture || {
+        path: null,
+        isDefault: true
+      }
+    };
+
+  } catch (error) {
+    console.error('[getConfluenceUser] Error:', error);
+    // Return fallback data instead of throwing
+    return {
+      accountId,
+      displayName: 'Unknown User',
+      publicName: 'Unknown User',
+      profilePicture: {
+        path: null,
+        isDefault: true
+      },
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Get redline statistics (counts by status)
+ *
+ * @returns {Object} { reviewable: 10, preApproved: 5, needsRevision: 3, approved: 50, total: 68 }
+ */
+export async function getRedlineStats(req) {
+  try {
+    // Get all macro-vars:* keys with pagination
+    let allKeys = [];
+    let cursor = undefined;
+
+    do {
+      const batch = await storage.query()
+        .where('key', startsWith('macro-vars:'))
+        .limit(100)
+        .cursor(cursor)
+        .getMany();
+
+      allKeys = allKeys.concat(batch.results);
+      cursor = batch.nextCursor;
+    } while (cursor);
+
+    console.log(`[getRedlineStats] Fetched ${allKeys.length} total Embed configs`);
+
+    const stats = {
+      reviewable: 0,
+      preApproved: 0,
+      needsRevision: 0,
+      approved: 0,
+      total: 0
+    };
+
+    // Count by status
+    for (const item of allKeys) {
+      const config = item.value;
+      const status = config.redlineStatus || 'reviewable';
+
+      stats.total++;
+
+      switch (status) {
+        case 'reviewable':
+          stats.reviewable++;
+          break;
+        case 'pre-approved':
+          stats.preApproved++;
+          break;
+        case 'needs-revision':
+          stats.needsRevision++;
+          break;
+        case 'approved':
+          stats.approved++;
+          break;
+      }
+    }
+
+    return stats;
+
+  } catch (error) {
+    console.error('[getRedlineStats] Error:', error);
+    throw new Error(`Failed to get redline stats: ${error.message}`);
+  }
+}
+
+/**
+ * Post inline comment to Confluence page near the Embed macro
+ *
+ * @param {Object} req.payload
+ * @param {string} req.payload.localId - Embed instance ID
+ * @param {string} req.payload.pageId - Confluence page ID where Embed is located
+ * @param {string} req.payload.commentText - Comment text to post
+ * @param {string} req.payload.userId - Confluence accountId of user posting comment
+ * @returns {Object} { success: true, commentId, location }
+ */
+export async function postRedlineComment(req) {
+  const { localId, pageId, commentText, userId } = req.payload;
+
+  if (!localId) {
+    throw new Error('localId is required');
+  }
+
+  if (!pageId) {
+    throw new Error('pageId is required');
+  }
+
+  if (!commentText || !commentText.trim()) {
+    throw new Error('commentText is required');
+  }
+
+  try {
+    // Step 1: Fetch page content (ADF) from Confluence
+    console.log(`[postRedlineComment] Fetching page ${pageId} content...`);
+
+    const pageResponse = await api.asUser().requestConfluence(
+      route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`
+    );
+
+    if (!pageResponse.ok) {
+      throw new Error(`Failed to fetch page: ${pageResponse.status} ${pageResponse.statusText}`);
+    }
+
+    const pageData = await pageResponse.json();
+
+    // The ADF value is returned as a JSON string, so we need to parse it
+    const adfString = pageData.body?.atlas_doc_format?.value;
+
+    if (!adfString) {
+      throw new Error('Page ADF content not found in API response');
+    }
+
+    let adfContent;
+    try {
+      adfContent = JSON.parse(adfString);
+    } catch (parseError) {
+      throw new Error(`Failed to parse ADF content: ${parseError.message}`);
+    }
+
+    console.log(`[postRedlineComment] Fetched page "${pageData.title}", parsed ADF with ${adfContent?.content?.length || 0} top-level nodes`);
+
+    // Step 2: Navigate ADF to find the Embed macro and nearby text for inline comment
+    const { textSelection, matchCount, matchIndex } = findTextNearEmbed(adfContent, localId);
+
+    if (!textSelection) {
+      throw new Error(`Could not find suitable text near Embed ${localId} for inline comment`);
+    }
+
+    console.log(`[postRedlineComment] Found text selection: "${textSelection}" (match ${matchIndex + 1} of ${matchCount})`);
+
+    // Step 3: Post inline comment to Confluence
+    const commentBody = {
+      pageId,
+      body: {
+        representation: 'storage',
+        value: `<p>${commentText.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`
+      },
+      inlineCommentProperties: {
+        textSelection,
+        textSelectionMatchCount: matchCount,
+        textSelectionMatchIndex: matchIndex
+      }
+    };
+
+    console.log(`[postRedlineComment] Posting inline comment...`);
+
+    const commentResponse = await api.asUser().requestConfluence(
+      route`/wiki/api/v2/inline-comments`,
+      {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(commentBody)
+      }
+    );
+
+    if (!commentResponse.ok) {
+      const errorText = await commentResponse.text();
+      throw new Error(`Failed to post comment: ${commentResponse.status} ${commentResponse.statusText} - ${errorText}`);
+    }
+
+    const commentData = await commentResponse.json();
+
+    console.log(`[postRedlineComment] Successfully posted comment ${commentData.id}`);
+
+    return {
+      success: true,
+      commentId: commentData.id,
+      textSelection,
+      location: `match ${matchIndex + 1} of ${matchCount}`
+    };
+
+  } catch (error) {
+    console.error('[postRedlineComment] Error:', error);
+    throw new Error(`Failed to post inline comment: ${error.message}`);
+  }
+}
+
+/**
+ * Find suitable text near an Embed macro for inline comment targeting
+ *
+ * Strategy:
+ * 1. Find the Embed macro (extension node) with matching localId
+ * 2. Look for the closest heading before the macro
+ * 3. If no heading, look for the first text paragraph after the macro
+ * 4. Count occurrences of that text in the document
+ *
+ * @param {Object} adfContent - ADF document
+ * @param {string} targetLocalId - Embed localId to find
+ * @returns {Object} { textSelection, matchCount, matchIndex } or { textSelection: null }
+ */
+function findTextNearEmbed(adfContent, targetLocalId) {
+  console.log(`[findTextNearEmbed] 🔍 Starting search for Embed with localId: ${targetLocalId}`);
+  console.log(`[findTextNearEmbed] ADF root type: ${adfContent?.type}, has content: ${Array.isArray(adfContent?.content)}`);
+
+  // Track all content nodes in order for finding previous/next elements
+  const contentNodes = [];
+  let embedNodeIndex = -1;
+  let extensionNodesFound = 0;
+
+  // Recursively walk the ADF tree to collect all content nodes
+  function walkAdf(node, depth = 0) {
+    if (!node || typeof node !== 'object') return;
+
+    // Debug: Log all extension nodes we encounter
+    if (node.type === 'extension') {
+      extensionNodesFound++;
+      console.log(`[findTextNearEmbed] Found extension node #${extensionNodesFound}:`, JSON.stringify({
+        type: node.type,
+        extensionType: node.attrs?.extensionType,
+        extensionKey: node.attrs?.extensionKey,
+        parametersStructure: Object.keys(node.attrs?.parameters || {}),
+        fullParameters: node.attrs?.parameters,
+        macroParams: node.attrs?.parameters?.macroParams,
+        localIdPath1: node.attrs?.parameters?.macroParams?.localId?.value,
+        localIdPath2: node.attrs?.parameters?.macroParams?.localId,
+        localIdPath3: node.attrs?.parameters?.localId,
+        allAttrs: node.attrs
+      }, null, 2));
+    }
+
+    // Check if this is our target Embed macro
+    // The localId can be in multiple locations depending on macro type
+    const nodeLocalId = node.attrs?.localId ||
+                        node.attrs?.parameters?.localId ||
+                        node.attrs?.parameters?.macroParams?.localId?.value;
+
+    if (
+      node.type === 'extension' &&
+      nodeLocalId === targetLocalId
+    ) {
+      console.log(`[findTextNearEmbed] ✅ FOUND TARGET EMBED at node ${contentNodes.length}, localId at: ${
+        node.attrs?.localId ? 'attrs.localId' :
+        node.attrs?.parameters?.localId ? 'attrs.parameters.localId' :
+        'attrs.parameters.macroParams.localId.value'
+      }`);
+      embedNodeIndex = contentNodes.length;
+    }
+
+    // Collect this node if it has useful content
+    contentNodes.push(node);
+
+    // Recurse into content array
+    if (Array.isArray(node.content)) {
+      node.content.forEach(child => walkAdf(child, depth + 1));
+    }
+  }
+
+  walkAdf(adfContent);
+
+  console.log(`[findTextNearEmbed] 📊 Search complete - found ${extensionNodesFound} extension nodes total, collected ${contentNodes.length} content nodes`);
+
+  if (embedNodeIndex === -1) {
+    console.warn(`[findTextNearEmbed] ❌ Could not find Embed with localId ${targetLocalId} among ${extensionNodesFound} extension nodes`);
+    return { textSelection: null };
+  }
+
+  console.log(`[findTextNearEmbed] Found Embed at node index ${embedNodeIndex}`);
+
+  // Strategy 1: Look backwards for the closest heading
+  for (let i = embedNodeIndex - 1; i >= 0; i--) {
+    const node = contentNodes[i];
+    if (node.type === 'heading' && node.content && node.content.length > 0) {
+      const headingText = extractText(node);
+      if (headingText && headingText.trim().length > 0) {
+        const { matchCount, matchIndex } = countTextOccurrences(adfContent, headingText);
+        console.log(`[findTextNearEmbed] Using heading: "${headingText}"`);
+        return { textSelection: headingText, matchCount, matchIndex };
+      }
+    }
+  }
+
+  // Strategy 2: Look forward for the first paragraph with text
+  for (let i = embedNodeIndex + 1; i < contentNodes.length; i++) {
+    const node = contentNodes[i];
+    if (node.type === 'paragraph' && node.content && node.content.length > 0) {
+      const paraText = extractText(node);
+      if (paraText && paraText.trim().length > 0) {
+        const { matchCount, matchIndex } = countTextOccurrences(adfContent, paraText);
+        console.log(`[findTextNearEmbed] Using paragraph: "${paraText}"`);
+        return { textSelection: paraText, matchCount, matchIndex };
+      }
+    }
+  }
+
+  console.warn(`[findTextNearEmbed] Could not find suitable text near Embed`);
+  return { textSelection: null };
+}
+
+/**
+ * Extract plain text from an ADF node
+ */
+function extractText(node) {
+  if (!node) return '';
+
+  if (node.type === 'text') {
+    return node.text || '';
+  }
+
+  if (Array.isArray(node.content)) {
+    return node.content.map(extractText).join('');
+  }
+
+  return '';
+}
+
+/**
+ * Count how many times text appears in ADF document and find the index of the first occurrence
+ */
+function countTextOccurrences(adfContent, targetText) {
+  const allText = extractText(adfContent);
+  let count = 0;
+  let matchIndex = 0;
+  let lastIndex = 0;
+
+  // Count occurrences
+  while ((lastIndex = allText.indexOf(targetText, lastIndex)) !== -1) {
+    if (count === 0) {
+      matchIndex = count; // First occurrence
+    }
+    count++;
+    lastIndex += targetText.length;
+  }
+
+  return { matchCount: count, matchIndex };
+}

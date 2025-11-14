@@ -522,7 +522,7 @@ export const insertInternalNotesInAdf = (adfNode, internalNotes) => {
             {
               type: 'textColor',
               attrs: {
-                color: '#6554C0' // Purple marks internal note references
+                color: '#D3D3D3' // Light gray marks internal note references
               }
             },
             {

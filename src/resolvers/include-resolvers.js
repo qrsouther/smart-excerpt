@@ -18,6 +18,7 @@
 import { storage } from '@forge/api';
 import api, { route } from '@forge/api';
 import { findHeadingBeforeMacro } from '../utils/adf-utils.js';
+import { listVersions } from '../utils/version-manager.js';
 
 /**
  * Save variable values, toggle states, and custom insertions for a specific Include instance
@@ -34,7 +35,19 @@ export async function saveVariableValues(req) {
 
     const key = `macro-vars:${localId}`;
     const now = new Date().toISOString();
-    await storage.set(key, {
+
+    // Load existing config to preserve redline fields (if any)
+    const existingConfig = await storage.get(key);
+
+    // Initialize redline fields for new Embeds
+    const redlineStatus = existingConfig?.redlineStatus || 'reviewable';
+    const approvedContentHash = existingConfig?.approvedContentHash || null;
+    const approvedBy = existingConfig?.approvedBy || null;
+    const approvedAt = existingConfig?.approvedAt || null;
+    const statusHistory = existingConfig?.statusHistory || [];
+
+    // Build the new config object
+    const newConfig = {
       excerptId,
       variableValues,
       toggleStates: toggleStates || {},
@@ -43,8 +56,57 @@ export async function saveVariableValues(req) {
       updatedAt: now,
       lastSynced: now,  // Track when this Include instance last synced with Source
       syncedContentHash,  // Store hash of the content at sync time for staleness detection
-      syncedContent  // Store Source ADF at sync time for diff comparison
-    });
+      syncedContent,  // Store Source ADF at sync time for diff comparison
+
+      // Redline fields (initialized on first save, preserved on updates)
+      redlineStatus,
+      approvedContentHash,
+      approvedBy,
+      approvedAt,
+      statusHistory,
+      pageId: explicitPageId || req.context?.extension?.content?.id  // Store for redline queue
+    };
+
+    await storage.set(key, newConfig);
+
+    // AUTO-TRANSITION LOGIC: Check if approved Embed content has changed
+    if (existingConfig && existingConfig.redlineStatus === 'approved' && existingConfig.approvedContentHash) {
+      // Query version system for latest contentHash
+      const versionsResult = await listVersions(storage, localId);
+
+      if (versionsResult.success && versionsResult.versions.length > 0) {
+        const latestVersion = versionsResult.versions[0];
+        const currentContentHash = latestVersion.contentHash;
+
+        // Compare with approved contentHash
+        if (currentContentHash !== existingConfig.approvedContentHash) {
+          console.log(`[saveVariableValues] AUTO-TRANSITION: Embed ${localId} content changed after approval`);
+          console.log(`[saveVariableValues] Previous hash: ${existingConfig.approvedContentHash}`);
+          console.log(`[saveVariableValues] Current hash: ${currentContentHash}`);
+
+          // Auto-transition status to "needs-revision"
+          const updatedStatusHistory = existingConfig.statusHistory || [];
+          updatedStatusHistory.push({
+            status: 'needs-revision',
+            previousStatus: 'approved',
+            changedBy: 'system',
+            changedAt: now,
+            reason: 'Content modified after approval (auto-transition)'
+          });
+
+          // Update redline fields
+          newConfig.redlineStatus = 'needs-revision';
+          newConfig.statusHistory = updatedStatusHistory;
+
+          // Save updated config with new status
+          await storage.set(key, newConfig);
+
+          console.log(`[saveVariableValues] ✅ Auto-transitioned Embed ${localId}: approved → needs-revision`);
+        } else {
+          console.log(`[saveVariableValues] Embed ${localId} approved and unchanged (contentHash match)`);
+        }
+      }
+    }
 
     // Also update usage tracking with the latest toggle states
     // This ensures toggle states are always current in the usage data

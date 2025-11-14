@@ -21,6 +21,29 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@forge/bridge';
 
 /**
+ * Hook for fetching current user context
+ *
+ * Fetches the current user's accountId from Forge context.
+ * Used for redline status changes and other user-specific actions.
+ *
+ * @returns {Object} React Query result with accountId
+ */
+export const useCurrentUserQuery = () => {
+  return useQuery({
+    queryKey: ['currentUser'],
+    queryFn: async () => {
+      const result = await invoke('getCurrentUser');
+      if (!result || !result.success) {
+        throw new Error('Failed to get current user context');
+      }
+      return result.accountId;
+    },
+    staleTime: 1000 * 60 * 60, // 1 hour - user context rarely changes during session
+    gcTime: 1000 * 60 * 60 * 2, // 2 hours
+  });
+};
+
+/**
  * Hook for fetching all excerpts with orphaned data
  *
  * Fetches all Blueprint Standards and orphaned usage data, with sanitization

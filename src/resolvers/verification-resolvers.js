@@ -1072,9 +1072,10 @@ export async function getStorageUsage() {
     let embedsCount = 0;
 
     // Count total embeds by summing all usage references
+    // Usage data structure: { excerptId, references: [...] }
     for (const usageItem of usage) {
-      if (usageItem.value && Array.isArray(usageItem.value)) {
-        embedsCount += usageItem.value.length;
+      if (usageItem.value && usageItem.value.references && Array.isArray(usageItem.value.references)) {
+        embedsCount += usageItem.value.references.length;
       }
     }
 

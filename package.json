@@ -1,6 +1,6 @@
 {
   "name": "blueprint-app",
-  "version": "7.22.0",
+  "version": "8.0.0",
   "description": "Blueprint App - A high-performance content reuse system for Confluence",
   "main": "src/index.js",
   "scripts": {

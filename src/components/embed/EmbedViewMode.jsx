@@ -26,6 +26,7 @@
  * @param {Object} props.variableValues - Current variable values
  * @param {Object} props.toggleStates - Current toggle states
  * @param {Object} props.excerpt - The Source excerpt object with documentationLinks
+ * @param {Array} props.internalNotes - Internal notes to apply to content
  * @returns {JSX.Element} - View mode JSX
  */
 
@@ -46,7 +47,7 @@ const staleBorderWrapperStyle = xcss({
   borderRadius: 'border.radius',
   padding: 'space.200'
 });
-import { cleanAdfForRenderer } from '../../utils/adf-rendering-utils';
+import { cleanAdfForRenderer, insertInternalNotesInAdf } from '../../utils/adf-rendering-utils';
 import { UpdateAvailableBanner } from './UpdateAvailableBanner';
 import { DocumentationLinksDisplay } from './DocumentationLinksDisplay';
 import { StalenessCheckIndicator } from './StalenessCheckIndicator';
@@ -64,7 +65,12 @@ export function EmbedViewMode({
   latestRenderedContent,
   variableValues,
   toggleStates,
-  excerpt
+  excerpt,
+  internalNotes = [],
+  redlineStatus,
+  approvedBy,
+  approvedAt,
+  lastChangedBy
 }) {
   // State for progressive disclosure - only show banner when user clicks Review button
   const [showUpdateBanner, setShowUpdateBanner] = useState(false);
@@ -94,7 +100,35 @@ export function EmbedViewMode({
 
   // ADF content
   if (isAdf) {
-    const cleaned = cleanAdfForRenderer(content);
+    // Apply internal notes if they exist (cached content might be stale)
+    // Check if content already has internal note markers by looking for purple text nodes
+    let contentWithNotes = content;
+    if (internalNotes && internalNotes.length > 0) {
+      // Check if markers already exist by searching for light gray-colored text nodes
+      const hasExistingMarkers = (() => {
+        const checkNode = (node) => {
+          if (!node) return false;
+          if (node.type === 'text' && node.marks) {
+            const hasLightGrayColor = node.marks.some(mark => 
+              mark.type === 'textColor' && mark.attrs?.color === '#D3D3D3'
+            );
+            if (hasLightGrayColor) return true;
+          }
+          if (node.content && Array.isArray(node.content)) {
+            return node.content.some(child => checkNode(child));
+          }
+          return false;
+        };
+        return checkNode(content);
+      })();
+      
+      // Only apply if markers don't already exist (prevents duplicates)
+      if (!hasExistingMarkers) {
+        contentWithNotes = insertInternalNotesInAdf(content, internalNotes);
+      }
+    }
+    
+    const cleaned = cleanAdfForRenderer(contentWithNotes);
 
     if (!cleaned) {
       return <Text>Error: Content cleaning failed</Text>;
@@ -125,9 +159,13 @@ export function EmbedViewMode({
               toggleStates={toggleStates}
             />
           )}
-          <DocumentationLinksDisplay 
+          <DocumentationLinksDisplay
             documentationLinks={excerpt?.documentationLinks}
             isCheckingStaleness={isCheckingStaleness}
+            redlineStatus={redlineStatus}
+            approvedBy={approvedBy}
+            approvedAt={approvedAt}
+            lastChangedBy={lastChangedBy}
           />
           <Box xcss={adfContentContainerStyle}>
             <AdfRenderer document={cleaned} />
@@ -163,9 +201,13 @@ export function EmbedViewMode({
             toggleStates={toggleStates}
           />
         )}
-        <DocumentationLinksDisplay 
+        <DocumentationLinksDisplay
           documentationLinks={excerpt?.documentationLinks}
           isCheckingStaleness={isCheckingStaleness}
+          redlineStatus={redlineStatus}
+          approvedBy={approvedBy}
+          approvedAt={approvedAt}
+          lastChangedBy={lastChangedBy}
         />
         <Box xcss={adfContentContainerStyle}>
           {content && typeof content === 'object' && content.type === 'doc' ? (

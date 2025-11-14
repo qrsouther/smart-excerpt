@@ -46,11 +46,28 @@ export const fullWidthTableStyle = xcss({
  * Scrollable table container
  * Used for: usage details table that may have many variable/toggle columns
  * Adds horizontal scrollbar when table content overflows
+ * Constrained to parent width to prevent page-level horizontal scrolling
  */
 export const tableScrollContainerStyle = xcss({
   width: '100%',
   maxWidth: '100%',
-  overflowX: 'auto'
+  minWidth: 0, // Critical: Allow flex item to shrink below its content size
+  overflow: 'auto', // Allow scrolling when content overflows
+  boxSizing: 'border-box', // Include padding/borders in width calculation
+  display: 'block', // Ensure block-level behavior for proper overflow handling
+  position: 'relative' // Establish positioning context for scrollbar
+});
+
+/**
+ * Table cell separator style
+ * Adds subtle vertical separator line to the left of table cells
+ * Used to visually separate columns in the Usage table
+ */
+export const tableCellSeparatorStyle = xcss({
+  borderLeftWidth: 'border.width',
+  borderLeftStyle: 'solid',
+  borderLeftColor: 'color.border',
+  paddingLeft: 'space.100'
 });
 
 /**
@@ -77,16 +94,21 @@ export const selectStyles = xcss({
 /**
  * Left sidebar layout
  * Takes up 15% of viewport width for category navigation and filters
+ * Fixed width to prevent expansion when table content is wide
  */
 export const leftSidebarStyles = xcss({
   width: '15%',
   minWidth: '200px',
+  maxWidth: '15%', // Prevent expansion
+  flexShrink: 0, // Don't shrink below content size
+  flexGrow: 0, // Don't grow beyond allocated width
   paddingInlineEnd: 'space.200',
   padding: 'space.200',
   borderColor: 'color.border',
   borderStyle: 'solid',
   borderWidth: 'border.width',
-  borderRadius: 'border.radius'
+  borderRadius: 'border.radius',
+  boxSizing: 'border-box' // Include padding in width calculation
 });
 
 /**
@@ -101,10 +123,15 @@ export const scrollableListStyle = xcss({
 
 /**
  * Middle section layout
- * Takes up 85% of viewport width when right panel is hidden
+ * Takes up remaining space after sidebar (flex: 1)
+ * Constrained to prevent horizontal overflow - only child table should scroll
  */
 export const middleSectionStyles = xcss({
-  width: '85%',
+  flex: '1 1 0%', // Take remaining space, can shrink, don't grow beyond
+  minWidth: 0, // Critical: Allow flex item to shrink below its content size
+  maxWidth: '100%', // Never exceed container width
+  overflow: 'hidden', // Prevent container from expanding horizontally (xcss doesn't support overflowX separately)
+  boxSizing: 'border-box', // Include padding in width calculation
   paddingInlineEnd: 'space.200',
   paddingInlineStart: 'space.200',
   padding: 'space.200',
@@ -146,4 +173,12 @@ export const sectionSeparatorStyles = xcss({
  */
 export const sectionMarginStyles = xcss({
   marginBlockEnd: 'space.300'
+});
+
+/**
+ * Tab panel content spacing
+ * Adds margin below TabList to separate tabs from content
+ */
+export const tabPanelContentStyles = xcss({
+  marginBlockStart: 'space.200'
 });

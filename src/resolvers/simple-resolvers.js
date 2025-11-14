@@ -167,7 +167,12 @@ export async function getVariableValues(req) {
       lastSynced: data.lastSynced,
       excerptId: data.excerptId,
       syncedContentHash: data.syncedContentHash,  // Hash for staleness detection
-      syncedContent: data.syncedContent  // Old Source ADF for diff comparison
+      syncedContent: data.syncedContent,  // Old Source ADF for diff comparison
+      redlineStatus: data.redlineStatus || 'reviewable',  // Redline approval status
+      approvedBy: data.approvedBy,
+      approvedAt: data.approvedAt,
+      lastChangedBy: data.lastChangedBy,  // User who made the last status change
+      lastChangedAt: data.lastChangedAt
     };
   } catch (error) {
     console.error('Error getting variable values:', error);
@@ -636,6 +641,85 @@ export async function setLastVerificationTime(req) {
     };
   } catch (error) {
     console.error('Error setting last verification time:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Get current user's context (accountId, etc.)
+ * Used for redline status changes and other user-specific actions
+ */
+export async function getCurrentUser(req) {
+  try {
+    // In Forge Custom UI, the user's accountId is available in req.context
+    const accountId = req.context?.accountId;
+
+    if (!accountId) {
+      console.warn('[getCurrentUser] No accountId found in context');
+      return {
+        success: false,
+        error: 'No user context available'
+      };
+    }
+
+    return {
+      success: true,
+      accountId
+    };
+  } catch (error) {
+    console.error('[getCurrentUser] Error:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Query Forge storage by key (debugging tool)
+ * Allows direct inspection of storage data for any key
+ *
+ * @param {Object} req - Request with payload.key
+ * @returns {Object} Storage data or error
+ */
+export async function queryStorage(req) {
+  try {
+    const { key } = req.payload;
+
+    if (!key) {
+      return {
+        success: false,
+        error: 'No key provided'
+      };
+    }
+
+    console.log(`[queryStorage] Querying key: ${key}`);
+
+    const data = await storage.get(key);
+
+    if (data === null || data === undefined) {
+      return {
+        success: true,
+        exists: false,
+        key,
+        data: null,
+        message: `No data found for key: ${key}`
+      };
+    }
+
+    return {
+      success: true,
+      exists: true,
+      key,
+      data,
+      dataType: typeof data,
+      dataSize: JSON.stringify(data).length
+    };
+  } catch (error) {
+    console.error('[queryStorage] Error:', error);
     return {
       success: false,
       error: error.message
