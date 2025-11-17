@@ -25,7 +25,7 @@ The Blueprint App consists of three major systems: the **Source** macro, the **E
 
 | <h3>🎯 Embed</h3>*CSS, Implementers, et al.* | <h3>📦 Source</h3>*Architecture* | <h3>⚙️ Admin</h3>*Architecture, CSS Managers, MOps Leadership* |
 |:-------------------------------------|:----------------------- |:------------------------------------------------------|
-|{EMBEDSCREENSHOT!}<br>Macros that render content from a selected Source, to be personalized and displayed on a client's Blueprint page.<br><br>[View the Embed macro's detailed features](#-embed-macro-features-and-workflow)|{SOURCESCREENSHOT!}<br>Macros consisting of reusable content templates, written primarily by the Architecture team.<br><br>[View the Source macro's detailed features](#-source-macro-features-and-workflow)|{ADMINSCREENSHOT!}<br>Admin view to manage and report on all Sources and Embeds.<br><br>[View the Admin page's detailed features](#-admin-ui-features)|
+|Macros that render content from a selected Source, to be personalized and displayed on a client's Blueprint page.<br><br>[View the Embed macro's detailed features](#-embed-macro-features-and-workflow)|Macros consisting of reusable content templates, written primarily by the Architecture team.<br><br>[View the Source macro's detailed features](#-source-macro-features-and-workflow)|Admin view to manage and report on all Sources and Embeds.<br><br>[View the Admin page's detailed features](#-admin-ui-features)|
 
 🤔 If you're familiar with the following technologies, the Blueprint App is...
 
