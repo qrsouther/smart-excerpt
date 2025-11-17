@@ -28,7 +28,6 @@ import {
   Text,
   Strong,
   Button,
-  Textfield,
   Box,
   Modal,
   ModalTransition,
@@ -47,6 +46,7 @@ import {
   xcss
 } from '@forge/react';
 import { invoke } from '@forge/bridge';
+import { StableTextfield } from '../common/StableTextfield';
 
 // Item container styling
 const deletedItemStyle = xcss({
@@ -383,7 +383,8 @@ export function EmergencyRecoveryModal({ isOpen, onClose, initialTab = 'deleted-
               )}
 
               {/* Search field */}
-              <Textfield
+              <StableTextfield
+                stableKey="emergency-recovery-search"
                 placeholder="Search by localId, page title, or deletion reason..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -503,7 +504,8 @@ export function EmergencyRecoveryModal({ isOpen, onClose, initialTab = 'deleted-
                     </Text>
                   </SectionMessage>
 
-                  <Textfield
+                  <StableTextfield
+                    stableKey="emergency-recovery-delete-page-ids"
                     placeholder="Enter page IDs (comma-separated, e.g., 12345678, 87654321)"
                     value={deletePageIds}
                     onChange={(e) => setDeletePageIds(e.target.value)}
@@ -562,7 +564,8 @@ export function EmergencyRecoveryModal({ isOpen, onClose, initialTab = 'deleted-
                   <Stack space="space.100">
                     <Text><Strong>Embed UUID (localId)</Strong></Text>
                     <Inline space="space.100" alignBlock="center">
-                      <Textfield
+                      <StableTextfield
+                        stableKey="emergency-recovery-version-uuid"
                         placeholder="Enter Embed UUID (e.g., 1a2b3c4d-5e6f-7g8h-9i0j-1k2l3m4n5o6p)"
                         value={versionLocalId}
                         onChange={(e) => setVersionLocalId(e.target.value)}

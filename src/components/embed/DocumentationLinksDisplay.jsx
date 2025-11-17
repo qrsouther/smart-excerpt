@@ -116,8 +116,13 @@ export function DocumentationLinksDisplay({
         <Tooltip content={tooltips[redlineStatus] || ''}>
           <Lozenge appearance={appearances[redlineStatus] || 'default'}>
             {labels[redlineStatus] || redlineStatus}
-          </Lozenge>            
-            {redlineStatus === 'approved' && approvedAt && <Text size="small" color="color.text.subtlest">on {new Date(approvedAt).toLocaleDateString()}</Text>}
+          </Lozenge>
+          {redlineStatus === 'approved' && approvedAt && (
+            <>
+              {' '}
+              <Code>on {new Date(approvedAt).toLocaleDateString()}</Code>
+            </>
+          )}
         </Tooltip>
       </Inline>
     );

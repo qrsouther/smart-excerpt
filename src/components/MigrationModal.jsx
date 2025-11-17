@@ -3,7 +3,6 @@ import {
   Text,
   Strong,
   Button,
-  Textfield,
   Box,
   Modal,
   ModalTransition,
@@ -16,6 +15,7 @@ import {
   SectionMessage
 } from '@forge/react';
 import { invoke } from '@forge/bridge';
+import { StableTextfield } from './common/StableTextfield';
 
 /**
  * Migration Modal Component
@@ -50,7 +50,8 @@ export const MigrationModal = ({ isOpen, onClose, defaultPageId = '99909654' }) 
                 <Text>
                   <Strong>Page ID to migrate:</Strong>
                 </Text>
-                <Textfield
+                <StableTextfield
+                  stableKey="migration-page-id"
                   placeholder="Enter Confluence Page ID (e.g., 99909654)"
                   value={migrationPageId}
                   onChange={(e) => setMigrationPageId(e.target.value)}

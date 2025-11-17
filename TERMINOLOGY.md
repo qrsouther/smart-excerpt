@@ -215,7 +215,7 @@
 **Purpose:** Add staff-only annotations that are hidden from external clients
 
 **How it works:**
-1. Purple superscript markers (¹, ², ³) appear inline
+1. Superscript markers (¹, ², ³) appear inline
 2. Collapsible panel at bottom shows all notes
 3. External content filtering removes notes for client-facing displays
 4. Stored in Embed config's `internalNotes` array

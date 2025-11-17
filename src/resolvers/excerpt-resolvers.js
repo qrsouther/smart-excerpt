@@ -8,6 +8,7 @@
  */
 
 import { storage } from '@forge/api';
+import api, { route } from '@forge/api';
 import { generateUUID } from '../utils.js';
 import { detectVariables, detectToggles } from '../utils/detection-utils.js';
 import { updateExcerptIndex } from '../utils/storage-utils.js';
@@ -346,6 +347,144 @@ export async function massUpdateExcerpts(req) {
     };
   } catch (error) {
     console.error('Error in mass update:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+/**
+ * Update Source macro body content on the page
+ */
+export async function updateSourceMacroBody(req) {
+  try {
+    const { pageId, excerptId, localId, content } = req.payload;
+
+    if (!pageId || !excerptId || !content) {
+      return {
+        success: false,
+        error: 'Missing required parameters: pageId, excerptId, and content are required'
+      };
+    }
+
+    console.log(`[UPDATE-MACRO-BODY] Updating macro body for excerptId ${excerptId} on page ${pageId}`);
+
+    // Step 1: Get the current page content
+    const pageResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${pageId}?body-format=storage`,
+      {
+        headers: {
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    if (!pageResponse.ok) {
+      const errorText = await pageResponse.text();
+      console.error(`[UPDATE-MACRO-BODY] Failed to get page: ${pageResponse.status} - ${errorText}`);
+      return {
+        success: false,
+        error: `Failed to get page: ${pageResponse.status}`
+      };
+    }
+
+    const pageData = await pageResponse.json();
+    const currentBody = pageData.body.storage.value;
+    const currentVersion = pageData.version.number;
+
+    console.log(`[UPDATE-MACRO-BODY] Got page version ${currentVersion}, body length: ${currentBody.length}`);
+
+    // Step 2: Find the Source macro by excerptId
+    // The macro structure: <ac:adf-extension><ac:adf-node type="bodied-extension">...<ac:adf-parameter key="excerpt-id">EXCERPT_ID</ac:adf-parameter>...<ac:adf-content>CURRENT_CONTENT</ac:adf-content>...</ac:adf-node></ac:adf-extension>
+    // If localId is provided, use it for more precise matching
+    let macroPattern;
+    if (localId) {
+      // Match by both excerpt-id and local-id for precision
+      macroPattern = new RegExp(
+        `(<ac:adf-extension><ac:adf-node type="bodied-extension"[^>]*>.*?<ac:adf-parameter key="excerpt-id">${excerptId}</ac:adf-parameter>.*?<ac:adf-parameter key="local-id">${localId}</ac:adf-parameter>.*?<ac:adf-content>)([\\s\\S]*?)(</ac:adf-content>.*?</ac:adf-node></ac:adf-extension>)`,
+        'gs'
+      );
+    } else {
+      // Match by excerpt-id only
+      macroPattern = new RegExp(
+        `(<ac:adf-extension><ac:adf-node type="bodied-extension"[^>]*>.*?<ac:adf-parameter key="excerpt-id">${excerptId}</ac:adf-parameter>.*?<ac:adf-content>)([\\s\\S]*?)(</ac:adf-content>.*?</ac:adf-node></ac:adf-extension>)`,
+        'gs'
+      );
+    }
+
+    const match = macroPattern.exec(currentBody);
+
+    if (!match) {
+      console.error(`[UPDATE-MACRO-BODY] Macro not found for excerptId ${excerptId}${localId ? ` and localId ${localId}` : ''}`);
+      return {
+        success: false,
+        error: `Source macro not found on page`
+      };
+    }
+
+    // Step 3: Replace the content within <ac:adf-content> tags
+    // The content is already in ADF format (JSON), so we need to insert it as a JSON string
+    // JSON.stringify already escapes quotes properly, we just need to escape XML special chars
+    const contentJson = JSON.stringify(content);
+    // Escape XML special characters: & < > (quotes are already escaped by JSON.stringify)
+    const escapedContent = contentJson
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+    
+    const modifiedBody = currentBody.replace(
+      macroPattern,
+      `$1${escapedContent}$3`
+    );
+
+    // Step 4: Update the page
+    console.log(`[UPDATE-MACRO-BODY] Updating page with new macro body content`);
+
+    const updateResponse = await api.asApp().requestConfluence(
+      route`/wiki/api/v2/pages/${pageId}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          id: pageId,
+          status: 'current',
+          title: pageData.title,
+          body: {
+            representation: 'storage',
+            value: modifiedBody
+          },
+          version: {
+            number: currentVersion + 1,
+            message: `Blueprint App: Updated Source macro content`
+          }
+        })
+      }
+    );
+
+    if (!updateResponse.ok) {
+      const errorText = await updateResponse.text();
+      console.error(`[UPDATE-MACRO-BODY] Failed to update page: ${updateResponse.status} - ${errorText}`);
+      return {
+        success: false,
+        error: `Failed to update page: ${updateResponse.status}`
+      };
+    }
+
+    const updatedPage = await updateResponse.json();
+    console.log(`[UPDATE-MACRO-BODY] Successfully updated macro body! New version: ${updatedPage.version.number}`);
+
+    return {
+      success: true,
+      pageVersion: updatedPage.version.number,
+      updatedAt: new Date().toISOString()
+    };
+
+  } catch (error) {
+    console.error('[UPDATE-MACRO-BODY] Error:', error);
     return {
       success: false,
       error: error.message

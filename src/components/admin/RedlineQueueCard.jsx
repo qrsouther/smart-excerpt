@@ -357,6 +357,19 @@ function RedlineQueueCardComponent({ embedData, currentUserId, onStatusChange })
 
     let processedContent = rawContent;
     if (isAdf) {
+      // TODO: Fix for GitHub issue #2 - Free Write paragraph insertion position with enabled toggles
+      // FIX: Insert custom paragraphs BEFORE toggle filtering (same as embed-display.jsx fix above)
+      // This is less critical here since it's admin view-only, but should be consistent.
+      //
+      // COMMENTED OUT FIX (to be tested):
+      // // Apply transformations in order: variables → custom insertions → internal notes → toggles → clean
+      // processedContent = substituteVariablesInAdf(processedContent, embedData.variableValues || {});
+      // processedContent = insertCustomParagraphsInAdf(processedContent, embedData.customInsertions || []);
+      // processedContent = insertInternalNotesInAdf(processedContent, embedData.internalNotes || []);
+      // processedContent = filterContentByToggles(processedContent, embedData.toggleStates || {});
+      // processedContent = cleanAdfForRenderer(processedContent);
+      
+      // CURRENT (BUGGY) BEHAVIOR:
       // Apply transformations in order: toggles → variables → custom insertions → internal notes → clean
       processedContent = filterContentByToggles(processedContent, embedData.toggleStates || {});
       processedContent = substituteVariablesInAdf(processedContent, embedData.variableValues || {});

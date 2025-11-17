@@ -4,7 +4,6 @@ import ForgeReconciler, {
   FormSection,
   FormFooter,
   Label,
-  Textfield,
   Select,
   Text,
   Strong,
@@ -28,6 +27,7 @@ import ForgeReconciler, {
 import { invoke, view, router } from '@forge/bridge';
 import { QueryClient, QueryClientProvider, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useCategoriesQuery } from './hooks/admin-hooks';
+import { StableTextfield } from './components/common/StableTextfield';
 
 // Create a client
 const queryClient = new QueryClient({
@@ -55,6 +55,22 @@ const useExcerptQuery = (excerptId, enabled) => {
     enabled: enabled && !!excerptId,
     staleTime: 1000 * 60 * 5, // 5 minutes
     gcTime: 1000 * 60 * 30, // 30 minutes
+  });
+};
+
+// Custom hook for fetching admin URL
+const useAdminUrlQuery = () => {
+  return useQuery({
+    queryKey: ['adminUrl'],
+    queryFn: async () => {
+      const result = await invoke('getAdminUrl');
+      if (result.success && result.adminUrl) {
+        return result.adminUrl;
+      }
+      return null;
+    },
+    staleTime: 1000 * 60 * 60, // 1 hour - admin URL rarely changes
+    gcTime: 1000 * 60 * 60 * 24, // 24 hours
   });
 };
 
@@ -135,6 +151,9 @@ const App = () => {
     isLoading: isLoadingExcerpt,
     error: excerptError
   } = useExcerptQuery(excerptId, !!excerptId);
+
+  // Fetch admin URL dynamically
+  const { data: adminUrl } = useAdminUrlQuery();
 
   // Use React Query mutation for saving
   const {
@@ -327,8 +346,9 @@ const App = () => {
             <Label labelFor={getFieldId('excerptName')}>
               Blueprint Standard Source Name
             </Label>
-            <Textfield
+            <StableTextfield
               id={getFieldId('excerptName')}
+              stableKey="source-excerpt-name"
               value={excerptName}
               placeholder={isLoadingExcerpt ? 'Loading...' : ''}
               isDisabled={isLoadingExcerpt}
@@ -388,8 +408,9 @@ const App = () => {
                         />
                       </Inline>
                     </Inline>
-                    <Textfield
+                    <StableTextfield
                       id={`var-desc-${variable.name}`}
+                      stableKey={`source-var-desc-${variable.name}`}
                       label="Description"
                       placeholder={isLoadingExcerpt ? 'Loading...' : 'Description'}
                       value={variableMetadata[variable.name]?.description || ''}
@@ -404,8 +425,9 @@ const App = () => {
                         });
                       }}
                     />
-                    <Textfield
+                    <StableTextfield
                       id={`var-example-${variable.name}`}
+                      stableKey={`source-var-example-${variable.name}`}
                       label="Example"
                       placeholder={isLoadingExcerpt ? 'Loading...' : 'Example'}
                       value={variableMetadata[variable.name]?.example || ''}
@@ -448,8 +470,9 @@ const App = () => {
                   <Fragment key={toggle.name}>
                     <Text>{' '}</Text>
                     <Text><Strong><Code>{`{{toggle:${toggle.name}}}`}</Code></Strong></Text>
-                    <Textfield
+                    <StableTextfield
                       id={`toggle-desc-${toggle.name}`}
+                      stableKey={`source-toggle-desc-${toggle.name}`}
                       label="Description"
                       placeholder={isLoadingExcerpt ? 'Loading...' : 'Description'}
                       value={toggleMetadata[toggle.name]?.description || ''}
@@ -530,14 +553,16 @@ const App = () => {
             {/* Add new documentation link form */}
             <Text><Strong>Add New Documentation Link</Strong></Text>
             <Text>{' '}</Text>
-            <Textfield
+            <StableTextfield
+              stableKey="source-doc-link-anchor"
               label="Anchor Text"
               placeholder={isLoadingExcerpt ? 'Loading...' : 'e.g., API Reference'}
               value={newLinkAnchor}
               isDisabled={isLoadingExcerpt}
               onChange={(e) => setNewLinkAnchor(e.target.value)}
             />
-            <Textfield
+            <StableTextfield
+              stableKey="source-doc-link-url"
               label="URL"
               placeholder={isLoadingExcerpt ? 'Loading...' : 'https://example.com/docs'}
               value={newLinkUrl}
@@ -599,7 +624,18 @@ const App = () => {
               appearance="link"
               onClick={async () => {
                 try {
-                  await router.open('/wiki/admin/forge?id=ari%3Acloud%3Aecosystem%3A%3Aextension%2Fbe1ff96b-d44d-4975-98d3-25b80a813bdd%2Fbbebcb82-f8af-4cd4-8ddb-38c88a94d142%2Fstatic%2Fblueprint-standards-admin');
+                  // Use dynamically fetched admin URL, or fallback to hardcoded URL
+                  const urlToUse = adminUrl || '/wiki/admin/forge?id=ari%3Acloud%3Aecosystem%3A%3Aextension%2Fbe1ff96b-d44d-4975-98d3-25b80a813bdd%2Fbbebcb82-f8af-4cd4-8ddb-38c88a94d142%2Fstatic%2Fblueprint-standards-admin';
+                  
+                  // Extract just the path and query from the full URL if needed
+                  let pathToNavigate = urlToUse;
+                  if (urlToUse.startsWith('http://') || urlToUse.startsWith('https://')) {
+                    // Extract path and query from full URL
+                    const urlObj = new URL(urlToUse);
+                    pathToNavigate = urlObj.pathname + urlObj.search;
+                  }
+                  
+                  await router.open(pathToNavigate);
                 } catch (err) {
                   console.error('Navigation error:', err);
                 }

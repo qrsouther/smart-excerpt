@@ -31,10 +31,10 @@ import {
   Inline,
   Lozenge,
   Pressable,
-  Textfield,
   Select,
   xcss
 } from '@forge/react';
+import { StableTextfield } from '../common/StableTextfield';
 
 // Pressable item styling for excerpt list items
 const excerptItemStyle = (isSelected) => xcss({
@@ -68,7 +68,8 @@ export function ExcerptListSidebar({
       <Stack space="space.200">
         {/* Search and Filter Controls */}
         <Stack space="space.100">
-          <Textfield
+          <StableTextfield
+            stableKey="excerpt-search-input"
             placeholder="Search by name..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}

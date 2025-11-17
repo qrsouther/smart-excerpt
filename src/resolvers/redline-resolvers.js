@@ -149,7 +149,8 @@ export async function getRedlineQueue(req) {
     filteredEmbeds.sort((a, b) => {
       switch (sortBy) {
         case 'status':
-          const statusOrder = { 'needs-revision': 0, 'reviewable': 1, 'pre-approved': 2, 'approved': 3 };
+          // Reviewable is highest priority (appears first)
+          const statusOrder = { 'reviewable': 0, 'needs-revision': 1, 'pre-approved': 2, 'approved': 3 };
           return statusOrder[a.redlineStatus] - statusOrder[b.redlineStatus];
 
         case 'page':

@@ -6,7 +6,7 @@
  *
  * Features:
  * - Add custom paragraphs (visible to clients)
- * - Add internal notes (visible only internally, marked with 🔒)
+ * - Add internal notes (visible only internally, marked with 🔏)
  * - Position selection relative to source paragraphs
  * - Toggle between paragraph and note mode
  * - View and delete existing custom content
@@ -19,7 +19,6 @@ import {
   Text,
   Strong,
   Em,
-  Textfield,
   Toggle,
   Button,
   Select,
@@ -31,6 +30,7 @@ import {
   Box,
   xcss
 } from '@forge/react';
+import { StableTextfield } from './common/StableTextfield';
 
 import {
   filterContentByToggles,
@@ -85,6 +85,16 @@ export const CustomInsertionsPanel = ({
   // This ensures users can only position custom content relative to source content
   let originalContent = excerpt?.content;
   if (originalContent && typeof originalContent === 'object' && originalContent.type === 'doc') {
+    // TODO: Fix for GitHub issue #2 - Free Write paragraph insertion position with enabled toggles
+    // FIX: Extract paragraphs from ORIGINAL content (before toggle filtering) so paragraph indices
+    // match the original structure. This allows insertions to be placed inside toggle blocks.
+    // Only apply variable substitution for display purposes, but don't filter toggles yet.
+    // 
+    // COMMENTED OUT FIX (to be tested):
+    // originalContent = substituteVariablesInAdf(originalContent, variableValues);
+    // // Don't filter toggles here - extract from original structure
+    
+    // CURRENT (BUGGY) BEHAVIOR:
     // Apply variable substitution and toggle filtering to show accurate text
     originalContent = filterContentByToggles(originalContent, toggleStates);
     originalContent = substituteVariablesInAdf(originalContent, variableValues);
@@ -136,7 +146,7 @@ export const CustomInsertionsPanel = ({
           content: (
             <Inline space="space.050" alignBlock="center">
               <Text>📝</Text>
-              <Tooltip content="📝 is saved as a custom paragraph that is visible to clients, 🔒 is saved as an Internal Note that is visible only to SeatGeek employees.">
+              <Tooltip content="📝 is saved as a custom paragraph that is visible to clients, 🔏 is saved as an Internal Note that is visible only to SeatGeek employees.">
                 <Toggle
                   isChecked={insertionType === 'note'}
                   onChange={(e) => {
@@ -146,7 +156,7 @@ export const CustomInsertionsPanel = ({
                   }}
                 />
               </Tooltip>
-              <Text>🔒</Text>
+              <Text>🔏</Text>
             </Inline>
           )
         },
@@ -164,8 +174,9 @@ export const CustomInsertionsPanel = ({
         {
           key: 'content',
           content: (
-            <Textfield
+            <StableTextfield
               id={`custom-text-${insertionType}`}
+              stableKey={`custom-text-${insertionType}`}
               placeholder={insertionType === 'body' ? "Enter paragraph text..." : "Enter internal note..."}
               value={customText}
               onChange={(e) => setCustomText(e.target.value)}
@@ -221,7 +232,7 @@ export const CustomInsertionsPanel = ({
             key: 'type-indicator',
             content: (
               <Inline space="space.075" alignBlock="center">
-                <Text>{item.type === 'paragraph' ? '📝' : '🔒'}</Text>
+                <Text>{item.type === 'paragraph' ? '📝' : '🔏'}</Text>
                 <Lozenge appearance={item.type === 'paragraph' ? 'success' : 'moved'}>
                   {item.type === 'paragraph' ? 'External' : 'Internal'}
                 </Lozenge>
@@ -265,7 +276,7 @@ export const CustomInsertionsPanel = ({
           cells: [
             {
               key: 'type',
-              content: 'Internal? 🔒',
+              content: 'Internal? 🔏',
               width: 12
             },
             {

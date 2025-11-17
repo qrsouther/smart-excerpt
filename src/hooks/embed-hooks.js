@@ -227,6 +227,18 @@ export const useCachedContent = (
       const isAdf = freshContent && typeof freshContent === 'object' && freshContent.type === 'doc';
 
       if (isAdf) {
+        // TODO: Fix for GitHub issue #2 - Free Write paragraph insertion position with enabled toggles
+        // FIX: Insert custom paragraphs BEFORE toggle filtering (same as embed-display.jsx fix above)
+        //
+        // COMMENTED OUT FIX (to be tested):
+        // // Insert custom paragraphs and internal notes into original content (before toggle filtering)
+        // freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
+        // freshContent = insertCustomParagraphsInAdf(freshContent, loadedCustomInsertions);
+        // freshContent = insertInternalNotesInAdf(freshContent, loadedInternalNotes);
+        // // Then filter toggles (this will preserve insertions inside enabled toggles)
+        // freshContent = filterContentByToggles(freshContent, loadedToggleStates);
+        
+        // CURRENT (BUGGY) BEHAVIOR:
         freshContent = filterContentByToggles(freshContent, loadedToggleStates);
         freshContent = substituteVariablesInAdf(freshContent, loadedVariableValues);
         freshContent = insertCustomParagraphsInAdf(freshContent, loadedCustomInsertions);

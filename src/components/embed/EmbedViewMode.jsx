@@ -110,7 +110,7 @@ export function EmbedViewMode({
           if (!node) return false;
           if (node.type === 'text' && node.marks) {
             const hasLightGrayColor = node.marks.some(mark => 
-              mark.type === 'textColor' && mark.attrs?.color === '#D3D3D3'
+              mark.type === 'textColor' && mark.attrs?.color === '#505258'
             );
             if (hasLightGrayColor) return true;
           }

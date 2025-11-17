@@ -685,6 +685,53 @@ export async function getCurrentUser(req) {
  * @param {Object} req - Request with payload.key
  * @returns {Object} Storage data or error
  */
+/**
+ * Get the stored Admin page URL
+ * Returns the URL stored when the admin page first loads
+ */
+export async function getAdminUrl(req) {
+  try {
+    const adminUrl = await storage.get('app-config:adminUrl');
+    return {
+      success: true,
+      adminUrl: adminUrl || null
+    };
+  } catch (error) {
+    console.error('Error getting admin URL:', error);
+    return {
+      success: false,
+      error: error.message,
+      adminUrl: null
+    };
+  }
+}
+
+/**
+ * Store the Admin page URL
+ * Called by the admin page when it first loads to store its URL
+ */
+export async function setAdminUrl(req) {
+  try {
+    const { adminUrl } = req.payload;
+    if (!adminUrl) {
+      return {
+        success: false,
+        error: 'adminUrl is required'
+      };
+    }
+    await storage.set('app-config:adminUrl', adminUrl);
+    return {
+      success: true
+    };
+  } catch (error) {
+    console.error('Error setting admin URL:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
 export async function queryStorage(req) {
   try {
     const { key } = req.payload;

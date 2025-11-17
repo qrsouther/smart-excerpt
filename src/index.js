@@ -33,7 +33,9 @@ import {
   getLastVerificationTime as getLastVerificationTimeResolver,
   setLastVerificationTime as setLastVerificationTimeResolver,
   getCurrentUser as getCurrentUserResolver,
-  queryStorage as queryStorageResolver
+  queryStorage as queryStorageResolver,
+  getAdminUrl as getAdminUrlResolver,
+  setAdminUrl as setAdminUrlResolver
 } from './resolvers/simple-resolvers.js';
 
 // Import excerpt CRUD resolver functions (Phase 3 modularization)
@@ -43,7 +45,8 @@ import {
   getAllExcerpts as getAllExcerptsResolver,
   deleteExcerpt as deleteExcerptResolver,
   updateExcerptMetadata as updateExcerptMetadataResolver,
-  massUpdateExcerpts as massUpdateExcerptsResolver
+  massUpdateExcerpts as massUpdateExcerptsResolver,
+  updateSourceMacroBody as updateSourceMacroBodyResolver
 } from './resolvers/excerpt-resolvers.js';
 
 // Import verification resolver functions (Phase 5 modularization)
@@ -60,6 +63,7 @@ import {
   trackExcerptUsage as trackExcerptUsageResolver,
   removeExcerptUsage as removeExcerptUsageResolver,
   getExcerptUsage as getExcerptUsageResolver,
+  getExcerptUsageForCSV as getExcerptUsageForCSVResolver,
   getAllUsageCounts as getAllUsageCountsResolver,
   pushUpdatesToAll as pushUpdatesToAllResolver,
   pushUpdatesToPage as pushUpdatesToPageResolver
@@ -205,6 +209,9 @@ resolver.define('updateExcerptMetadata', updateExcerptMetadataResolver);
 // Mass update excerpts (e.g., change category for multiple excerpts)
 resolver.define('massUpdateExcerpts', massUpdateExcerptsResolver);
 
+// Update Source macro body content on the page
+resolver.define('updateSourceMacroBody', updateSourceMacroBodyResolver);
+
 // Track usage of an excerpt (called when Embed macro is saved)
 resolver.define('trackExcerptUsage', trackExcerptUsageResolver);
 
@@ -213,6 +220,9 @@ resolver.define('removeExcerptUsage', removeExcerptUsageResolver);
 
 // Get excerpt usage (which Embed macros reference this excerpt)
 resolver.define('getExcerptUsage', getExcerptUsageResolver);
+
+// Get excerpt usage with full CSV export data
+resolver.define('getExcerptUsageForCSV', getExcerptUsageForCSVResolver);
 
 // Get usage counts for all excerpts (lightweight for sorting in admin page)
 resolver.define('getAllUsageCounts', getAllUsageCountsResolver);
@@ -865,6 +875,10 @@ resolver.define('getCurrentUser', getCurrentUserResolver);
 
 // Query Forge storage by key (debugging tool)
 resolver.define('queryStorage', queryStorageResolver);
+
+// Get/Set Admin page URL (stored dynamically on first admin page load)
+resolver.define('getAdminUrl', getAdminUrlResolver);
+resolver.define('setAdminUrl', setAdminUrlResolver);
 
 // ============================================================================
 // RESTORE AND RECOVERY RESOLVERS (Phase 8 modularization)

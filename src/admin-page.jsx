@@ -61,6 +61,7 @@ import {
   sortExcerpts,
   calculateStalenessStatus
 } from './utils/admin-utils';
+import { APP_VERSION } from './utils/version';
 
 // Import components
 import { MigrationModal } from './components/MigrationModal';
@@ -72,7 +73,6 @@ import { ExcerptPreviewModal } from './components/admin/ExcerptPreviewModal';
 import { CategoryManager } from './components/admin/CategoryManager';
 import { CheckAllProgressBar } from './components/admin/CheckAllProgressBar';
 import { AdminToolbar } from './components/admin/AdminToolbar';
-import { ScrollFadeIndicator } from './components/admin/ScrollFadeIndicator';
 import { OrphanedItemsSection } from './components/admin/OrphanedItemsSection';
 import { EmergencyRecoveryModal } from './components/admin/EmergencyRecoveryModal';
 import { VersionHistoryModal } from './components/admin/VersionHistoryModal';
@@ -125,8 +125,7 @@ const queryClient = new QueryClient({
 // 4. Delete migration handler functions (search for "handleScanMultiExcerpt", "handleBulkImport", etc.)
 const SHOW_MIGRATION_TOOLS = true; // TEMPORARILY ENABLED FOR ONE-TIME BULK IMPORT
 
-// App version (from package.json)
-const APP_VERSION = '7.7.2';
+// App version (imported from utils/version.js - keep in sync with package.json)
 
 const App = () => {
   // ============================================================================
@@ -162,6 +161,34 @@ const App = () => {
 
   // Fetch all usage counts (for sorting)
   const { data: usageCounts = {} } = useAllUsageCountsQuery();
+
+  // ============================================================================
+  // STORE ADMIN URL ON FIRST LOAD
+  // ============================================================================
+  // Store the admin page URL in storage so other components can navigate to it
+  useEffect(() => {
+    const storeAdminUrl = async () => {
+      try {
+        // Try to get current URL from window.location (may not work in all Forge contexts)
+        let adminUrl = null;
+        if (typeof window !== 'undefined' && window.location) {
+          // Get the full URL including query parameters
+          adminUrl = window.location.href;
+        }
+        
+        // If we got a URL, store it
+        if (adminUrl) {
+          await invoke('setAdminUrl', { adminUrl });
+          console.log('[Admin] Stored admin URL:', adminUrl);
+        }
+      } catch (error) {
+        // Silently fail - this is not critical functionality
+        console.warn('[Admin] Could not store admin URL:', error);
+      }
+    };
+    
+    storeAdminUrl();
+  }, []); // Run once on mount
 
   // ============================================================================
   // LOCAL UI STATE (not data fetching)
@@ -1151,7 +1178,7 @@ const App = () => {
   if (isLoading) {
     return (
       <Fragment>
-        <Text><Strong>Blueprint Standards Admin v{APP_VERSION}</Strong></Text>
+        <Text>v{APP_VERSION}</Text>
         <Text>Loading...</Text>
       </Fragment>
     );
@@ -1160,7 +1187,7 @@ const App = () => {
   if (error) {
     return (
       <Fragment>
-        <Text><Strong>Blueprint Standards Admin v{APP_VERSION}</Strong></Text>
+        <Text>Blueprint Standards Admin v{APP_VERSION}</Text>
         <Text>Error: {error}</Text>
       </Fragment>
     );
@@ -1263,8 +1290,8 @@ const App = () => {
         selected={selectedTab}
       >
         <TabList space="space.100">
-          <Tab>📢 Sources</Tab>
-          <Tab>☑️ Redlines</Tab>
+          <Tab>📦 Sources</Tab>
+          <Tab>🧑🏻‍🏫 Redlines</Tab>
           <Tab>💾 Storage</Tab>
         </TabList>
 
@@ -1432,16 +1459,20 @@ const App = () => {
                         </Button>
                         <Button
                           appearance="default"
-                          onClick={() => {
+                          onClick={async () => {
                             try {
-                              // Use the full usage data (all instances) for CSV export
-                              const usage = selectedExcerptUsage || [];
-                              if (!usage || usage.length === 0) {
+                              // Fetch full usage data with customInsertions and renderedContent
+                              const result = await invoke('getExcerptUsageForCSV', { 
+                                excerptId: selectedExcerptForDetails.id 
+                              });
+
+                              if (!result || !result.success || !result.usage || result.usage.length === 0) {
                                 alert('No usage data to export');
                                 return;
                               }
 
-                              const csv = generateSourceUsageCSV(usage, selectedExcerptForDetails);
+                              // Use the same CSV export function as "Check All Embeds"
+                              const csv = generateIncludesCSV(result.usage);
                               if (!csv) {
                                 alert('No data to export');
                                 return;
@@ -1562,7 +1593,6 @@ const App = () => {
                         scrollbarWidth: 'thin', // Firefox - always show thin scrollbar
                       }}
                     >
-                      <ScrollFadeIndicator />
                       <Box xcss={xcss({ width: '100%' })}>
                         <DynamicTable
                           head={{ cells: headerCells }}

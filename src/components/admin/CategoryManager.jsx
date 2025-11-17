@@ -22,7 +22,7 @@
  * @returns {JSX.Element}
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Text,
   Strong,
@@ -58,19 +58,49 @@ export function CategoryManager({
   const [localCategories, setLocalCategories] = useState([]);
   const [hasChanges, setHasChanges] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
+  
+  // Ref to maintain Textfield reference and prevent cursor jumping
+  const textfieldRef = useRef(null);
+  
+  // Stabilize onChange handler to prevent cursor jumping
+  const handleCategoryNameChange = useCallback((e) => {
+    setNewCategoryName(e.target.value);
+  }, [setNewCategoryName]);
+
+  // Ref to track previous categories for change detection
+  const prevCategoriesRef = useRef(categories);
 
   // Initialize local state when modal opens
   // Use initialization flag to prevent resetting during re-renders
   useEffect(() => {
     if (isOpen && !isInitialized) {
       setLocalCategories([...categories]);
+      prevCategoriesRef.current = categories;
       setHasChanges(false);
       setIsInitialized(true);
     } else if (!isOpen && isInitialized) {
       // Reset initialization flag when modal closes
       setIsInitialized(false);
     }
-  }, [isOpen, categories, isInitialized]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, isInitialized]); // Only depend on isOpen and isInitialized, not categories
+
+  // Sync localCategories with categories prop when categories change (e.g., when a new category is added)
+  // This ensures the table updates immediately when a category is added via onAddCategory
+  useEffect(() => {
+    if (isOpen && isInitialized) {
+      // Only update if categories actually changed (compare with previous value)
+      const categoriesChanged = 
+        categories.length !== prevCategoriesRef.current.length ||
+        categories.some((cat, idx) => cat !== prevCategoriesRef.current[idx]);
+      
+      if (categoriesChanged) {
+        setLocalCategories([...categories]);
+        prevCategoriesRef.current = categories;
+        // Don't reset hasChanges - user might have made other changes
+      }
+    }
+  }, [categories, isOpen, isInitialized]);
 
   // Handle drag-and-drop reordering from DynamicTable
   const handleRankEnd = ({ sourceIndex, sourceKey, destination }) => {
@@ -160,9 +190,11 @@ export function CategoryManager({
                 <Stack space="space.100">
                   <Inline space="space.100" alignBlock="center">
                     <Textfield
+                      key="new-category-input"
+                      ref={textfieldRef}
                       placeholder="Add a new Category..."
                       value={newCategoryName}
-                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      onChange={handleCategoryNameChange}
                     />
                     <Button appearance="primary" onClick={onAddCategory}>
                       Add

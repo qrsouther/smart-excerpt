@@ -130,9 +130,14 @@ export async function removeFromUsageTracking(localId, excerptId) {
  * Detect orphaned Embeds on a page that doesn't exist
  * All Embeds on the page are considered orphaned
  *
+ * NOTE: This function NO LONGER automatically deletes storage entries.
+ * Deletion is now a separate manual action that must be explicitly triggered.
+ * This prevents accidental data loss if a user accidentally deletes an Embed
+ * from their page and an Admin runs Check All Embeds before they can recover it.
+ *
  * @param {Array} pageIncludes - Array of includes on the page
  * @param {string} reason - Reason page is inaccessible
- * @param {boolean} dryRun - If true, only preview cleanup
+ * @param {boolean} dryRun - Unused (kept for API compatibility, but deletion is always disabled)
  * @returns {Promise<Array>} Array of orphaned include objects
  */
 export async function handlePageNotFound(pageIncludes, reason, dryRun) {
@@ -145,14 +150,12 @@ export async function handlePageNotFound(pageIncludes, reason, dryRun) {
       pageExists: false
     });
 
-    // Clean up orphaned data
-    await softDeleteMacroCache(include.localId, reason, dryRun);
-    await softDeleteMacroVars(include.localId, reason, {
-      pageId: include.pageId,
-      pageExists: false
-    }, dryRun);
+    // NOTE: We NO LONGER automatically delete storage entries here.
+    // Deletion must be done manually via Emergency Recovery or explicit cleanup actions.
+    // This prevents accidental data loss if a user accidentally deletes an Embed
+    // and an Admin runs Check All Embeds before they can recover it.
 
-    // Remove from usage tracking
+    // Remove from usage tracking only (this is safe and helps keep usage data accurate)
     await removeFromUsageTracking(include.localId, include.excerptId);
   }
 
@@ -162,13 +165,19 @@ export async function handlePageNotFound(pageIncludes, reason, dryRun) {
 /**
  * Detect orphaned Embed (macro not found in page ADF)
  *
+ * NOTE: This function NO LONGER automatically deletes storage entries.
+ * Deletion is now a separate manual action that must be explicitly triggered.
+ * This prevents accidental data loss if a user accidentally deletes an Embed
+ * from their page and an Admin runs Check All Embeds before they can recover it.
+ *
  * @param {Object} include - Include reference object
  * @param {Object} pageData - Confluence page data
- * @param {boolean} dryRun - If true, only preview cleanup
+ * @param {boolean} dryRun - Unused (kept for API compatibility, but deletion is always disabled)
  * @returns {Promise<Object>} Orphaned include object
  */
 export async function handleOrphanedMacro(include, pageData, dryRun) {
   console.log(`[WORKER] ⚠️ ORPHAN DETECTED: localId ${include.localId} not found in page ${include.pageId}`);
+  console.log(`[WORKER] 📋 Orphaned Embed detected but NOT deleted. Storage entries preserved for manual recovery.`);
 
   const orphanedInclude = {
     ...include,
@@ -176,15 +185,12 @@ export async function handleOrphanedMacro(include, pageData, dryRun) {
     pageExists: true
   };
 
-  // Clean up orphaned data
-  await softDeleteMacroCache(include.localId, 'Macro not found in page content', dryRun);
-  await softDeleteMacroVars(include.localId, 'Macro not found in page content', {
-    pageId: include.pageId,
-    pageTitle: pageData.title,
-    pageExists: true
-  }, dryRun);
+  // NOTE: We NO LONGER automatically delete storage entries here.
+  // Deletion must be done manually via Emergency Recovery or explicit cleanup actions.
+  // This prevents accidental data loss if a user accidentally deletes an Embed
+  // and an Admin runs Check All Embeds before they can recover it.
 
-  // Remove from usage tracking
+  // Remove from usage tracking only (this is safe and helps keep usage data accurate)
   await removeFromUsageTracking(include.localId, include.excerptId);
 
   return orphanedInclude;

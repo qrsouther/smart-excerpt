@@ -2,6 +2,7 @@
  * AdminToolbar Component
  *
  * Top toolbar for the Admin page containing action buttons only:
+ * - Create Source button (primary, placeholder - will be activated once ChromelessEditor is implemented)
  * - Migration Tools button (if enabled)
  * - Manage Categories button
  * - Check All Sources button
@@ -59,6 +60,16 @@ export function AdminToolbar({
 
   return (
     <ButtonGroup>
+      <Button
+        appearance="primary"
+        onClick={() => {
+          alert('This feature will be activated in a future build version, once ChromelessEditor is implemented. This will allow Architects to create and manage Source excerpts fully within the Admin page, without the need for a separate page which contains just Sources\' content blocks.');
+        }}
+        xcss={buttonStyles}
+      >
+        Create Source
+      </Button>
+
       {showMigrationTools && (
         <Button
           appearance="default"

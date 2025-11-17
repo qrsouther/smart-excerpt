@@ -463,7 +463,7 @@ export const insertCustomParagraphsInAdf = (adfNode, customInsertions) => {
  * Recursively traverses nested structures (panels, tables, etc.) to match
  * how extractParagraphsFromAdf counts paragraphs.
  *
- * All internal note elements use distinctive purple color (#6554C0) for:
+ * All internal note elements use distinctive gray color (#2B2C2E) for:
  * 1. CSS styling in Confluence (distinctive appearance)
  * 2. External filtering (hide from external users)
  *
@@ -505,16 +505,23 @@ export const insertInternalNotesInAdf = (adfNode, internalNotes) => {
     // Create a copy of the node
     const processedNode = { ...node };
 
+    // First, recursively process children (if any)
+    // This ensures all nested content is processed before we add markers
+    if (node.content && Array.isArray(node.content)) {
+      processedNode.content = node.content.map(childNode => processNode(childNode));
+    }
+
     // If this is a paragraph, check if we need to add a note marker
+    // We do this AFTER processing children so the marker is added to already-processed content
     if (node.type === 'paragraph') {
       const noteNumber = positionToNumber[paragraphIndex.value];
 
       if (noteNumber) {
         // Add the paragraph with an inline footnote marker at the end
-        const paragraphContent = [...(node.content || [])];
+        // Use processedNode.content (already processed children) instead of node.content
+        const paragraphContent = [...(processedNode.content || [])];
 
-        // Add inline marker with distinctive purple color for internal notes
-        // External filtering app should remove text nodes with color #6554C0 (purple)
+        // Add inline marker with distinctive color for internal notes
         paragraphContent.push({
           type: 'text',
           text: toSuperscript(noteNumber),
@@ -522,7 +529,7 @@ export const insertInternalNotesInAdf = (adfNode, internalNotes) => {
             {
               type: 'textColor',
               attrs: {
-                color: '#D3D3D3' // Light gray marks internal note references
+                color: '#505258' // dark gray marks internal note references
               }
             },
             {
@@ -535,11 +542,6 @@ export const insertInternalNotesInAdf = (adfNode, internalNotes) => {
       }
 
       paragraphIndex.value++;
-    }
-
-    // If this node has content array, recursively process it
-    if (node.content && Array.isArray(node.content)) {
-      processedNode.content = node.content.map(childNode => processNode(childNode));
     }
 
     return processedNode;
@@ -561,7 +563,7 @@ export const insertInternalNotesInAdf = (adfNode, internalNotes) => {
       content: [
         {
           type: 'text',
-          text: '🔒 Internal Notes',
+          text: '🔏 Internal Notes',
           marks: [
             {
               type: 'strong'
@@ -604,11 +606,11 @@ export const insertInternalNotesInAdf = (adfNode, internalNotes) => {
 
     // Use an expand (collapsible section) for internal notes
     // This gives us a cleaner appearance without forced panel icons
-    // External filtering app should hide expand nodes with title '🔒 Internal Notes'
+    // External filtering app should hide expand nodes with title '🔏 Internal Notes'
     newContent.push({
       type: 'expand',
       attrs: {
-        title: '🔒 Internal Notes'
+        title: '🔏 Internal Notes'
       },
       content: footnotesContent.slice(1) // Skip the heading since expand already has a title
     });

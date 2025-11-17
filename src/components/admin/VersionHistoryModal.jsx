@@ -23,7 +23,6 @@ import {
   Text,
   Strong,
   Button,
-  Textfield,
   Box,
   Modal,
   ModalTransition,
@@ -38,6 +37,7 @@ import {
   xcss
 } from '@forge/react';
 import { invoke } from '@forge/bridge';
+import { StableTextfield } from '../common/StableTextfield';
 
 // Item container styling (matching Emergency Recovery design)
 const deletedItemStyle = xcss({
@@ -237,7 +237,8 @@ export function VersionHistoryModal({ isOpen, onClose, embedUuid }) {
               <Stack space="space.100">
                 <Text><Strong>Embed UUID (localId)</Strong></Text>
                 <Inline space="space.100" alignBlock="center">
-                  <Textfield
+                  <StableTextfield
+                    stableKey="version-history-uuid-input"
                     placeholder="Enter Embed UUID (e.g., 1a2b3c4d-5e6f-7g8h-9i0j-1k2l3m4n5o6p)"
                     value={versionLocalId}
                     onChange={(e) => setVersionLocalId(e.target.value)}

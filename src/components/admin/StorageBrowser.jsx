@@ -24,13 +24,13 @@ import {
   Heading,
   Text,
   CodeBlock,
-  Textfield,
   Button,
   Select,
   xcss,
   Strong
 } from '@forge/react';
 import { invoke } from '@forge/bridge';
+import { StableTextfield } from '../common/StableTextfield';
 
 const containerStyles = xcss({
   padding: 'space.200',
@@ -210,7 +210,8 @@ export function StorageBrowser() {
               onChange={(selected) => setKeyType(selected)}
             />
           </Box>
-          <Textfield
+          <StableTextfield
+            stableKey="storage-browser-key-value"
             placeholder={keyType.value === 'excerpt-index' ? 'No value needed for Master Index' : 'Paste UUID here...'}
             value={keyValue}
             onChange={(e) => setKeyValue(e.target.value)}

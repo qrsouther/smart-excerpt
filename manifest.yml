@@ -1,8 +1,9 @@
 modules:
   macro:
     - key: blueprint-standard-source
-      title: Blueprint App - Source
+      title: 📦 Blueprint App - Source
       description: Create a reusable Source excerpt that can be embedded on other pages (v8.0.0)
+      icon: resource:icon-assets;blueprint.png
       layout: bodied
       resource: source-display-resource
       render: native
@@ -14,8 +15,9 @@ modules:
         viewportSize: max
 
     - key: blueprint-standard-embed
-      title: Blueprint App - Embed
+      title: 🎯 Blueprint App - Embed
       description: Embed a Source excerpt from another page (v8.0.0)
+      icon: resource:icon-assets;blueprint.png
       resource: embed-display
       render: native
       resolver:
@@ -23,7 +25,9 @@ modules:
 
   confluence:globalSettings:
     - key: blueprint-standards-admin
-      title: Blueprint App Admin
+      title: 📘 ⚙️ Blueprint App Admin
+      description: Manage Blueprint Standards and Embeds
+      icon: resource:icon-assets;blueprint.png
       resource: admin-page
       render: native
       resolver:
@@ -62,6 +66,9 @@ resources:
 
   - key: admin-page
     path: src/admin-page.jsx
+
+  - key: icon-assets
+    path: static/icons
 
 app:
   id: ari:cloud:ecosystem::app/be1ff96b-d44d-4975-98d3-25b80a813bdd

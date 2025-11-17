@@ -17,7 +17,6 @@ import {
   Text,
   Strong,
   Code,
-  Textfield,
   Inline,
   Tooltip,
   Icon,
@@ -25,6 +24,7 @@ import {
   Box,
   xcss
 } from '@forge/react';
+import { StableTextfield } from './common/StableTextfield';
 
 // Style for full-width variable table container
 const variableBoxStyle = xcss({
@@ -129,9 +129,10 @@ export const VariableConfigPanel = ({ excerpt, variableValues, setVariableValues
                 content: (
                   <Box xcss={showWarning ? requiredFieldStyle : undefined}>
                     <Box xcss={textfieldWrapperStyle}>
-                      <Textfield
+                      <StableTextfield
                         appearance="standard"
                         id={`var-value-${variable.name}`}
+                        stableKey={`var-value-${variable.name}`}
                         placeholder={variable.example ? `e.g., ${variable.example}` : `Enter value for ${variable.name}`}
                         value={variableValues[variable.name] || ''}
                         onChange={(e) => {

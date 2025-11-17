@@ -196,6 +196,81 @@ export async function getExcerptUsage(req) {
 }
 
 /**
+ * Get excerpt usage with full CSV export data
+ * Fetches usage data along with customInsertions and renderedContent for CSV export
+ */
+export async function getExcerptUsageForCSV(req) {
+  try {
+    const { excerptId } = req.payload;
+
+    // Get the excerpt for metadata
+    const excerpt = await storage.get(`excerpt:${excerptId}`);
+    if (!excerpt) {
+      return {
+        success: false,
+        error: 'Excerpt not found',
+        usage: []
+      };
+    }
+
+    const usageKey = `usage:${excerptId}`;
+    const usageData = await storage.get(usageKey) || { references: [] };
+
+    // Enrich usage data with all fields needed for CSV export
+    const enrichedReferences = await Promise.all(usageData.references.map(async (ref) => {
+      const varsKey = `macro-vars:${ref.localId}`;
+      const cacheKey = `macro-cache:${ref.localId}`;
+      
+      const [macroVars, cacheData] = await Promise.all([
+        storage.get(varsKey),
+        storage.get(cacheKey)
+      ]);
+
+      // Build page URL
+      const pageUrl = `/wiki/pages/viewpage.action?pageId=${ref.pageId}${ref.headingAnchor ? `#${ref.headingAnchor}` : ''}`;
+
+      // Determine status
+      const excerptUpdated = excerpt.updatedAt;
+      const lastSynced = macroVars?.lastSynced || null;
+      const isStale = lastSynced ? new Date(excerptUpdated) > new Date(lastSynced) : false;
+      const status = isStale ? 'Stale (update available)' : 'Active';
+
+      return {
+        localId: ref.localId,
+        pageId: ref.pageId,
+        pageTitle: ref.pageTitle || 'Unknown Page',
+        pageUrl: pageUrl,
+        headingAnchor: ref.headingAnchor || '',
+        excerptId: excerptId,
+        excerptName: excerpt.name,
+        excerptCategory: excerpt.category,
+        status: status,
+        lastSynced: lastSynced || '',
+        excerptLastModified: excerpt.updatedAt,
+        variables: excerpt.variables || [],
+        toggles: excerpt.toggles || [],
+        variableValues: macroVars?.variableValues || {},
+        toggleStates: macroVars?.toggleStates || {},
+        customInsertions: macroVars?.customInsertions || [],
+        renderedContent: cacheData?.content || null
+      };
+    }));
+
+    return {
+      success: true,
+      usage: enrichedReferences
+    };
+  } catch (error) {
+    console.error('Error getting excerpt usage for CSV:', error);
+    return {
+      success: false,
+      error: error.message,
+      usage: []
+    };
+  }
+}
+
+/**
  * Get usage counts for all excerpts (lightweight for sorting)
  * Returns object mapping excerptId -> count of references
  */
