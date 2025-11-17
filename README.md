@@ -209,7 +209,7 @@ The **Recovery Options** button will be clickable if an Embed has multiple histo
 <table>
   <tr>
     <td><strong>Create Source</strong><br><br><i>Coming soon</i></td>
-    <td>This button will, if eventually wired up, allow Architects to create and configure Source macros directly within the Admin page, including both metadata (name, category, variables, toggles, documentation links) and body content. Once implemented, this will eliminate the need to maintain Source macros as bodied macros on separate Confluence pages, enabling full Source management from a centralized Admin interface.<br><br>Currently, we are awaiting approval for Atlassian's EAP (Early Access Program) to gain access to the <a href="https://developer.atlassian.com/platform/forge/ui-kit/components/chromeless-editor/">ChromelessEditor component</a> (which is in beta) which may make this workflow possible.</td>
+    <td>Source creation and editing must be done via the Blueprint Standard - Source macro on Confluence pages. The Admin page is for viewing usage details and managing metadata only.</td>
   </tr>
   <tr>
     <td><strong>Manage Categories</strong></td>

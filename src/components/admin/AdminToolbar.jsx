@@ -2,7 +2,6 @@
  * AdminToolbar Component
  *
  * Top toolbar for the Admin page containing action buttons only:
- * - Create Source button (primary, placeholder - will be activated once ChromelessEditor is implemented)
  * - Migration Tools button (if enabled)
  * - Manage Categories button
  * - Check All Sources button
@@ -22,7 +21,6 @@
  * @param {Function} props.onOpenEmergencyRecovery - Handler for Emergency Recovery button
  * @param {string|null} props.lastVerificationTime - ISO timestamp of last verification
  * @param {Function} props.formatTimestamp - Function to format timestamp for display
- * @param {Function} props.onCreateSource - Handler for Create Source button
  * @returns {JSX.Element}
  */
 
@@ -62,6 +60,7 @@ export function AdminToolbar({
 
   return (
     <ButtonGroup>
+      {/* Hidden but wired up for future use
       <Button
         appearance="primary"
         onClick={onCreateSource}
@@ -69,6 +68,7 @@ export function AdminToolbar({
       >
         Create Source (Experimental)
       </Button>
+      */}
 
       {showMigrationTools && (
         <Button
@@ -85,7 +85,7 @@ export function AdminToolbar({
         onClick={onOpenCategoryModal}
         xcss={buttonStyles}
       >
-        🆔 Manage Categories
+        🗂️ Manage Categories
       </Button>
 
       <Tooltip content={verificationTooltip}>

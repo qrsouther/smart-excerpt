@@ -33,13 +33,17 @@ import { invoke } from '@forge/bridge';
 import { StableTextfield } from '../common/StableTextfield';
 
 const containerStyles = xcss({
-  padding: 'space.200',
+  padding: 'space.300',
   backgroundColor: 'color.background.neutral',
   borderRadius: 'border.radius',
   borderWidth: 'border.width',
   borderStyle: 'solid',
   borderColor: 'color.border',
-  width: '100%'
+  width: '100%',
+  maxWidth: '100%',
+  boxSizing: 'border-box',
+  display: 'block',
+  marginBlockStart: 'space.200'
 });
 
 const codeBlockContainerStyles = xcss({

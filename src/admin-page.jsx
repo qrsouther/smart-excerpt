@@ -70,7 +70,6 @@ import { MigrationModal } from './components/MigrationModal';
 import { ExcerptListSidebar } from './components/admin/ExcerptListSidebar';
 import { StalenessBadge } from './components/admin/StalenessBadge';
 import { ExcerptPreviewModal } from './components/admin/ExcerptPreviewModal';
-import { CreateEditSourceModal } from './components/admin/CreateEditSourceModal';
 import { CategoryManager } from './components/admin/CategoryManager';
 import { CheckAllProgressBar } from './components/admin/CheckAllProgressBar';
 import { AdminToolbar } from './components/admin/AdminToolbar';
@@ -203,12 +202,10 @@ const App = () => {
   const [showPreviewModal, setShowPreviewModal] = useState(null);
   const [selectedExcerptForDetails, setSelectedExcerptForDetails] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isCreateEditModalOpen, setIsCreateEditModalOpen] = useState(false);
-  const [editingExcerptId, setEditingExcerptId] = useState(null);
   const [orphanedSources, setOrphanedSources] = useState([]);
 
   // Lazy load full usage data using React Query when excerpt selected
-  const { data: selectedExcerptUsage } = useExcerptUsageQuery(
+  const { data: selectedExcerptUsage, isLoading: isLoadingUsage, error: usageError } = useExcerptUsageQuery(
     selectedExcerptForDetails?.id,
     !!selectedExcerptForDetails
   );
@@ -347,38 +344,55 @@ const App = () => {
     let styleElement = document.getElementById(styleId);
     
     if (!styleElement) {
-      styleElement = document.createElement('style');
-      styleElement.id = styleId;
-      styleElement.textContent = `
-        /* Force horizontal scrollbars to always be visible on webkit browsers */
-        [data-scroll-container] {
-          overflow-x: scroll !important;
-          scrollbar-gutter: stable; /* Reserve space for scrollbar */
+      try {
+        styleElement = document.createElement('style');
+        styleElement.id = styleId;
+        
+        // Try to get nonce from existing style elements if CSP requires it
+        const existingStyle = document.querySelector('style[nonce]');
+        if (existingStyle && existingStyle.nonce) {
+          styleElement.nonce = existingStyle.nonce;
         }
-        /* Style horizontal scrollbar - height property controls horizontal scrollbar size */
-        [data-scroll-container]::-webkit-scrollbar {
-          height: 12px; /* Controls horizontal scrollbar height */
-          width: 12px; /* Controls vertical scrollbar width */
-        }
-        [data-scroll-container]::-webkit-scrollbar-thumb {
-          background-color: rgba(0, 0, 0, 0.3);
-          border-radius: 6px;
-        }
-        [data-scroll-container]::-webkit-scrollbar-thumb:hover {
-          background-color: rgba(0, 0, 0, 0.5);
-        }
-        [data-scroll-container]::-webkit-scrollbar-track {
-          background-color: rgba(0, 0, 0, 0.1);
-        }
-      `;
-      document.head.appendChild(styleElement);
+        
+        styleElement.textContent = `
+          /* Force horizontal scrollbars to always be visible on webkit browsers */
+          [data-scroll-container] {
+            overflow-x: scroll !important;
+            scrollbar-gutter: stable; /* Reserve space for scrollbar */
+            scrollbar-width: thin; /* Firefox - always show thin scrollbar */
+          }
+          /* Style horizontal scrollbar - height property controls horizontal scrollbar size */
+          [data-scroll-container]::-webkit-scrollbar {
+            height: 12px; /* Controls horizontal scrollbar height */
+            width: 12px; /* Controls vertical scrollbar width */
+          }
+          [data-scroll-container]::-webkit-scrollbar-thumb {
+            background-color: rgba(0, 0, 0, 0.3);
+            border-radius: 6px;
+          }
+          [data-scroll-container]::-webkit-scrollbar-thumb:hover {
+            background-color: rgba(0, 0, 0, 0.5);
+          }
+          [data-scroll-container]::-webkit-scrollbar-track {
+            background-color: rgba(0, 0, 0, 0.1);
+          }
+        `;
+        document.head.appendChild(styleElement);
+      } catch (error) {
+        // CSP violation - silently fail as this is a non-critical enhancement
+        console.warn('[Admin] Could not add scrollbar styles due to CSP:', error);
+      }
     }
 
     return () => {
       // Cleanup: remove style element when component unmounts
-      const element = document.getElementById(styleId);
-      if (element) {
-        element.remove();
+      try {
+        const element = document.getElementById(styleId);
+        if (element) {
+          element.remove();
+        }
+      } catch (error) {
+        // Silently fail on cleanup
       }
     };
   }, []);
@@ -1218,8 +1232,9 @@ const App = () => {
           onCreateTestPage={handleCreateTestPage}
           isCreatingTestPage={createTestPageMutation.isPending}
           onCreateSource={() => {
-            setEditingExcerptId(null);
-            setIsCreateEditModalOpen(true);
+            // Create Source functionality removed - users should create sources on Confluence pages
+            // where source-config.jsx (the stable, tested component) handles editing
+            alert('To create a Source, add a Blueprint Standard - Source macro to a Confluence page and configure it there.');
           }}
         />
       </Box>
@@ -1285,17 +1300,18 @@ const App = () => {
       )}
 
       {/* Tabbed Navigation - Sources and Redline Queue */}
-      <Tabs 
-        space="space.200"
-        id="admin-tabs"
-        onChange={(index) => {
-          setSelectedTab(index);
-          // Clear selections when switching tabs
-          setSelectedExcerpt(null);
-          setSelectedExcerptForDetails(null);
-        }}
-        selected={selectedTab}
-      >
+      <Box xcss={xcss({ width: '100%', maxWidth: '100%' })}>
+        <Tabs 
+          space="space.200"
+          id="admin-tabs"
+          onChange={(index) => {
+            setSelectedTab(index);
+            // Clear selections when switching tabs
+            setSelectedExcerpt(null);
+            setSelectedExcerptForDetails(null);
+          }}
+          selected={selectedTab}
+        >
         <TabList space="space.100">
           <Tab>📦 Sources</Tab>
           <Tab>🧑🏻‍🏫 Redlines</Tab>
@@ -1337,21 +1353,79 @@ const App = () => {
             }
 
             try {
-              const usage = selectedExcerptUsage || [];
+              // Ensure usage is always an array
+              const usage = Array.isArray(selectedExcerptUsage) ? selectedExcerptUsage : [];
+
+              // Show loading state
+              if (isLoadingUsage) {
+                return (
+                  <Box>
+                    <Text>Loading usage data...</Text>
+                  </Box>
+                );
+              }
+
+              // Show error state
+              if (usageError) {
+                return (
+                  <Box>
+                    <Text><Strong>Error loading usage data</Strong></Text>
+                    <Text>{String(usageError.message || usageError)}</Text>
+                  </Box>
+                );
+              }
 
               const hasVariables = Array.isArray(selectedExcerptForDetails.variables) && selectedExcerptForDetails.variables.length > 0;
               const hasToggles = Array.isArray(selectedExcerptForDetails.toggles) && selectedExcerptForDetails.toggles.length > 0;
 
+              // Sanitize usage data to ensure all values are safe to render
+              const sanitizedUsage = usage.map(ref => {
+                const sanitized = { ...ref };
+                // Ensure pageTitle is always a string
+                sanitized.pageTitle = typeof ref.pageTitle === 'string' ? ref.pageTitle : String(ref.pageTitle || 'Unknown Page');
+                // Ensure pageId is always a string
+                sanitized.pageId = typeof ref.pageId === 'string' ? ref.pageId : String(ref.pageId || '');
+                // Ensure localId is always a string
+                sanitized.localId = typeof ref.localId === 'string' ? ref.localId : String(ref.localId || '');
+                // Ensure headingAnchor is always a string or null
+                sanitized.headingAnchor = typeof ref.headingAnchor === 'string' ? ref.headingAnchor : (ref.headingAnchor ? String(ref.headingAnchor) : null);
+                // Sanitize variableValues - ensure all values are strings
+                if (ref.variableValues && typeof ref.variableValues === 'object') {
+                  sanitized.variableValues = {};
+                  for (const [key, value] of Object.entries(ref.variableValues)) {
+                    if (typeof value === 'string') {
+                      sanitized.variableValues[key] = value;
+                    } else if (value !== null && typeof value === 'object') {
+                      sanitized.variableValues[key] = JSON.stringify(value);
+                    } else {
+                      sanitized.variableValues[key] = String(value || '');
+                    }
+                  }
+                } else {
+                  sanitized.variableValues = {};
+                }
+                // Sanitize toggleStates - ensure all values are booleans
+                if (ref.toggleStates && typeof ref.toggleStates === 'object') {
+                  sanitized.toggleStates = {};
+                  for (const [key, value] of Object.entries(ref.toggleStates)) {
+                    sanitized.toggleStates[key] = Boolean(value);
+                  }
+                } else {
+                  sanitized.toggleStates = {};
+                }
+                return sanitized;
+              });
+
               // De-duplicate by pageId
               const uniqueUsage = [];
               const seenPages = new Map();
-              for (const ref of usage) {
+              for (const ref of sanitizedUsage) {
                 if (!seenPages.has(ref.pageId)) {
                   seenPages.set(ref.pageId, ref);
                   uniqueUsage.push(ref);
                 } else {
                   const existing = seenPages.get(ref.pageId);
-                  if (new Date(ref.updatedAt) > new Date(existing.updatedAt)) {
+                  if (new Date(ref.updatedAt || 0) > new Date(existing.updatedAt || 0)) {
                     const idx = uniqueUsage.findIndex(u => u.pageId === ref.pageId);
                     uniqueUsage[idx] = ref;
                     seenPages.set(ref.pageId, ref);
@@ -1436,18 +1510,7 @@ const App = () => {
                         >
                           Preview Content
                         </Button>
-                        {/* Edit Source button - only show for ChromelessEditor-created Sources */}
-                        {selectedExcerptForDetails.sourcePageId && selectedExcerptForDetails.sourcePageId.startsWith('virtual-') && (
-                          <Button
-                            appearance="default"
-                            onClick={() => {
-                              setEditingExcerptId(selectedExcerptForDetails.id);
-                              setIsCreateEditModalOpen(true);
-                            }}
-                          >
-                            Edit Source (Experimental)
-                          </Button>
-                        )}
+                        
                         {/* Hidden but wired up for future use */}
                         {/* <Button
                           appearance="subtle"
@@ -1567,11 +1630,8 @@ const App = () => {
 
                               if (result.success) {
                                 alert(`Successfully force updated ${result.updated} of ${result.total} instance(s)`);
-                                // Refresh usage data
-                                const refreshedUsage = await invoke('getExcerptUsage', { excerptId: selectedExcerptForDetails.id });
-                                if (refreshedUsage.success) {
-                                  setUsageData({ [selectedExcerptForDetails.id]: refreshedUsage.usage || [] });
-                                }
+                                // Refresh usage data by invalidating the query
+                                queryClient.invalidateQueries({ queryKey: ['excerpt', selectedExcerptForDetails.id, 'usage'] });
                               } else {
                                 alert(`Failed to force updates: ${result.error}`);
                               }
@@ -1609,10 +1669,6 @@ const App = () => {
                     <Box
                       xcss={tableScrollContainerStyle}
                       data-scroll-container
-                      style={{
-                        // Force scrollbars to always be visible (override OS behavior)
-                        scrollbarWidth: 'thin', // Firefox - always show thin scrollbar
-                      }}
                     >
                       <Box xcss={xcss({ width: '100%' })}>
                         <DynamicTable
@@ -1642,7 +1698,7 @@ const App = () => {
                                 }}
                                 iconAfter={() => <Icon glyph="shortcut" label="Opens in new tab" />}
                               >
-                                {ref.pageTitle || 'Unknown Page'}
+                                {String(ref.pageTitle || 'Unknown Page')}
                               </Button>
                             )
                           },
@@ -1683,7 +1739,10 @@ const App = () => {
                         // Add variable cells (fourth column group)
                         if (hasVariables) {
                           selectedExcerptForDetails.variables.forEach(variable => {
-                            const value = ref.variableValues?.[variable.name] || '';
+                            // Data is already sanitized, but add defensive check
+                            const value = typeof ref.variableValues?.[variable.name] === 'string' 
+                              ? ref.variableValues[variable.name] 
+                              : '';
                             const maxLength = 50;
                             const isTruncated = value.length > maxLength;
                             const displayValue = isTruncated ? value.substring(0, maxLength) + '...' : value;
@@ -1738,14 +1797,8 @@ const App = () => {
 
                                     if (result.success) {
                                       alert(`Successfully force updated ${result.updated} instance(s) on this page`);
-                                      // Refresh usage data
-                                      const refreshedUsage = await invoke('getExcerptUsage', { excerptId: selectedExcerptForDetails.id });
-                                      if (refreshedUsage.success) {
-                                        setUsageData(prev => ({
-                                          ...prev,
-                                          [selectedExcerptForDetails.id]: refreshedUsage.usage || []
-                                        }));
-                                      }
+                                      // Refresh usage data by invalidating the query
+                                      queryClient.invalidateQueries({ queryKey: ['excerpt', selectedExcerptForDetails.id, 'usage'] });
                                     } else {
                                       alert(`Failed to force update: ${result.error}`);
                                     }
@@ -1763,7 +1816,7 @@ const App = () => {
                           });
 
                         return {
-                          key: ref.localId,
+                          key: String(ref.localId || `ref-${Math.random()}`),
                           cells: rowCells
                         };
                       })}
@@ -1797,11 +1850,10 @@ const App = () => {
         </TabPanel>
 
         <TabPanel>
-          <Box xcss={tabPanelContentStyles}>
-            <StorageBrowser />
-          </Box>
+          <StorageBrowser />
         </TabPanel>
       </Tabs>
+      </Box>
 
       {/* Orphaned items sections */}
       {sortedExcerpts.length > 0 && (
@@ -1967,11 +2019,48 @@ const App = () => {
                   <Box xcss={fullWidthTableStyle}>
                       <Stack space="space.200">
                       {(() => {
-                        const usage = selectedExcerptUsage || [];
+                        const usage = Array.isArray(selectedExcerptUsage) ? selectedExcerptUsage : [];
+                        
+                        // Sanitize usage data to ensure all values are safe to render
+                        const sanitizedUsage = usage.map(ref => {
+                          const sanitized = { ...ref };
+                          // Ensure pageTitle is always a string
+                          sanitized.pageTitle = typeof ref.pageTitle === 'string' ? ref.pageTitle : String(ref.pageTitle || 'Unknown Page');
+                          // Ensure pageId is always a string
+                          sanitized.pageId = typeof ref.pageId === 'string' ? ref.pageId : String(ref.pageId || '');
+                          // Ensure localId is always a string
+                          sanitized.localId = typeof ref.localId === 'string' ? ref.localId : String(ref.localId || '');
+                          // Ensure headingAnchor is always a string or null
+                          sanitized.headingAnchor = typeof ref.headingAnchor === 'string' ? ref.headingAnchor : (ref.headingAnchor ? String(ref.headingAnchor) : null);
+                          // Sanitize variableValues - ensure all values are strings
+                          if (ref.variableValues && typeof ref.variableValues === 'object') {
+                            sanitized.variableValues = {};
+                            for (const [key, value] of Object.entries(ref.variableValues)) {
+                              if (typeof value === 'string') {
+                                sanitized.variableValues[key] = value;
+                              } else if (value !== null && typeof value === 'object') {
+                                sanitized.variableValues[key] = JSON.stringify(value);
+                              } else {
+                                sanitized.variableValues[key] = String(value || '');
+                              }
+                            }
+                          } else {
+                            sanitized.variableValues = {};
+                          }
+                          // Sanitize toggleStates - ensure all values are booleans
+                          if (ref.toggleStates && typeof ref.toggleStates === 'object') {
+                            sanitized.toggleStates = {};
+                            for (const [key, value] of Object.entries(ref.toggleStates)) {
+                              sanitized.toggleStates[key] = Boolean(value);
+                            }
+                          } else {
+                            sanitized.toggleStates = {};
+                          }
+                          return sanitized;
+                        });
+                        
                         // Count unique pages, not total references
-                        const uniquePageIds = Array.isArray(usage)
-                          ? new Set(usage.map(ref => ref.pageId)).size
-                          : 0;
+                        const uniquePageIds = new Set(sanitizedUsage.map(ref => ref.pageId)).size;
                         const usageCount = uniquePageIds;
                         const hasToggles = Array.isArray(selectedExcerpt.toggles) && selectedExcerpt.toggles.length > 0;
                         const hasVariables = Array.isArray(selectedExcerpt.variables) && selectedExcerpt.variables.length > 0;
@@ -2012,14 +2101,14 @@ const App = () => {
                         const uniqueUsage = [];
                         const seenPages = new Map();
 
-                        for (const ref of usage) {
+                        for (const ref of sanitizedUsage) {
                           if (!seenPages.has(ref.pageId)) {
                             seenPages.set(ref.pageId, ref);
                             uniqueUsage.push(ref);
                           } else {
                             // Keep the most recent reference for this page
                             const existing = seenPages.get(ref.pageId);
-                            if (new Date(ref.updatedAt) > new Date(existing.updatedAt)) {
+                            if (new Date(ref.updatedAt || 0) > new Date(existing.updatedAt || 0)) {
                               // Replace with more recent reference
                               const idx = uniqueUsage.findIndex(u => u.pageId === ref.pageId);
                               uniqueUsage[idx] = ref;
@@ -2035,10 +2124,6 @@ const App = () => {
                               <Box 
                                 xcss={tableScrollContainerStyle}
                                 data-scroll-container
-                                style={{
-                                  // Force scrollbars to always be visible (override OS behavior)
-                                  scrollbarWidth: 'thin', // Firefox - always show thin scrollbar
-                                }}
                               >
                                 <DynamicTable
                                   head={{
@@ -2074,7 +2159,10 @@ const App = () => {
                                     // Add variable value cells if excerpt has variables
                                     if (hasVariables) {
                                       selectedExcerpt.variables.forEach(variable => {
-                                        const variableValue = ref.variableValues?.[variable.name] || '';
+                                        // Data is already sanitized, but add defensive check
+                                        const variableValue = typeof ref.variableValues?.[variable.name] === 'string' 
+                                          ? ref.variableValues[variable.name] 
+                                          : '';
                                         const maxLength = 50; // Truncate after 50 characters
                                         const isTruncated = variableValue.length > maxLength;
                                         const displayValue = isTruncated
@@ -2157,11 +2245,8 @@ const App = () => {
 
                                                 if (result.success) {
                                                   alert(`Successfully force updated ${result.updated} instance(s) on this page`);
-                                                  // Refresh usage data
-                                                  const refreshedUsage = await invoke('getExcerptUsage', { excerptId: selectedExcerpt.id });
-                                                  if (refreshedUsage.success) {
-                                                    setUsageData({ [selectedExcerpt.id]: refreshedUsage.usage || [] });
-                                                  }
+                                                  // Refresh usage data by invalidating the query
+                                                  queryClient.invalidateQueries({ queryKey: ['excerpt', selectedExcerpt.id, 'usage'] });
                                                 } else {
                                                   alert(`Failed to force update: ${result.error}`);
                                                 }
@@ -2248,14 +2333,6 @@ const App = () => {
         previewBoxStyle={previewBoxStyle}
       />
 
-      <CreateEditSourceModal
-        isOpen={isCreateEditModalOpen}
-        onClose={() => {
-          setIsCreateEditModalOpen(false);
-          setEditingExcerptId(null);
-        }}
-        editingExcerptId={editingExcerptId}
-      />
 
       {/* Migration Tools Modal */}
       <MigrationModal

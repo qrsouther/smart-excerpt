@@ -40,21 +40,39 @@ const queryClient = new QueryClient({
 });
 
 // Custom hook for fetching excerpt data with React Query
+// Always forces fresh fetch from storage on every component load
 const useExcerptQuery = (excerptId, enabled) => {
   return useQuery({
     queryKey: ['excerpt', excerptId],
     queryFn: async () => {
+      console.log('[source-config] Fetching excerpt:', excerptId);
       const result = await invoke('getExcerpt', { excerptId });
+
+      console.log('[source-config] getExcerpt result:', {
+        success: result?.success,
+        hasExcerpt: !!result?.excerpt,
+        excerptKeys: result?.excerpt ? Object.keys(result.excerpt) : [],
+        excerptName: result?.excerpt?.name,
+        excerptCategory: result?.excerpt?.category
+      });
 
       if (!result.success || !result.excerpt) {
         throw new Error('Failed to load excerpt');
       }
 
+      console.log('[source-config] Returning excerpt data:', {
+        id: result.excerpt.id,
+        name: result.excerpt.name,
+        category: result.excerpt.category
+      });
+
       return result.excerpt;
     },
     enabled: enabled && !!excerptId,
-    staleTime: 1000 * 60 * 5, // 5 minutes
-    gcTime: 1000 * 60 * 30, // 30 minutes
+    staleTime: 0, // Always consider data stale - force refetch every time
+    gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes (for other components)
+    refetchOnMount: 'always', // Always refetch when component mounts (modal opens)
+    refetchOnWindowFocus: false, // Don't refetch on window focus (we want fresh data on mount only)
   });
 };
 
@@ -130,6 +148,7 @@ const App = () => {
   // Use state for controlled components
   const [excerptName, setExcerptName] = useState('');
   const [category, setCategory] = useState('General');
+  const [dataLoaded, setDataLoaded] = useState(false); // Track when data has been loaded for key generation
   const [detectedVariables, setDetectedVariables] = useState([]);
   const [variableMetadata, setVariableMetadata] = useState({});
   const [detectedToggles, setDetectedToggles] = useState([]);
@@ -144,6 +163,22 @@ const App = () => {
   // Track if we've loaded data to prevent infinite loops
   const hasLoadedDataRef = React.useRef(false);
   const lastExcerptIdRef = React.useRef(null);
+  
+  // Get query client for cache invalidation
+  const queryClient = useQueryClient();
+
+  // DEBUG: Log when excerptName state changes
+  useEffect(() => {
+    console.log('[source-config] excerptName state changed to:', excerptName);
+  }, [excerptName]);
+
+  // Invalidate cache on mount to ensure we always fetch fresh data from storage
+  useEffect(() => {
+    if (excerptId) {
+      // Invalidate the cache for this excerpt to force fresh fetch
+      queryClient.invalidateQueries({ queryKey: ['excerpt', excerptId] });
+    }
+  }, [excerptId, queryClient]);
 
   // Use React Query to fetch excerpt data
   const {
@@ -169,11 +204,13 @@ const App = () => {
     isLoading: isLoadingCategories
   } = useCategoriesQuery();
 
-  // Load excerpt data from React Query (only once per excerptId)
+  // Load excerpt data from React Query
+  // This effect only runs after data has been fetched (loading guard prevents rendering during load)
   useEffect(() => {
     // Reset flag if excerptId changed
     if (lastExcerptIdRef.current !== excerptId) {
       hasLoadedDataRef.current = false;
+      setDataLoaded(false); // Reset data loaded flag when excerptId changes
       lastExcerptIdRef.current = excerptId;
     }
 
@@ -187,43 +224,104 @@ const App = () => {
       return;
     }
 
-    if (excerptData && !hasLoadedDataRef.current) {
-      // Load name and category from React Query data
-      setExcerptName(excerptData.name || '');
-      setCategory(excerptData.category || 'General');
+    // Only process data when loading is complete (loading guard ensures this)
+    // When excerpt data is available, always use storage values (authoritative source)
+    if (!isLoadingExcerpt) {
+      // DEBUG: Log what we received
+      console.log('[source-config] Loading excerpt data:', {
+        excerptId,
+        hasExcerptData: !!excerptData,
+        excerptDataKeys: excerptData ? Object.keys(excerptData) : [],
+        excerptName: excerptData?.name,
+        excerptCategory: excerptData?.category,
+        configExcerptName: config.excerptName
+      });
 
-      // Load variable metadata
-      if (excerptData.variables && Array.isArray(excerptData.variables)) {
-        const metadata = {};
-        excerptData.variables.forEach(v => {
-          metadata[v.name] = {
-            description: v.description || '',
-            example: v.example || '',
-            required: v.required || false
-          };
+      if (excerptData) {
+        // Data loaded successfully - use storage values (authoritative source)
+        const storageName = excerptData.name;
+        const storageCategory = excerptData.category;
+        
+        // DEBUG: Log the values we're processing
+        console.log('[source-config] Processing storage values:', {
+          storageName,
+          storageNameType: typeof storageName,
+          storageCategory,
+          storageCategoryType: typeof storageCategory
         });
-        setVariableMetadata(metadata);
-      }
+        
+        // Determine the name to use - always prefer storage value
+        let nameToSet = '';
+        if (storageName !== undefined && storageName !== null && String(storageName).trim() !== '') {
+          nameToSet = String(storageName).trim();
+        } else if (config.excerptName) {
+          nameToSet = String(config.excerptName).trim();
+        }
+        
+        // DEBUG: Log what we're setting
+        console.log('[source-config] Setting excerptName to:', nameToSet);
+        
+        // Always update state (React will handle batching and only update if different)
+        // This ensures the field always reflects the current data from storage
+        setExcerptName(nameToSet);
+        
+        // Mark that data has been loaded (for key generation to force remount)
+        if (!dataLoaded && nameToSet) {
+          setDataLoaded(true);
+        }
+        
+        // Determine the category to use
+        let categoryToSet = 'General';
+        if (storageCategory && String(storageCategory).trim() !== '') {
+          categoryToSet = String(storageCategory).trim();
+        } else if (config.category) {
+          categoryToSet = String(config.category).trim();
+        }
+        
+        // Always update state
+        setCategory(categoryToSet);
 
-      // Load toggle metadata
-      if (excerptData.toggles && Array.isArray(excerptData.toggles)) {
-        const metadata = {};
-        excerptData.toggles.forEach(t => {
-          metadata[t.name] = {
-            description: t.description || ''
-          };
-        });
-        setToggleMetadata(metadata);
-      }
+        // Load variable metadata, toggle metadata, and documentation links only once per excerptId
+        if (!hasLoadedDataRef.current) {
+          // Load variable metadata
+          if (excerptData.variables && Array.isArray(excerptData.variables)) {
+            const metadata = {};
+            excerptData.variables.forEach(v => {
+              metadata[v.name] = {
+                description: v.description || '',
+                example: v.example || '',
+                required: v.required || false
+              };
+            });
+            setVariableMetadata(metadata);
+          }
 
-      // Load documentation links
-      if (excerptData.documentationLinks && Array.isArray(excerptData.documentationLinks)) {
-        setDocumentationLinks(excerptData.documentationLinks);
-      }
+          // Load toggle metadata
+          if (excerptData.toggles && Array.isArray(excerptData.toggles)) {
+            const metadata = {};
+            excerptData.toggles.forEach(t => {
+              metadata[t.name] = {
+                description: t.description || ''
+              };
+            });
+            setToggleMetadata(metadata);
+          }
 
-      hasLoadedDataRef.current = true;
+          // Load documentation links
+          if (excerptData.documentationLinks && Array.isArray(excerptData.documentationLinks)) {
+            setDocumentationLinks(excerptData.documentationLinks);
+          }
+
+          hasLoadedDataRef.current = true;
+        }
+      } else {
+        // Loading complete but no data found - excerpt doesn't exist in storage
+        // Fall back to config values
+        setExcerptName(config.excerptName || '');
+        setCategory(config.category || 'General');
+      }
     }
-  }, [excerptId, excerptData, config.excerptName, config.category]);
+  }, [excerptId, excerptData, isLoadingExcerpt, config.excerptName, config.category]);
 
   // Detect variables whenever macro body changes
   useEffect(() => {
@@ -310,18 +408,28 @@ const App = () => {
         sourceSpaceKey,
         sourceLocalId: context?.localId
       }, {
-        onSuccess: (result) => {
-          // Only submit the config fields (not the content, which is in the body)
-          const configToSubmit = {
-            excerptId: result.excerptId,
-            excerptName: excerptName,
-            category: category,
-            variables: result.variables,
-            toggles: result.toggles
-          };
+        onSuccess: async (result) => {
+          try {
+            // Only submit the config fields (not the content, which is in the body)
+            const configToSubmit = {
+              excerptId: result.excerptId,
+              excerptName: excerptName,
+              category: category,
+              variables: result.variables,
+              toggles: result.toggles
+            };
 
-          // Save the configuration to the macro using view.submit()
-          view.submit({ config: configToSubmit }).then(resolve).catch(reject);
+            // Save the configuration to the macro using view.submit()
+            // Use a small delay to ensure the mutation completes before modal closes
+            await new Promise(resolve => setTimeout(resolve, 100));
+            await view.submit({ config: configToSubmit });
+            resolve();
+          } catch (error) {
+            console.error('[REACT-QUERY-SOURCE] Error submitting config:', error);
+            // Still resolve to allow modal to close even if submit fails
+            // The data is already saved to storage, so this is just updating the macro config
+            resolve();
+          }
         },
         onError: (error) => {
           console.error('[REACT-QUERY-SOURCE] Failed to save excerpt:', error);
@@ -330,6 +438,31 @@ const App = () => {
       });
     });
   };
+
+  // Show loading state while fetching data from storage (only for existing excerpts)
+  // For new excerpts (no excerptId), we can show the form immediately
+  if (excerptId && isLoadingExcerpt) {
+    return (
+      <Form>
+        <FormSection>
+          <Text>Loading source data from storage...</Text>
+        </FormSection>
+      </Form>
+    );
+  }
+
+  // Show error state if fetch failed
+  if (excerptId && excerptError) {
+    return (
+      <Form>
+        <FormSection>
+          <SectionMessage appearance="error">
+            <Text>Failed to load source data: {excerptError.message}</Text>
+          </SectionMessage>
+        </FormSection>
+      </Form>
+    );
+  }
 
   return (
     <Form onSubmit={handleSubmit(onSubmit)}>
@@ -348,10 +481,10 @@ const App = () => {
             </Label>
             <StableTextfield
               id={getFieldId('excerptName')}
-              stableKey="source-excerpt-name"
-              value={excerptName}
-              placeholder={isLoadingExcerpt ? 'Loading...' : ''}
-              isDisabled={isLoadingExcerpt}
+              stableKey={`source-excerpt-name-${excerptId || 'new'}-${dataLoaded ? 'loaded' : 'empty'}`}
+              value={excerptName || ''}
+              placeholder=""
+              isDisabled={false}
               onChange={(e) => setExcerptName(e.target.value)}
             />
 
@@ -361,8 +494,8 @@ const App = () => {
             <Select
               id={getFieldId('category')}
               options={categoryOptions}
-              value={(isLoadingExcerpt || isLoadingCategories) ? undefined : categoryOptions.find(opt => opt.value === category)}
-              placeholder={(isLoadingExcerpt || isLoadingCategories) ? 'Loading...' : undefined}
+              value={isLoadingCategories ? undefined : categoryOptions.find(opt => opt.value === category)}
+              placeholder={isLoadingCategories ? 'Loading...' : undefined}
               onChange={(e) => setCategory(e.value)}
             />
 

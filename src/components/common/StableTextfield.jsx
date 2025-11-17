@@ -44,11 +44,58 @@ const StableTextfieldComponent = React.forwardRef(({
   // Combine internal ref with forwarded ref
   React.useImperativeHandle(ref, () => textFieldRef.current, []);
   
+  // Track previous value to detect changes
+  const prevValueRef = useRef(value);
+  const isInitialMountRef = useRef(true);
+  
   // Sync ref value when value prop changes externally (e.g., when parent state resets)
   // Only sync when value actually changes, not on every render
   useEffect(() => {
-    if (textFieldRef.current && textFieldRef.current.value !== value) {
-      textFieldRef.current.value = value || '';
+    const newValue = value || '';
+    const prevValue = prevValueRef.current || '';
+    
+    // On initial mount, set the ref value immediately
+    if (isInitialMountRef.current) {
+      if (textFieldRef.current) {
+        textFieldRef.current.value = newValue;
+      }
+      prevValueRef.current = newValue;
+      isInitialMountRef.current = false;
+      return;
+    }
+    
+    // Update ref if value changed
+    if (textFieldRef.current && newValue !== prevValue) {
+      const currentValue = textFieldRef.current.value || '';
+      // Update if values differ (handles empty string, null, undefined cases)
+      if (currentValue !== newValue) {
+        console.log('[StableTextfield] Updating value from', currentValue, 'to', newValue);
+        textFieldRef.current.value = newValue;
+        
+        // Force a visual update by dispatching input and change events
+        // Some components need these events to update the display
+        try {
+          const inputEvent = new Event('input', { bubbles: true, cancelable: true });
+          textFieldRef.current.dispatchEvent(inputEvent);
+          
+          const changeEvent = new Event('change', { bubbles: true, cancelable: true });
+          textFieldRef.current.dispatchEvent(changeEvent);
+        } catch (e) {
+          // Ignore errors if events can't be dispatched
+        }
+        
+        // Double-check with a small delay
+        setTimeout(() => {
+          if (textFieldRef.current && textFieldRef.current.value !== newValue) {
+            console.log('[StableTextfield] Retrying value update to', newValue);
+            textFieldRef.current.value = newValue;
+          }
+        }, 10);
+      }
+      prevValueRef.current = newValue;
+    } else if (newValue !== prevValue) {
+      // Value changed but ref not ready yet - update ref for next render
+      prevValueRef.current = newValue;
     }
   }, [value, stableKey]); // Only sync when value or stableKey changes
   

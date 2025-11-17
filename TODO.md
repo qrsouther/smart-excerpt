@@ -53,34 +53,6 @@ This allows the insertion logic to work on the original structure (with toggle m
 
 ---
 
-### Re-enable ChromelessEditor in ExcerptPreviewModal
-**Status:** Pending Forge UI Kit EAP Approval
-**Priority:** Medium
-**Estimated Effort:** Low (5 minutes)
-
-**Context:**
-ChromelessEditor implementation is complete in `src/components/admin/ExcerptPreviewModal.jsx` but commented out pending **Forge UI Kit EAP** approval. 
-
-**IMPORTANT:** ChromelessEditor requires a **separate EAP enrollment** from Platform Experiences EAP. The Platform Experiences EAP you signed up for is for Goals, Projects, and Home features - NOT for Forge UI Kit components.
-
-**Action Required:**
-1. Sign up for **Forge UI Kit EAP** (separate from Platform Experiences EAP)
-   - Check: https://developer.atlassian.com/platform/forge/ui-kit/components/chromeless-editor/
-   - Community discussion: https://community.developer.atlassian.com/t/introducing-the-new-editor-component-for-forge-ui-kit-eap/96439
-   - Look for EAP signup form on Forge documentation pages
-2. Once Forge UI Kit EAP approval is received, uncomment:
-   - Import: Line ~44-46 (commented)
-   - Component: Lines ~451-466 (commented)
-3. Test that the editor loads and functions correctly
-4. Verify that content editing and saving works as expected
-
-**Notes:**
-- EAP features are recommended for development environments only (not production)
-- ChromelessEditor is available for Confluence and Jira modules only
-- Subject to change without notice
-
-**Location:**
-- File: `src/components/admin/ExcerptPreviewModal.jsx`
 - Import: Lines 44-46 (commented with note)
 - Component: Lines 451-466 (commented with note)
 

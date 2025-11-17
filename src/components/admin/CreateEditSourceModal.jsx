@@ -2,8 +2,7 @@
  * CreateEditSourceModal Component
  *
  * Modal dialog for creating and editing Blueprint Standard Sources.
- * Uses ChromelessEditor to edit Source content directly in the modal,
- * eliminating the need for bodied macros on Confluence pages.
+ * Note: Content editing must be done in the Source macro on the page itself.
  *
  * @param {Object} props
  * @param {boolean} props.isOpen - Whether the modal is open
@@ -38,7 +37,7 @@ import {
   Icon,
   Label,
   FormSection,
-  ChromelessEditor,
+  TextArea,
   xcss
 } from '@forge/react';
 import { invoke } from '@forge/bridge';
@@ -64,6 +63,7 @@ const useExcerptQuery = (excerptId, enabled) => {
     enabled: enabled && !!excerptId,
     staleTime: 1000 * 60 * 5, // 5 minutes
     gcTime: 1000 * 60 * 30, // 30 minutes
+    refetchOnMount: true, // Always refetch when component mounts (modal opens)
   });
 };
 
@@ -131,7 +131,8 @@ const useSaveExcerptMutation = () => {
 export function CreateEditSourceModal({
   isOpen,
   onClose,
-  editingExcerptId
+  editingExcerptId,
+  initialExcerptData = null // Optional: excerpt data from list to show immediately
 }) {
   const queryClient = useQueryClient();
   const isCreateMode = !editingExcerptId;
@@ -173,19 +174,19 @@ export function CreateEditSourceModal({
   const [newLinkUrl, setNewLinkUrl] = useState('');
   const [urlError, setUrlError] = useState('');
 
-  // Track if we've loaded data to prevent infinite loops
-  const hasLoadedDataRef = useRef(false);
-  const lastExcerptIdRef = useRef(null);
+  // Track detection flags to prevent re-detection on every render
   const hasDetectedVariablesRef = useRef(false);
   const hasDetectedTogglesRef = useRef(false);
+  const hasLoadedDataRef = useRef(false);
+  const lastExcerptIdRef = useRef(null);
 
   // Reset state when modal closes or switches between create/edit
   useEffect(() => {
     if (!isOpen) {
-      hasLoadedDataRef.current = false;
-      lastExcerptIdRef.current = null;
       hasDetectedVariablesRef.current = false;
       hasDetectedTogglesRef.current = false;
+      hasLoadedDataRef.current = false;
+      lastExcerptIdRef.current = null;
       setExcerptName('');
       setCategory('General');
       setEditorContent(isCreateMode ? { type: 'doc', version: 1, content: [] } : null);
@@ -201,7 +202,8 @@ export function CreateEditSourceModal({
     }
   }, [isOpen, isCreateMode]);
 
-  // Load excerpt data from React Query (only in edit mode)
+  // Load excerpt data - using same pattern as source-config.jsx
+  // Show initial data immediately, then update with storage values when they load
   useEffect(() => {
     // Reset flag if excerptId changed
     if (lastExcerptIdRef.current !== editingExcerptId) {
@@ -209,14 +211,28 @@ export function CreateEditSourceModal({
       lastExcerptIdRef.current = editingExcerptId;
     }
 
-    if (!editingExcerptId || !excerptData || !isOpen) {
+    if (!editingExcerptId || !isOpen) {
       return;
     }
 
-    if (!hasLoadedDataRef.current) {
-      // Load name and category from React Query data
-      setExcerptName(excerptData.name || '');
-      setCategory(excerptData.category || 'General');
+    // Always show initial data immediately when modal opens (before storage loads)
+    // This ensures the name is visible even while data is loading
+    // This matches the pattern in source-config.jsx (lines 190-199)
+    if (!hasLoadedDataRef.current && initialExcerptData) {
+      if (initialExcerptData.name) {
+        setExcerptName(initialExcerptData.name);
+      }
+      if (initialExcerptData.category) {
+        setCategory(initialExcerptData.category);
+      }
+    }
+
+    // Once storage data loads, update with authoritative values
+    // This matches the pattern in source-config.jsx (lines 201-237)
+    if (excerptData && !hasLoadedDataRef.current && !isLoadingExcerpt) {
+      // Load name and category from storage, with fallback to initial data
+      setExcerptName(excerptData.name || initialExcerptData?.name || '');
+      setCategory(excerptData.category || initialExcerptData?.category || 'General');
       
       // Load editor content (ADF format)
       if (excerptData.content) {
@@ -256,7 +272,7 @@ export function CreateEditSourceModal({
 
       hasLoadedDataRef.current = true;
     }
-  }, [editingExcerptId, excerptData, isOpen]);
+  }, [editingExcerptId, excerptData, isLoadingExcerpt, isOpen, initialExcerptData]);
 
   // Initialize editor content for create mode
   useEffect(() => {
@@ -334,8 +350,14 @@ export function CreateEditSourceModal({
       return;
     }
 
-    if (!editorContent) {
-      alert('Please add content to the Source');
+    // For edit mode, use existing content from excerptData
+    // For create mode, content must be added via the Source macro on a page first
+    const contentToSave = editingExcerptId 
+      ? (excerptData?.content || { type: 'doc', version: 1, content: [] })
+      : { type: 'doc', version: 1, content: [] };
+
+    if (isCreateMode) {
+      alert('To create a Source, add a Blueprint Standard - Source macro to a Confluence page and configure it there.');
       return;
     }
 
@@ -357,7 +379,7 @@ export function CreateEditSourceModal({
     saveExcerptMutation({
       excerptName: excerptName.trim(),
       category,
-      content: editorContent,
+      content: contentToSave,
       excerptId: editingExcerptId || null,
       variableMetadata: variablesWithMetadata,
       toggleMetadata: togglesWithMetadata,
@@ -432,6 +454,7 @@ export function CreateEditSourceModal({
                           options={categoryOptions}
                           value={(isLoadingExcerpt || isLoadingCategories) ? undefined : categoryOptions.find(opt => opt.value === category)}
                           placeholder={(isLoadingExcerpt || isLoadingCategories) ? 'Loading...' : undefined}
+                          isDisabled={isLoadingExcerpt || isLoadingCategories}
                           onChange={(e) => setCategory(e.value)}
                         />
                       </Box>
@@ -439,21 +462,20 @@ export function CreateEditSourceModal({
                   </Box>
 
                   <Text>{' '}</Text>
-                  <Label>
-                    Source Content
-                  </Label>
-                  <Box paddingTop="space.100" xcss={xcss({ width: '700px', borderColor: 'color.border', borderStyle: 'solid', borderWidth: 'border.width', borderRadius: 'border.radius', padding: 'space.200' })}>
-                    <ChromelessEditor
-                      defaultValue={editorContent || { type: 'doc', version: 1, content: [] }}
-                      onChange={(value) => {
-                        setEditorContent(value);
-                        // Reset detection flags when content changes
-                        hasDetectedVariablesRef.current = false;
-                        hasDetectedTogglesRef.current = false;
-                      }}
-                      placeholder="Enter Source content here. Use {{variable}} syntax for variables and {{toggle:name}}...{{/toggle:name}} for toggles."
-                    />
-                  </Box>
+                  <SectionMessage appearance="information">
+                    <Text><Strong>Content Editing</Strong></Text>
+                    <Text>To edit Source content, navigate to the Source macro on its page and edit it there. This modal is for editing metadata (name, category, variables, toggles, documentation) only.</Text>
+                  </SectionMessage>
+                  {editorContent && (
+                    <Box paddingTop="space.200">
+                      <Label>
+                        Content Preview
+                      </Label>
+                      <Box paddingTop="space.100" xcss={xcss({ width: '700px', borderColor: 'color.border', borderStyle: 'solid', borderWidth: 'border.width', borderRadius: 'border.radius', padding: 'space.200', backgroundColor: 'color.background.neutral.subtle' })}>
+                        <Text><Em>Content is stored in ADF format. Edit the Source macro on its page to modify content.</Em></Text>
+                      </Box>
+                    </Box>
+                  )}
                 </FormSection>
               </TabPanel>
 

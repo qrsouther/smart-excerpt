@@ -41,9 +41,6 @@ import {
   Icon,
   Label,
   AdfRenderer
-  // ChromelessEditor - Commented out pending Forge UI Kit EAP approval
-  // NOTE: This is separate from Platform Experiences EAP - requires Forge UI Kit EAP enrollment
-  // , ChromelessEditor
 } from '@forge/react';
 import { invoke, router } from '@forge/bridge';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -464,26 +461,6 @@ export function ExcerptPreviewModal({
                       </Box>
                     </Box>
 
-                    {/* ChromelessEditor - Commented out pending Forge UI Kit EAP approval
-                    NOTE: ChromelessEditor requires separate EAP enrollment for Forge UI Kit components
-                    (different from Platform Experiences EAP). Check:
-                    - https://developer.atlassian.com/platform/forge/ui-kit/components/chromeless-editor/
-                    - https://community.developer.atlassian.com/t/introducing-the-new-editor-component-for-forge-ui-kit-eap/96439
-                    <Box paddingTop="space.300">
-                      <Label>
-                        Source Content
-                      </Label>
-                      <Box paddingTop="space.100">
-                        <ChromelessEditor
-                          defaultValue={editorContent || excerptData?.content || { type: 'doc', version: 1, content: [] }}
-                          onChange={(value) => {
-                            setEditorContent(value);
-                          }}
-                          placeholder="Edit the Source macro content here..."
-                        />
-                      </Box>
-                    </Box>
-                    */}
                   </Stack>
                 </Box>
               </TabPanel>

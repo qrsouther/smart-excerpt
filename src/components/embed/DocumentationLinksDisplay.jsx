@@ -68,8 +68,8 @@ export function DocumentationLinksDisplay({
 
   const { data: statusUser } = useConfluenceUserQuery(userIdToFetch);
 
-  // Don't render if no documentation links, not checking staleness, and no redline status
-  if ((!documentationLinks || documentationLinks.length === 0) && !isCheckingStaleness && !redlineStatus) {
+  // Hide component in Embed View Mode if there are no documentation links to display
+  if (!documentationLinks || documentationLinks.length === 0) {
     return null;
   }
 
