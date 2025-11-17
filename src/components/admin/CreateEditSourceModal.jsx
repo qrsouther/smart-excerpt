@@ -1,0 +1,719 @@
+/**
+ * CreateEditSourceModal Component
+ *
+ * Modal dialog for creating and editing Blueprint Standard Sources.
+ * Uses ChromelessEditor to edit Source content directly in the modal,
+ * eliminating the need for bodied macros on Confluence pages.
+ *
+ * @param {Object} props
+ * @param {boolean} props.isOpen - Whether the modal is open
+ * @param {Function} props.onClose - Callback to close the modal
+ * @param {string|null} props.editingExcerptId - Excerpt ID to edit, or null for create mode
+ * @returns {JSX.Element}
+ */
+
+import React, { Fragment, useState, useEffect, useRef } from 'react';
+import {
+  Text,
+  Strong,
+  Em,
+  Code,
+  Button,
+  Box,
+  Modal,
+  ModalTransition,
+  ModalHeader,
+  ModalTitle,
+  ModalBody,
+  ModalFooter,
+  Stack,
+  Inline,
+  SectionMessage,
+  Tabs,
+  Tab,
+  TabList,
+  TabPanel,
+  Select,
+  Toggle,
+  Icon,
+  Label,
+  FormSection,
+  ChromelessEditor,
+  xcss
+} from '@forge/react';
+import { invoke } from '@forge/bridge';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useCategoriesQuery } from '../../hooks/admin-hooks';
+import { extractTextFromAdf } from '../../utils/adf-utils';
+import { StableTextfield } from '../common/StableTextfield';
+import { middleSectionStyles } from '../../styles/admin-styles';
+
+// Custom hook for fetching excerpt data with React Query
+const useExcerptQuery = (excerptId, enabled) => {
+  return useQuery({
+    queryKey: ['excerpt', excerptId],
+    queryFn: async () => {
+      const result = await invoke('getExcerpt', { excerptId });
+
+      if (!result.success || !result.excerpt) {
+        throw new Error('Failed to load excerpt');
+      }
+
+      return result.excerpt;
+    },
+    enabled: enabled && !!excerptId,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+    gcTime: 1000 * 60 * 30, // 30 minutes
+  });
+};
+
+// Custom hook for saving excerpt with React Query mutation
+const useSaveExcerptMutation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ excerptName, category, content, excerptId, variableMetadata, toggleMetadata, documentationLinks, existingSourcePageId, existingSourceSpaceKey, existingSourceLocalId }) => {
+      try {
+        // Use existing virtual page references if editing, otherwise generate new ones
+        let virtualPageId, virtualSpaceKey, virtualLocalId;
+        
+        if (excerptId && existingSourcePageId && existingSourcePageId.startsWith('virtual-')) {
+          // Preserve existing virtual references when editing
+          virtualPageId = existingSourcePageId;
+          virtualSpaceKey = existingSourceSpaceKey || 'virtual-blueprint-source';
+          virtualLocalId = existingSourceLocalId || `virtual-${excerptId}`;
+        } else {
+          // Generate new virtual page references for new Sources
+          const virtualExcerptId = excerptId || `temp-${Date.now()}`;
+          virtualPageId = `virtual-${virtualExcerptId}`;
+          virtualSpaceKey = 'virtual-blueprint-source';
+          virtualLocalId = `virtual-${virtualExcerptId}`;
+        }
+        
+        const result = await invoke('saveExcerpt', {
+          excerptName,
+          category,
+          content,
+          excerptId,
+          variableMetadata,
+          toggleMetadata,
+          documentationLinks,
+          sourcePageId: virtualPageId,
+          sourcePageTitle: excerptName || 'Blueprint Source',
+          sourceSpaceKey: virtualSpaceKey,
+          sourceLocalId: virtualLocalId
+        });
+
+        // Backend returns excerpt data directly (no success wrapper)
+        if (!result || !result.excerptId) {
+          throw new Error('Failed to save excerpt - invalid response');
+        }
+
+        return result;
+      } catch (error) {
+        console.error('[REACT-QUERY-CREATE-EDIT] Save error:', error);
+        throw error;
+      }
+    },
+    onSuccess: (data) => {
+      // Invalidate the excerpt cache so it refetches with updated data
+      queryClient.invalidateQueries({ queryKey: ['excerpt', data.excerptId] });
+      // Also invalidate the excerpts list (for Admin UI and Include macro dropdowns)
+      queryClient.invalidateQueries({ queryKey: ['excerpts', 'list'] });
+      queryClient.invalidateQueries({ queryKey: ['excerpts'] });
+    },
+    onError: (error) => {
+      console.error('[REACT-QUERY-CREATE-EDIT] Save failed:', error);
+    }
+  });
+};
+
+export function CreateEditSourceModal({
+  isOpen,
+  onClose,
+  editingExcerptId
+}) {
+  const queryClient = useQueryClient();
+  const isCreateMode = !editingExcerptId;
+
+  // Use React Query to fetch excerpt data (only in edit mode)
+  const {
+    data: excerptData,
+    isLoading: isLoadingExcerpt,
+    error: excerptError
+  } = useExcerptQuery(editingExcerptId, !!editingExcerptId);
+
+  // Use React Query mutation for saving
+  const {
+    mutate: saveExcerptMutation,
+    isPending: isSavingExcerpt,
+    isSuccess: isSaveSuccess,
+    isError: isSaveError
+  } = useSaveExcerptMutation();
+
+  // Fetch categories from storage (shared with Admin UI)
+  const {
+    data: categories = ['General', 'Pricing', 'Technical', 'Legal', 'Marketing'],
+    isLoading: isLoadingCategories
+  } = useCategoriesQuery();
+
+  // Use state for controlled components
+  const [excerptName, setExcerptName] = useState('');
+  const [category, setCategory] = useState('General');
+  const [editorContent, setEditorContent] = useState(null);
+  const [selectedTabIndex, setSelectedTabIndex] = useState(0);
+  const [detectedVariables, setDetectedVariables] = useState([]);
+  const [variableMetadata, setVariableMetadata] = useState({});
+  const [detectedToggles, setDetectedToggles] = useState([]);
+  const [toggleMetadata, setToggleMetadata] = useState({});
+  const [documentationLinks, setDocumentationLinks] = useState([]);
+
+  // Form state for adding new documentation links
+  const [newLinkAnchor, setNewLinkAnchor] = useState('');
+  const [newLinkUrl, setNewLinkUrl] = useState('');
+  const [urlError, setUrlError] = useState('');
+
+  // Track if we've loaded data to prevent infinite loops
+  const hasLoadedDataRef = useRef(false);
+  const lastExcerptIdRef = useRef(null);
+  const hasDetectedVariablesRef = useRef(false);
+  const hasDetectedTogglesRef = useRef(false);
+
+  // Reset state when modal closes or switches between create/edit
+  useEffect(() => {
+    if (!isOpen) {
+      hasLoadedDataRef.current = false;
+      lastExcerptIdRef.current = null;
+      hasDetectedVariablesRef.current = false;
+      hasDetectedTogglesRef.current = false;
+      setExcerptName('');
+      setCategory('General');
+      setEditorContent(isCreateMode ? { type: 'doc', version: 1, content: [] } : null);
+      setSelectedTabIndex(0);
+      setDetectedVariables([]);
+      setVariableMetadata({});
+      setDetectedToggles([]);
+      setToggleMetadata({});
+      setDocumentationLinks([]);
+      setNewLinkAnchor('');
+      setNewLinkUrl('');
+      setUrlError('');
+    }
+  }, [isOpen, isCreateMode]);
+
+  // Load excerpt data from React Query (only in edit mode)
+  useEffect(() => {
+    // Reset flag if excerptId changed
+    if (lastExcerptIdRef.current !== editingExcerptId) {
+      hasLoadedDataRef.current = false;
+      lastExcerptIdRef.current = editingExcerptId;
+    }
+
+    if (!editingExcerptId || !excerptData || !isOpen) {
+      return;
+    }
+
+    if (!hasLoadedDataRef.current) {
+      // Load name and category from React Query data
+      setExcerptName(excerptData.name || '');
+      setCategory(excerptData.category || 'General');
+      
+      // Load editor content (ADF format)
+      if (excerptData.content) {
+        setEditorContent(excerptData.content);
+      } else {
+        setEditorContent({ type: 'doc', version: 1, content: [] });
+      }
+
+      // Load variable metadata
+      if (excerptData.variables && Array.isArray(excerptData.variables)) {
+        const metadata = {};
+        excerptData.variables.forEach(v => {
+          metadata[v.name] = {
+            description: v.description || '',
+            example: v.example || '',
+            required: v.required || false
+          };
+        });
+        setVariableMetadata(metadata);
+      }
+
+      // Load toggle metadata
+      if (excerptData.toggles && Array.isArray(excerptData.toggles)) {
+        const metadata = {};
+        excerptData.toggles.forEach(t => {
+          metadata[t.name] = {
+            description: t.description || ''
+          };
+        });
+        setToggleMetadata(metadata);
+      }
+
+      // Load documentation links
+      if (excerptData.documentationLinks && Array.isArray(excerptData.documentationLinks)) {
+        setDocumentationLinks(excerptData.documentationLinks);
+      }
+
+      hasLoadedDataRef.current = true;
+    }
+  }, [editingExcerptId, excerptData, isOpen]);
+
+  // Initialize editor content for create mode
+  useEffect(() => {
+    if (isOpen && isCreateMode && !editorContent) {
+      setEditorContent({ type: 'doc', version: 1, content: [] });
+    }
+  }, [isOpen, isCreateMode, editorContent]);
+
+  // Detect variables when navigating to Variables tab
+  useEffect(() => {
+    if (selectedTabIndex === 1 && editorContent && !hasDetectedVariablesRef.current) {
+      hasDetectedVariablesRef.current = true;
+      
+      const detectVars = async () => {
+        try {
+          // Extract text from ADF for detection
+          const contentText = extractTextFromAdf(editorContent);
+          if (!contentText) {
+            setDetectedVariables([]);
+            return;
+          }
+
+          const result = await invoke('detectVariablesFromContent', { content: contentText });
+          if (result.success) {
+            setDetectedVariables(result.variables);
+          }
+        } catch (err) {
+          console.error('Error detecting variables:', err);
+        }
+      };
+
+      detectVars();
+    }
+  }, [selectedTabIndex, editorContent]);
+
+  // Detect toggles when navigating to Toggles tab
+  useEffect(() => {
+    if (selectedTabIndex === 2 && editorContent && !hasDetectedTogglesRef.current) {
+      hasDetectedTogglesRef.current = true;
+      
+      const detectToggs = async () => {
+        try {
+          // Extract text from ADF for detection
+          const contentText = extractTextFromAdf(editorContent);
+          if (!contentText) {
+            setDetectedToggles([]);
+            return;
+          }
+
+          const result = await invoke('detectTogglesFromContent', { content: contentText });
+          if (result.success) {
+            setDetectedToggles(result.toggles);
+          }
+        } catch (err) {
+          console.error('Error detecting toggles:', err);
+        }
+      };
+
+      detectToggs();
+    }
+  }, [selectedTabIndex, editorContent]);
+
+  // Convert categories array to options format for Select component
+  const categoryOptions = categories.map(cat => ({
+    label: cat,
+    value: cat
+  }));
+
+  // Extract text content from ADF for display
+  const contentText = editorContent ? extractTextFromAdf(editorContent) : '';
+
+  const handleSave = async () => {
+    if (!excerptName.trim()) {
+      alert('Please enter a Source name');
+      return;
+    }
+
+    if (!editorContent) {
+      alert('Please add content to the Source');
+      return;
+    }
+
+    // Merge detected variables with their metadata
+    const variablesWithMetadata = detectedVariables.map(v => ({
+      name: v.name,
+      description: variableMetadata[v.name]?.description || '',
+      example: variableMetadata[v.name]?.example || '',
+      required: variableMetadata[v.name]?.required || false
+    }));
+
+    // Merge detected toggles with their metadata
+    const togglesWithMetadata = detectedToggles.map(t => ({
+      name: t.name,
+      description: toggleMetadata[t.name]?.description || ''
+    }));
+
+    // Use React Query mutation to save
+    saveExcerptMutation({
+      excerptName: excerptName.trim(),
+      category,
+      content: editorContent,
+      excerptId: editingExcerptId || null,
+      variableMetadata: variablesWithMetadata,
+      toggleMetadata: togglesWithMetadata,
+      documentationLinks,
+      existingSourcePageId: excerptData?.sourcePageId,
+      existingSourceSpaceKey: excerptData?.sourceSpaceKey,
+      existingSourceLocalId: excerptData?.sourceLocalId
+    }, {
+      onSuccess: async () => {
+        // Close modal after successful save
+        onClose();
+      },
+      onError: (error) => {
+        console.error('[REACT-QUERY-CREATE-EDIT] Failed to save:', error);
+        alert('Failed to save: ' + error.message);
+      }
+    });
+  };
+
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <ModalTransition>
+      <Modal width="x-large" onClose={onClose}>
+        <ModalHeader>
+          <ModalTitle>
+            {isCreateMode ? 'Create Source' : `Edit: ${excerptName || 'Source'}`}
+          </ModalTitle>
+        </ModalHeader>
+
+        <ModalBody>
+          {isLoadingExcerpt && editingExcerptId ? (
+            <Text>Loading...</Text>
+          ) : excerptError ? (
+            <SectionMessage appearance="error">
+              <Text>Error loading excerpt: {excerptError.message}</Text>
+            </SectionMessage>
+          ) : (
+            <Tabs onChange={(index) => setSelectedTabIndex(index)}>
+              <TabList space="space.200">
+                <Tab>Name/Category</Tab>
+                <Tab>Variables</Tab>
+                <Tab>Toggles</Tab>
+                <Tab>Documentation</Tab>
+              </TabList>
+
+              <TabPanel>
+                <FormSection>
+                  <Box xcss={xcss({ width: '700px' })}>
+                    <Inline space="space.200" alignBlock="start" shouldWrap={false}>
+                      <Box xcss={xcss({ width: '75%' })}>
+                        <Label labelFor="excerptName">
+                          Blueprint Source Name
+                        </Label>
+                        <StableTextfield
+                          id="excerptName"
+                          stableKey="create-edit-excerpt-name-input"
+                          value={excerptName}
+                          placeholder={isLoadingExcerpt ? 'Loading...' : 'Enter Source name'}
+                          isDisabled={isLoadingExcerpt}
+                          onChange={(e) => setExcerptName(e.target.value)}
+                        />
+                      </Box>
+                      <Box xcss={xcss({ width: '25%' })}>
+                        <Label labelFor="category">
+                          Blueprint Source Category
+                        </Label>
+                        <Select
+                          id="category"
+                          options={categoryOptions}
+                          value={(isLoadingExcerpt || isLoadingCategories) ? undefined : categoryOptions.find(opt => opt.value === category)}
+                          placeholder={(isLoadingExcerpt || isLoadingCategories) ? 'Loading...' : undefined}
+                          onChange={(e) => setCategory(e.value)}
+                        />
+                      </Box>
+                    </Inline>
+                  </Box>
+
+                  <Text>{' '}</Text>
+                  <Label>
+                    Source Content
+                  </Label>
+                  <Box paddingTop="space.100" xcss={xcss({ width: '700px', borderColor: 'color.border', borderStyle: 'solid', borderWidth: 'border.width', borderRadius: 'border.radius', padding: 'space.200' })}>
+                    <ChromelessEditor
+                      defaultValue={editorContent || { type: 'doc', version: 1, content: [] }}
+                      onChange={(value) => {
+                        setEditorContent(value);
+                        // Reset detection flags when content changes
+                        hasDetectedVariablesRef.current = false;
+                        hasDetectedTogglesRef.current = false;
+                      }}
+                      placeholder="Enter Source content here. Use {{variable}} syntax for variables and {{toggle:name}}...{{/toggle:name}} for toggles."
+                    />
+                  </Box>
+                </FormSection>
+              </TabPanel>
+
+              <TabPanel>
+                <FormSection>
+                  {contentText && detectedVariables.length === 0 && hasDetectedVariablesRef.current && (
+                    <Text><Em>No variables detected.</Em></Text>
+                  )}
+
+                  {!hasDetectedVariablesRef.current && contentText && (
+                    <Text><Em>Checking for variables...</Em></Text>
+                  )}
+
+                  {detectedVariables.length === 0 && !contentText && (
+                    <Text>No variables detected. Add {'{{variable}}'} syntax to your Source content to create variables.</Text>
+                  )}
+
+                  {detectedVariables.length > 0 && (
+                    <Fragment>
+                      {detectedVariables.map((variable) => (
+                        <Fragment key={variable.name}>
+                          <Text>{' '}</Text>
+                          <Inline space="space.300" alignBlock="center" spread="space-between">
+                            <Text><Strong><Code>{`{{${variable.name}}}`}</Code></Strong></Text>
+                            <Inline space="space.100" alignBlock="center">
+                              <Text>Required</Text>
+                              <Toggle
+                                id={`required-${variable.name}`}
+                                isChecked={variableMetadata[variable.name]?.required || false}
+                                isDisabled={isLoadingExcerpt}
+                                onChange={(e) => {
+                                  setVariableMetadata({
+                                    ...variableMetadata,
+                                    [variable.name]: {
+                                      ...variableMetadata[variable.name],
+                                      required: e.target.checked
+                                    }
+                                  });
+                                }}
+                              />
+                            </Inline>
+                          </Inline>
+                          <StableTextfield
+                            id={`var-desc-${variable.name}`}
+                            stableKey={`create-edit-var-desc-${variable.name}`}
+                            label="Description"
+                            placeholder={isLoadingExcerpt ? 'Loading...' : 'Description'}
+                            value={variableMetadata[variable.name]?.description || ''}
+                            isDisabled={isLoadingExcerpt}
+                            onChange={(e) => {
+                              setVariableMetadata({
+                                ...variableMetadata,
+                                [variable.name]: {
+                                  ...variableMetadata[variable.name],
+                                  description: e.target.value
+                                }
+                              });
+                            }}
+                          />
+                          <StableTextfield
+                            id={`var-example-${variable.name}`}
+                            stableKey={`create-edit-var-example-${variable.name}`}
+                            label="Example"
+                            placeholder={isLoadingExcerpt ? 'Loading...' : 'Example'}
+                            value={variableMetadata[variable.name]?.example || ''}
+                            isDisabled={isLoadingExcerpt}
+                            onChange={(e) => {
+                              setVariableMetadata({
+                                ...variableMetadata,
+                                [variable.name]: {
+                                  ...variableMetadata[variable.name],
+                                  example: e.target.value
+                                }
+                              });
+                            }}
+                          />
+                        </Fragment>
+                      ))}
+                    </Fragment>
+                  )}
+                </FormSection>
+              </TabPanel>
+
+              <TabPanel>
+                <FormSection>
+                  {contentText && detectedToggles.length === 0 && hasDetectedTogglesRef.current && (
+                    <Text><Em>No toggles detected.</Em></Text>
+                  )}
+
+                  {!hasDetectedTogglesRef.current && contentText && (
+                    <Text><Em>Checking for toggles...</Em></Text>
+                  )}
+
+                  {detectedToggles.length === 0 && !contentText && (
+                    <Text>No toggles detected. Add {'{{toggle:name}}'} ... {'{{/toggle:name}}'} syntax to your Source content to create toggles.</Text>
+                  )}
+
+                  {detectedToggles.length > 0 && (
+                    <Fragment>
+                      {detectedToggles.map((toggle) => (
+                        <Fragment key={toggle.name}>
+                          <Text>{' '}</Text>
+                          <Text><Strong><Code>{`{{toggle:${toggle.name}}}`}</Code></Strong></Text>
+                          <StableTextfield
+                            id={`toggle-desc-${toggle.name}`}
+                            stableKey={`create-edit-toggle-desc-${toggle.name}`}
+                            label="Description"
+                            placeholder={isLoadingExcerpt ? 'Loading...' : 'Description'}
+                            value={toggleMetadata[toggle.name]?.description || ''}
+                            isDisabled={isLoadingExcerpt}
+                            onChange={(e) => {
+                              setToggleMetadata({
+                                ...toggleMetadata,
+                                [toggle.name]: {
+                                  description: e.target.value
+                                }
+                              });
+                            }}
+                          />
+                        </Fragment>
+                      ))}
+                    </Fragment>
+                  )}
+                </FormSection>
+              </TabPanel>
+
+              <TabPanel>
+                <FormSection>
+                  {/* Existing documentation links */}
+                  {documentationLinks.length > 0 && (
+                    <Fragment>
+                      <Text><Strong>Documentation Links</Strong></Text>
+                      <Text>{' '}</Text>
+                      {documentationLinks.map((link, index) => (
+                        <Box key={index} padding="space.100" backgroundColor="color.background.neutral.subtle" style={{ marginBottom: '8px', borderRadius: '3px' }}>
+                          <Inline space="space.200" alignBlock="center" spread="space-between">
+                            <Stack space="space.050">
+                              <Text><Strong>{link.anchor}</Strong></Text>
+                              <Text size="small"><Em>{link.url}</Em></Text>
+                            </Stack>
+                            <Inline space="space.100">
+                              <Button
+                                appearance="subtle"
+                                iconBefore={<Icon glyph="arrow-up" label="Move up" />}
+                                isDisabled={index === 0 || isLoadingExcerpt}
+                                onClick={() => {
+                                  const newLinks = [...documentationLinks];
+                                  [newLinks[index - 1], newLinks[index]] = [newLinks[index], newLinks[index - 1]];
+                                  setDocumentationLinks(newLinks);
+                                }}
+                              />
+                              <Button
+                                appearance="subtle"
+                                iconBefore={<Icon glyph="arrow-down" label="Move down" />}
+                                isDisabled={index === documentationLinks.length - 1 || isLoadingExcerpt}
+                                onClick={() => {
+                                  const newLinks = [...documentationLinks];
+                                  [newLinks[index], newLinks[index + 1]] = [newLinks[index + 1], newLinks[index]];
+                                  setDocumentationLinks(newLinks);
+                                }}
+                              />
+                              <Button
+                                appearance="danger"
+                                iconBefore={<Icon glyph="trash" label="Delete" />}
+                                isDisabled={isLoadingExcerpt}
+                                onClick={() => {
+                                  setDocumentationLinks(documentationLinks.filter((_, i) => i !== index));
+                                }}
+                              />
+                            </Inline>
+                          </Inline>
+                        </Box>
+                      ))}
+                      <Text>{' '}</Text>
+                    </Fragment>
+                  )}
+
+                  {/* Add new documentation link form */}
+                  <Text><Strong>Add New Documentation Link</Strong></Text>
+                  <Text>{' '}</Text>
+                  <StableTextfield
+                    stableKey="create-edit-doc-link-anchor"
+                    label="Anchor Text"
+                    placeholder={isLoadingExcerpt ? 'Loading...' : 'e.g., API Reference'}
+                    value={newLinkAnchor}
+                    isDisabled={isLoadingExcerpt}
+                    onChange={(e) => setNewLinkAnchor(e.target.value)}
+                  />
+                  <StableTextfield
+                    stableKey="create-edit-doc-link-url"
+                    label="URL"
+                    placeholder={isLoadingExcerpt ? 'Loading...' : 'https://example.com/docs'}
+                    value={newLinkUrl}
+                    isDisabled={isLoadingExcerpt}
+                    onChange={(e) => {
+                      setNewLinkUrl(e.target.value);
+                      // Basic URL validation
+                      const url = e.target.value.trim();
+                      if (url && !url.match(/^https?:\/\/.+/i)) {
+                        setUrlError('URL must start with http:// or https://');
+                      } else {
+                        setUrlError('');
+                      }
+                    }}
+                  />
+                  {urlError && (
+                    <SectionMessage appearance="error">
+                      <Text>{urlError}</Text>
+                    </SectionMessage>
+                  )}
+                  <Button
+                    appearance="primary"
+                    isDisabled={!newLinkAnchor.trim() || !newLinkUrl.trim() || !!urlError || isLoadingExcerpt}
+                    onClick={() => {
+                      if (newLinkAnchor.trim() && newLinkUrl.trim() && !urlError) {
+                        setDocumentationLinks([
+                          ...documentationLinks,
+                          { anchor: newLinkAnchor.trim(), url: newLinkUrl.trim() }
+                        ]);
+                        setNewLinkAnchor('');
+                        setNewLinkUrl('');
+                      }
+                    }}
+                  >
+                    Add Link
+                  </Button>
+
+                  <Text>{' '}</Text>
+                  <SectionMessage appearance="discovery">
+                    <Text>Add documentation links that will appear in all Embed instances using this Source. Links open in a new tab.</Text>
+                  </SectionMessage>
+                </FormSection>
+              </TabPanel>
+            </Tabs>
+          )}
+        </ModalBody>
+
+        <ModalFooter>
+          <Inline space="space.200" alignBlock="center" spread="space-between">
+            {editingExcerptId && (
+              <Text size="small">
+                Source UUID: <Code>{editingExcerptId}</Code>
+              </Text>
+            )}
+            <Inline space="space.200">
+              <Button onClick={onClose}>
+                Cancel
+              </Button>
+              <Button
+                appearance="primary"
+                onClick={handleSave}
+                isDisabled={isSavingExcerpt || isLoadingExcerpt || !excerptName.trim()}
+              >
+                {isSavingExcerpt ? 'Saving...' : 'Save'}
+              </Button>
+            </Inline>
+          </Inline>
+        </ModalFooter>
+      </Modal>
+    </ModalTransition>
+  );
+}
+

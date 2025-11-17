@@ -22,6 +22,7 @@
  * @param {Function} props.onOpenEmergencyRecovery - Handler for Emergency Recovery button
  * @param {string|null} props.lastVerificationTime - ISO timestamp of last verification
  * @param {Function} props.formatTimestamp - Function to format timestamp for display
+ * @param {Function} props.onCreateSource - Handler for Create Source button
  * @returns {JSX.Element}
  */
 
@@ -52,7 +53,8 @@ export function AdminToolbar({
   lastVerificationTime,
   formatTimestamp,
   onCreateTestPage,
-  isCreatingTestPage
+  isCreatingTestPage,
+  onCreateSource
 }) {
   const verificationTooltip = lastVerificationTime
     ? `Last verified: ${formatTimestamp(lastVerificationTime)}`
@@ -62,12 +64,10 @@ export function AdminToolbar({
     <ButtonGroup>
       <Button
         appearance="primary"
-        onClick={() => {
-          alert('This feature will be activated in a future build version, once ChromelessEditor is implemented. This will allow Architects to create and manage Source excerpts fully within the Admin page, without the need for a separate page which contains just Sources\' content blocks.');
-        }}
+        onClick={onCreateSource}
         xcss={buttonStyles}
       >
-        Create Source
+        Create Source (Experimental)
       </Button>
 
       {showMigrationTools && (

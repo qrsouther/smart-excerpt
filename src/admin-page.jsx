@@ -70,6 +70,7 @@ import { MigrationModal } from './components/MigrationModal';
 import { ExcerptListSidebar } from './components/admin/ExcerptListSidebar';
 import { StalenessBadge } from './components/admin/StalenessBadge';
 import { ExcerptPreviewModal } from './components/admin/ExcerptPreviewModal';
+import { CreateEditSourceModal } from './components/admin/CreateEditSourceModal';
 import { CategoryManager } from './components/admin/CategoryManager';
 import { CheckAllProgressBar } from './components/admin/CheckAllProgressBar';
 import { AdminToolbar } from './components/admin/AdminToolbar';
@@ -202,6 +203,8 @@ const App = () => {
   const [showPreviewModal, setShowPreviewModal] = useState(null);
   const [selectedExcerptForDetails, setSelectedExcerptForDetails] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isCreateEditModalOpen, setIsCreateEditModalOpen] = useState(false);
+  const [editingExcerptId, setEditingExcerptId] = useState(null);
   const [orphanedSources, setOrphanedSources] = useState([]);
 
   // Lazy load full usage data using React Query when excerpt selected
@@ -1214,6 +1217,10 @@ const App = () => {
           formatTimestamp={formatTimestamp}
           onCreateTestPage={handleCreateTestPage}
           isCreatingTestPage={createTestPageMutation.isPending}
+          onCreateSource={() => {
+            setEditingExcerptId(null);
+            setIsCreateEditModalOpen(true);
+          }}
         />
       </Box>
 
@@ -1429,6 +1436,18 @@ const App = () => {
                         >
                           Preview Content
                         </Button>
+                        {/* Edit Source button - only show for ChromelessEditor-created Sources */}
+                        {selectedExcerptForDetails.sourcePageId && selectedExcerptForDetails.sourcePageId.startsWith('virtual-') && (
+                          <Button
+                            appearance="default"
+                            onClick={() => {
+                              setEditingExcerptId(selectedExcerptForDetails.id);
+                              setIsCreateEditModalOpen(true);
+                            }}
+                          >
+                            Edit Source (Experimental)
+                          </Button>
+                        )}
                         {/* Hidden but wired up for future use */}
                         {/* <Button
                           appearance="subtle"
@@ -1436,27 +1455,29 @@ const App = () => {
                         >
                           🔍 Check Format (Logs)
                         </Button> */}
-                        <Button
-                          appearance="default"
-                          onClick={async () => {
-                            try {
-                              let url = `/wiki/pages/viewpage.action?pageId=${selectedExcerptForDetails.sourcePageId}`;
-                              // Use Confluence's built-in anchor for bodied macros (format: #id-{localId})
-                              if (selectedExcerptForDetails.sourceLocalId) {
-                                url += `#id-${selectedExcerptForDetails.sourceLocalId}`;
-                              }
+                        {selectedExcerptForDetails.sourcePageId && !selectedExcerptForDetails.sourcePageId.startsWith('virtual-') && (
+                          <Button
+                            appearance="default"
+                            onClick={async () => {
+                              try {
+                                let url = `/wiki/pages/viewpage.action?pageId=${selectedExcerptForDetails.sourcePageId}`;
+                                // Use Confluence's built-in anchor for bodied macros (format: #id-{localId})
+                                if (selectedExcerptForDetails.sourceLocalId) {
+                                  url += `#id-${selectedExcerptForDetails.sourceLocalId}`;
+                                }
 
-                              // Use open() to open in new tab
-                              await router.open(url);
-                            } catch (err) {
-                              console.error('Navigation error:', err);
-                              alert('Error navigating to source page: ' + err.message);
-                            }
-                          }}
-                          iconAfter={() => <Icon glyph="shortcut" label="Opens in new tab" />}
-                        >
-                          View Source
-                        </Button>
+                                // Use open() to open in new tab
+                                await router.open(url);
+                              } catch (err) {
+                                console.error('Navigation error:', err);
+                                alert('Error navigating to source page: ' + err.message);
+                              }
+                            }}
+                            iconAfter={() => <Icon glyph="shortcut" label="Opens in new tab" />}
+                          >
+                            View Source
+                          </Button>
+                        )}
                         <Button
                           appearance="default"
                           onClick={async () => {
@@ -2225,6 +2246,15 @@ const App = () => {
         setShowPreviewModal={setShowPreviewModal}
         excerpts={excerpts}
         previewBoxStyle={previewBoxStyle}
+      />
+
+      <CreateEditSourceModal
+        isOpen={isCreateEditModalOpen}
+        onClose={() => {
+          setIsCreateEditModalOpen(false);
+          setEditingExcerptId(null);
+        }}
+        editingExcerptId={editingExcerptId}
       />
 
       {/* Migration Tools Modal */}
