@@ -184,7 +184,7 @@ The following details are for nerds but may be interesting to someone wondering 
   </tr>
 </table>
 
-## ⚙️ Admin page Features
+## 📘 ⚙️ Admin page Features
 
 The Admin page can be accessed via **Settings → Manage apps → Blueprint App Admin**, or by clicking the 'View Admin' button in the Source macro's config modal.
 
@@ -203,6 +203,37 @@ The main and most important portion of the **Sources** tab is the **Usage table*
 The Status column for each Embed in the Usage table will show _Up to date_ or _Update Available_ with timestamps. A stale Embed can be force-updated from within the Usage table.
 
 The **Recovery Options** button will be clickable if an Embed has multiple historic saved versions. We temporarily (for 14 days) store the raw content of historic versions of every Embed, in case a user accidentally erases or deletes an Embed from a page and cannot recover it themselves. Clicking this button opens a modal which lists out all recoverable historic versions and their save timestamps, and previews their stored values/metadata.
+
+The **🧑🏻‍🏫 Redlines** tab provides a queue-based interface for reading and approving system for reviewing recently updated Embeds on Blueprint pages.
+
+The top of the tab allows searching, sorting, and grouping across Embeds. It also aggregated counts of Embeds by status:
+- Reviewable
+- Pre-Approved
+- Needs Revision
+- Approved
+
+Each status is displayed with a color-coded badge for quick visual scanning of the overall queue state.
+
+The main and most important portion of the Redlines tab is the queue.
+
+Embeds are displayed in cards, which are color-coded by status. Each card displays an Embed's metadata (page title, Source name, Embed UUID, Last Updated time), and its current review status.
+
+In the middle of the card will be a full preview of the current content of the embed.
+
+On the right side of the card, you can mark an Embed as Approved, flag it as Needs Revision, or change its status to Pre-Approved. Picking a status will reveal an optional comment editor, and you can submit a comment upon the Embed in question as you submit its status change. This comment is saved into the page where the Embed exists, and is automatically applied as an inline comment in the nearest Heading element above the Embed on the page.
+
+The system automatically detects when an already-approved Embed's content has since been modified by a user (by comparing content hashes) and transitions its status back to _Reviewabl_. This ensures that any changes to already-approved content are subject to re-review.
+
+The **💾 Storage** tab is a debugging and inspection tool for querying Forge storage directly by key. This is useful for troubleshooting data issues, inspecting Embeds and sources' raw configurations, and other metadata.
+
+- **Embed Config (macro-vars):** Lets you quickly inspect or debug all the variables, toggle states, and notes for a specific Embed instance.
+- **Source (excerpt):** Use this to view or troubleshoot the complete template and metadata of a Source macro stored in the system.
+- **Usage Tracking (usage):** Shows where and how a Source is being used across pages, helping with audits and impact analysis.
+- **Master Index (excerpt-index):** Allows you to check the master list of all Sources and Embeds, useful for verifying system-wide consistency or identifying missing entries.
+
+Select a key type, then paste the UUID of the record you want to inspect and click Query.
+
+The **Query Results** display shows whether the record was found, its data type, and the size in bytes. If found, the full JSON data is displayed in a formatted, syntax-highlighted code block with line numbers for easy reading. A Copy button allows you to copy the entire JSON to your clipboard for further analysis or sharing.
 
 ### Admin Toolbar
 
