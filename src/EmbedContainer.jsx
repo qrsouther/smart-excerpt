@@ -1,3 +1,52 @@
+/**
+ * EmbedContainer Component
+ *
+ * Container component following the Container/Presentational pattern.
+ * This is the main entry point for the Blueprint Standard Embed macro in Forge.
+ *
+ * ARCHITECTURE:
+ * This file acts as a Container component that:
+ * - Manages all state and business logic for both view and edit modes
+ * - Handles data fetching, caching, and state synchronization
+ * - Orchestrates React Query hooks for data management
+ * - Routes to appropriate presentational components based on mode
+ *
+ * PRESENTATIONAL COMPONENTS:
+ * - EmbedEditMode.jsx: Pure presentational component for editing UI
+ *   - Receives all state and handlers as props
+ *   - Renders the editing interface (tabs, inputs, preview)
+ *   - No business logic or state management
+ *
+ * - EmbedViewMode.jsx: Pure presentational component for viewing UI
+ *   - Receives all state and handlers as props
+ *   - Renders the published content with staleness detection
+ *   - No business logic or state management
+ *
+ * WHY THIS ARCHITECTURE:
+ * The Container/Presentational pattern separates concerns:
+ * - Container (this file): "How things work" (logic, state, data)
+ * - Presentational (EmbedEditMode/EmbedViewMode): "How things look" (UI, rendering)
+ *
+ * Benefits:
+ * - Clear separation of concerns
+ * - Easier to test presentational components (just props)
+ * - Centralized state management
+ * - Single source of truth for data fetching
+ *
+ * MODE DETECTION:
+ * - View Mode: When `context.extension.isEditing === false`
+ *   - Renders EmbedViewMode with cached content
+ *   - Handles staleness checking and update notifications
+ *
+ * - Edit Mode: When `context.extension.isEditing === true`
+ *   - Renders EmbedEditMode with editing controls
+ *   - Manages auto-save with debouncing
+ *   - Handles variable/toggle/custom content configuration
+ *
+ * @see https://react.dev/learn/thinking-in-react#step-5-add-inverse-data-flow
+ * @see https://www.patterns.dev/react/container-presentational-pattern
+ */
+
 import React, { Fragment, useState, useEffect, useRef } from 'react';
 import ForgeReconciler, {
   Text,
@@ -191,15 +240,62 @@ const App = () => {
   // Use excerptFromQuery when available (edit mode), fallback to manual state for view mode
   const excerpt = isEditing ? excerptFromQuery : excerptForViewMode;
 
-  // Load excerptId from React Query data
+  // Track if we've loaded initial data from React Query to prevent overwriting user edits
+  const hasLoadedInitialDataRef = useRef(false);
+
+  // Load excerptId from React Query data or config (for templates)
   useEffect(() => {
+    // First try to load from saved variable values
     if (variableValuesData && variableValuesData.excerptId) {
       setSelectedExcerptId(variableValuesData.excerptId);
+    } 
+    // Fallback: Check config for excerptId (useful in template context)
+    else if (config?.excerptId && !selectedExcerptId) {
+      setSelectedExcerptId(config.excerptId);
     }
     if (!isLoadingVariableValues) {
       setIsInitializing(false);
     }
-  }, [variableValuesData, isLoadingVariableValues]);
+  }, [variableValuesData, config?.excerptId, isLoadingVariableValues, selectedExcerptId]);
+
+  // Sync variableValuesData from React Query to component state in edit mode
+  // This ensures saved data is loaded when the component mounts or when data changes
+  // CRITICAL: This must run before the loadContent effect to ensure state is set correctly
+  useEffect(() => {
+    // Only sync in edit mode and when we have data
+    if (!isEditing || !variableValuesData || isLoadingVariableValues || !effectiveLocalId) {
+      return;
+    }
+
+    // Only sync on initial load to avoid overwriting user edits
+    // Reset the flag when switching excerpts or when localId changes
+    if (hasLoadedInitialDataRef.current) {
+      return;
+    }
+
+    // Mark that we've loaded initial data
+    hasLoadedInitialDataRef.current = true;
+
+    // Sync React Query data to component state
+    // Only set if the data exists (don't overwrite with empty objects)
+    if (variableValuesData.variableValues && Object.keys(variableValuesData.variableValues).length > 0) {
+      setVariableValues(variableValuesData.variableValues);
+    }
+    if (variableValuesData.toggleStates && Object.keys(variableValuesData.toggleStates).length > 0) {
+      setToggleStates(variableValuesData.toggleStates);
+    }
+    if (variableValuesData.customInsertions && Array.isArray(variableValuesData.customInsertions) && variableValuesData.customInsertions.length > 0) {
+      setCustomInsertions(variableValuesData.customInsertions);
+    }
+    if (variableValuesData.internalNotes && Array.isArray(variableValuesData.internalNotes) && variableValuesData.internalNotes.length > 0) {
+      setInternalNotes(variableValuesData.internalNotes);
+    }
+  }, [variableValuesData, isEditing, isLoadingVariableValues, effectiveLocalId]);
+
+  // Reset the loaded flag when localId or excerptId changes (new embed instance)
+  useEffect(() => {
+    hasLoadedInitialDataRef.current = false;
+  }, [effectiveLocalId, selectedExcerptId]);
 
   // Set content from React Query cached content data (view mode)
   useEffect(() => {
@@ -238,18 +334,30 @@ const App = () => {
       setIsRefreshing(true);
 
       try {
-        // Load saved variable values, toggle states, custom insertions, and internal notes from storage
-        let varsResultForLoading = await invoke('getVariableValues', { localId: effectiveLocalId });
+        // Use React Query data if available, otherwise fall back to direct invoke
+        // This ensures we use the cached/optimized React Query data when possible
+        let varsResultForLoading;
+        if (variableValuesData && !isLoadingVariableValues) {
+          // Use React Query data (already fetched and cached)
+          varsResultForLoading = variableValuesData;
+        } else {
+          // Fallback: Load directly if React Query data isn't available yet
+          varsResultForLoading = await invoke('getVariableValues', { localId: effectiveLocalId });
+        }
 
         // CRITICAL: Check if data is missing - if so, attempt recovery from drag-to-move scenario
         // When a macro is dragged in Confluence, it may get a new localId, orphaning the data
+        // Handle both React Query format (direct object) and invoke format (with success flag)
+        const isSuccess = varsResultForLoading.success !== undefined 
+          ? varsResultForLoading.success 
+          : true; // React Query data is always "successful" if it exists
         const hasNoData = !varsResultForLoading.lastSynced &&
                           Object.keys(varsResultForLoading.variableValues || {}).length === 0 &&
                           Object.keys(varsResultForLoading.toggleStates || {}).length === 0 &&
                           (varsResultForLoading.customInsertions || []).length === 0 &&
                           (varsResultForLoading.internalNotes || []).length === 0;
 
-        if (varsResultForLoading.success && hasNoData && selectedExcerptId) {
+        if (isSuccess && hasNoData && selectedExcerptId) {
           const pageId = context?.contentId || context?.extension?.content?.id;
 
           const recoveryResult = await invoke('recoverOrphanedData', {
@@ -264,10 +372,19 @@ const App = () => {
           }
         }
 
-        const loadedVariableValues = varsResultForLoading.success ? varsResultForLoading.variableValues : {};
-        const loadedToggleStates = varsResultForLoading.success ? varsResultForLoading.toggleStates : {};
-        const loadedCustomInsertions = varsResultForLoading.success ? varsResultForLoading.customInsertions : [];
-        const loadedInternalNotes = varsResultForLoading.success ? varsResultForLoading.internalNotes : [];
+        // Extract data - handle both React Query format (direct object) and invoke format (with success flag)
+        const loadedVariableValues = varsResultForLoading.success !== undefined 
+          ? (varsResultForLoading.success ? varsResultForLoading.variableValues : {})
+          : (varsResultForLoading.variableValues || {});
+        const loadedToggleStates = varsResultForLoading.success !== undefined
+          ? (varsResultForLoading.success ? varsResultForLoading.toggleStates : {})
+          : (varsResultForLoading.toggleStates || {});
+        const loadedCustomInsertions = varsResultForLoading.success !== undefined
+          ? (varsResultForLoading.success ? varsResultForLoading.customInsertions : [])
+          : (varsResultForLoading.customInsertions || []);
+        const loadedInternalNotes = varsResultForLoading.success !== undefined
+          ? (varsResultForLoading.success ? varsResultForLoading.internalNotes : [])
+          : (varsResultForLoading.internalNotes || []);
 
         // Auto-infer "client" variable from page title if it follows "Blueprint: [Client Name]" pattern
         let pageTitle = '';
@@ -400,9 +517,10 @@ const App = () => {
               syncedContent: excerpt?.content
             });
 
-            // Invalidate the cached content query to force refresh when switching to view mode
-            // This marks the React Query cache as stale so it refetches next time
+            // Invalidate queries to ensure fresh data on next load
+            // This ensures that when the component re-renders or re-opens, it gets the latest saved data
             await queryClient.invalidateQueries({ queryKey: ['cachedContent', effectiveLocalId] });
+            await queryClient.invalidateQueries({ queryKey: ['variableValues', effectiveLocalId] });
 
             setSaveStatus('saved');
           },
@@ -503,7 +621,7 @@ const App = () => {
 
   // Handler for excerpt selection from Select (must be defined before early returns)
   const handleExcerptSelection = async (selectedOption) => {
-    if (!selectedOption || !effectiveLocalId) return;
+    if (!selectedOption) return;
 
     // Select component passes the entire option object
     const newExcerptId = selectedOption.value;
@@ -514,7 +632,15 @@ const App = () => {
     setSelectedExcerptId(newExcerptId);
     setIsRefreshing(true);
 
-    // Save the selection via backend storage using React Query mutation
+    // In template context (no effectiveLocalId), just set the state - don't try to save
+    // The excerptId will be saved via macro config when the template is created
+    if (!effectiveLocalId) {
+      // Template context: just update state, invalidate excerpt cache to load the new excerpt
+      await queryClient.invalidateQueries({ queryKey: ['excerpt', newExcerptId] });
+      return;
+    }
+
+    // Regular page context: save to backend storage
     const pageId = context?.contentId || context?.extension?.content?.id;
 
     // Use mutation to save the selection
@@ -541,33 +667,16 @@ const App = () => {
     await queryClient.invalidateQueries({ queryKey: ['variableValues', effectiveLocalId] });
   };
 
-  // NEW: Handle missing excerpt selection
-  if (!selectedExcerptId) {
-    if (isEditing) {
-      // In edit mode: Show the excerpt selector immediately
-      return (
-        <Stack space="space.200">
-          <Heading size="medium">Select a Standard to Embed</Heading>
-          <Text>Choose a Blueprint Standard to display on this page:</Text>
-          {isLoadingExcerpts ? (
-            <Spinner size="medium" label="Loading standards..." />
-          ) : (
-            <Select
-              options={availableExcerpts.map(ex => ({
-                label: `${ex.name}${ex.category ? ` (${ex.category})` : ''}`,
-                value: ex.id
-              }))}
-              onChange={handleExcerptSelection}
-              placeholder="Choose a standard..."
-            />
-          )}
-        </Stack>
-      );
-    } else {
-      // In view mode: Show simple message
-      return <Text>No standard selected. Edit this macro to choose one.</Text>;
-    }
+  // View mode with no selectedExcerptId
+  if (!selectedExcerptId && !isEditing) {
+    return <Text>No standard selected. Edit this macro to choose one.</Text>;
   }
+  
+  // Note: We no longer have an early return for edit mode with no selectedExcerptId
+  // Instead, we always render EmbedEditMode when isEditing is true, which handles:
+  // - Regular pages: Shows Select dropdown + Textfield fallback
+  // - Template context: Shows Select dropdown (may be unclickable) + Textfield fallback (works)
+  // This ensures template editing always gets the full EmbedEditMode UI with Textfield option
 
   // Show spinner while loading in view mode
   if (!content && !isEditing) {
@@ -765,7 +874,11 @@ const App = () => {
   };
 
   // EDIT MODE: Show variable inputs and preview
-  if (isEditing && excerpt) {
+  // EDIT MODE: Show EmbedEditMode
+  // This includes both regular pages and template context
+  // In template context (no effectiveLocalId), EmbedEditMode will show the Textfield fallback
+  // In regular pages, EmbedEditMode will show the Select dropdown
+  if (isEditing) {
     return (
       <EmbedEditMode
         excerpt={excerpt}

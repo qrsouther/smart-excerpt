@@ -352,13 +352,13 @@ function RedlineQueueCardComponent({ embedData, currentUserId, onStatusChange })
       );
     }
 
-    // Process the content through the same pipeline as embed-display.jsx
+    // Process the content through the same pipeline as EmbedContainer.jsx
     const isAdf = rawContent && typeof rawContent === 'object' && rawContent.type === 'doc';
 
     let processedContent = rawContent;
     if (isAdf) {
       // TODO: Fix for GitHub issue #2 - Free Write paragraph insertion position with enabled toggles
-      // FIX: Insert custom paragraphs BEFORE toggle filtering (same as embed-display.jsx fix above)
+      // FIX: Insert custom paragraphs BEFORE toggle filtering (same as EmbedContainer.jsx fix above)
       // This is less critical here since it's admin view-only, but should be consistent.
       //
       // COMMENTED OUT FIX (to be tested):
