@@ -388,37 +388,6 @@ const App = () => {
     hasLoadedInitialDataRef.current = false;
   }, [effectiveLocalId, selectedExcerptId]);
 
-  // Early return with error message if localId is missing
-  // CRITICAL: This check must come AFTER all hooks are declared to avoid React hooks violations
-  // This can happen if the macro is in an invalid state (rare but possible)
-  if (!effectiveLocalId) {
-    return (
-      <SectionMessage
-        title="Embed Macro Error"
-        appearance="danger"
-      >
-        <Text>
-          This Embed macro is missing its unique identifier. This can happen if the macro was created in an invalid state.
-        </Text>
-        <Text>
-          <Strong>To fix this:</Strong>
-        </Text>
-        <Text>
-          1. Delete this Embed macro from the page
-        </Text>
-        <Text>
-          2. Add a new Embed macro using the macro browser (type <Code>/Blueprint App Embed</Code>)
-        </Text>
-        <Text>
-          3. Configure the new Embed macro as needed
-        </Text>
-        <Text>
-          If this problem persists, please contact your administrator.
-        </Text>
-      </SectionMessage>
-    );
-  }
-
   // Force refetch excerpt when excerptId changes (e.g., when Source is updated)
   // This ensures we get the latest excerpt data even if React Query cache is stale
   useEffect(() => {
