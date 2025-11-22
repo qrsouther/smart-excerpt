@@ -12,7 +12,7 @@
  * - useCachedContent: Fetch cached rendered content with automatic recovery
  */
 
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { invoke } from '@forge/bridge';
 import {
   filterContentByToggles,
@@ -63,6 +63,8 @@ export const useExcerptData = (excerptId, enabled) => {
  * @returns {Object} React Query mutation result
  */
 export const useSaveVariableValues = () => {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: async ({ localId, excerptId, variableValues, toggleStates, customInsertions, internalNotes }) => {
       const result = await invoke('saveVariableValues', {
@@ -79,6 +81,11 @@ export const useSaveVariableValues = () => {
       }
 
       return result;
+    },
+    onSuccess: (data, variables) => {
+      // Invalidate the variableValues query so it refetches with the latest saved data
+      // This ensures that when the component re-opens, it loads the saved values
+      queryClient.invalidateQueries({ queryKey: ['variableValues', variables.localId] });
     },
     onError: (error) => {
       console.error('[REACT-QUERY-MUTATION] Save failed:', error);
@@ -228,7 +235,7 @@ export const useCachedContent = (
 
       if (isAdf) {
         // TODO: Fix for GitHub issue #2 - Free Write paragraph insertion position with enabled toggles
-        // FIX: Insert custom paragraphs BEFORE toggle filtering (same as embed-display.jsx fix above)
+        // FIX: Insert custom paragraphs BEFORE toggle filtering (same as EmbedContainer.jsx fix above)
         //
         // COMMENTED OUT FIX (to be tested):
         // // Insert custom paragraphs and internal notes into original content (before toggle filtering)

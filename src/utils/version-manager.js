@@ -93,7 +93,7 @@ function parseVersionId(versionId) {
  *    - Applies to: excerpt:* objects (Sources)
  *    - Includes ONLY: content, name, category, variables, toggles, documentationLinks
  *    - Excludes: id, timestamps, source metadata (sourcePageId, etc.)
- *    - Used in: embed-display.jsx staleness checks (excerpt.contentHash vs syncedContentHash)
+ *    - Used in: EmbedContainer.jsx staleness checks (excerpt.contentHash vs syncedContentHash)
  *
  * 2. Version contentHash (THIS function - BLACKLIST approach):
  *    - Purpose: Version deduplication (prevent duplicate snapshots when only timestamps change)
