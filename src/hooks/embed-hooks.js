@@ -53,6 +53,7 @@ export const useExcerptData = (excerptId, enabled) => {
     gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes (renamed from cacheTime in v5)
     refetchOnMount: 'always', // Always refetch when component mounts or cache is invalidated
     refetchOnWindowFocus: false, // Don't refetch on window focus (only refetch when explicitly invalidated)
+    refetchOnReconnect: true, // Refetch when network reconnects (helps catch updates)
   });
 };
 
