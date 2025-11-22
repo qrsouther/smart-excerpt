@@ -134,72 +134,82 @@ export async function saveVariableValues(req) {
 
     // Also update usage tracking with the latest toggle states
     // This ensures toggle states are always current in the usage data
-    const usageTrackingStartTime = Date.now();
-    try {
-      // Get page context - use explicit pageId if provided (from Admin page), otherwise use context
-      const pageId = explicitPageId || req.context?.extension?.content?.id;
-      const spaceKey = req.context?.extension?.space?.key || 'Unknown Space';
+    // OPTIMIZATION: Run usage tracking asynchronously in the background to avoid blocking the save
+    // This significantly improves auto-save performance (removes ~500-1500ms Confluence API call latency)
+    const usageTrackingPromise = (async () => {
+      const usageTrackingStartTime = Date.now();
+      try {
+        // Get page context - use explicit pageId if provided (from Admin page), otherwise use context
+        const pageId = explicitPageId || req.context?.extension?.content?.id;
+        const spaceKey = req.context?.extension?.space?.key || 'Unknown Space';
 
-      if (pageId && excerptId && localId) {
-        // Fetch page title
-        let pageTitle = 'Unknown Page';
-        let headingAnchor = null;
+        if (pageId && excerptId && localId) {
+          // Fetch page title
+          let pageTitle = 'Unknown Page';
+          let headingAnchor = null;
 
-        try {
-          const apiCallStartTime = Date.now();
-          const response = await api.asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`);
-          const pageData = await response.json();
-          const apiCallDuration = Date.now() - apiCallStartTime;
-          logPhase('saveVariableValues', 'Confluence API call completed', { localId, duration: `${apiCallDuration}ms` });
-          
-          pageTitle = pageData.title || 'Unknown Page';
+          try {
+            const apiCallStartTime = Date.now();
+            const response = await api.asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`);
+            const pageData = await response.json();
+            const apiCallDuration = Date.now() - apiCallStartTime;
+            logPhase('saveVariableValues', 'Confluence API call completed (async)', { localId, duration: `${apiCallDuration}ms` });
+            
+            pageTitle = pageData.title || 'Unknown Page';
 
-          // Parse the ADF to find the heading above this Include macro
-          if (pageData.body?.atlas_doc_format?.value) {
-            const adfContent = JSON.parse(pageData.body.atlas_doc_format.value);
-            const headingText = findHeadingBeforeMacro(adfContent, localId);
-            // Format heading for Confluence URL anchor (spaces → hyphens)
-            if (headingText) {
-              headingAnchor = headingText.replace(/\s+/g, '-');
+            // Parse the ADF to find the heading above this Include macro
+            if (pageData.body?.atlas_doc_format?.value) {
+              const adfContent = JSON.parse(pageData.body.atlas_doc_format.value);
+              const headingText = findHeadingBeforeMacro(adfContent, localId);
+              // Format heading for Confluence URL anchor (spaces → hyphens)
+              if (headingText) {
+                headingAnchor = headingText.replace(/\s+/g, '-');
+              }
             }
+          } catch (apiError) {
+            logFailure('saveVariableValues', 'Error fetching page data (async)', apiError, { localId, pageId });
+            pageTitle = req.context?.extension?.content?.title || 'Unknown Page';
           }
-        } catch (apiError) {
-          logFailure('saveVariableValues', 'Error fetching page data', apiError, { localId, pageId });
-          pageTitle = req.context?.extension?.content?.title || 'Unknown Page';
+
+          // Update usage data
+          const usageKey = `usage:${excerptId}`;
+          const usageData = await storage.get(usageKey) || { excerptId, references: [] };
+
+          const existingIndex = usageData.references.findIndex(r => r.localId === localId);
+
+          const reference = {
+            localId,
+            pageId,
+            pageTitle,
+            spaceKey,
+            headingAnchor,
+            toggleStates: toggleStates || {},
+            variableValues: variableValues || {},
+            updatedAt: new Date().toISOString()
+          };
+
+          if (existingIndex >= 0) {
+            usageData.references[existingIndex] = reference;
+          } else {
+            usageData.references.push(reference);
+          }
+
+          await storage.set(usageKey, usageData);
+          const usageTrackingDuration = Date.now() - usageTrackingStartTime;
+          logSuccess('saveVariableValues', `Usage tracking updated for ${localId} (async)`, { duration: `${usageTrackingDuration}ms` });
         }
-
-        // Update usage data
-        const usageKey = `usage:${excerptId}`;
-        const usageData = await storage.get(usageKey) || { excerptId, references: [] };
-
-        const existingIndex = usageData.references.findIndex(r => r.localId === localId);
-
-        const reference = {
-          localId,
-          pageId,
-          pageTitle,
-          spaceKey,
-          headingAnchor,
-          toggleStates: toggleStates || {},
-          variableValues: variableValues || {},
-          updatedAt: new Date().toISOString()
-        };
-
-        if (existingIndex >= 0) {
-          usageData.references[existingIndex] = reference;
-        } else {
-          usageData.references.push(reference);
-        }
-
-        await storage.set(usageKey, usageData);
+      } catch (trackingError) {
+        // Don't fail the save if tracking fails
         const usageTrackingDuration = Date.now() - usageTrackingStartTime;
-        logSuccess('saveVariableValues', `Usage tracking updated for ${localId}`, { duration: `${usageTrackingDuration}ms` });
+        logFailure('saveVariableValues', 'Error updating usage tracking (async)', trackingError, { localId, excerptId, duration: `${usageTrackingDuration}ms` });
       }
-    } catch (trackingError) {
-      // Don't fail the save if tracking fails
-      const usageTrackingDuration = Date.now() - usageTrackingStartTime;
-      logFailure('saveVariableValues', 'Error updating usage tracking', trackingError, { localId, excerptId, duration: `${usageTrackingDuration}ms` });
-    }
+    })();
+    
+    // Don't await - let it run in the background
+    // Fire and forget, but log if it fails
+    usageTrackingPromise.catch(error => {
+      logFailure('saveVariableValues', 'Unhandled error in async usage tracking', error, { localId, excerptId });
+    });
 
     // Generate and cache rendered content server-side
     // This ensures the cache is always up-to-date even if the client component unmounts
