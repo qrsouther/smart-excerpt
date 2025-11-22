@@ -151,6 +151,37 @@ const App = () => {
   // Use context.localId directly - recovery happens lazily only when data is missing
   const effectiveLocalId = context?.localId;
 
+  // ============================================================================
+  // ⚠️ CRITICAL WARNING: DO NOT ADD EARLY RETURN FOR MISSING localId ⚠️
+  // ============================================================================
+  // 
+  // DO NOT attempt to add an early return check for missing localId (e.g., 
+  // `if (!effectiveLocalId) return <ErrorComponent />`).
+  //
+  // REASONS:
+  // 1. React Hooks Violation: Any early return BEFORE all hooks are declared
+  //    violates React's Rules of Hooks, causing error #310 and component crashes.
+  // 2. Hooks Must Be Called in Same Order: All useState, useEffect, useRef, etc.
+  //    must be called in the same order on every render. Early returns break this.
+  // 3. Rare Edge Case: Missing localId is extremely rare (only if macro is in
+  //    invalid state). The existing null checks throughout the code already
+  //    prevent crashes by returning early from effects/operations.
+  // 4. Graceful Degradation: The component already handles missing localId
+  //    gracefully - effects simply return early, preventing operations that
+  //    require localId. No explicit error message is needed.
+  //
+  // EXISTING PROTECTION:
+  // - All critical operations check `if (!effectiveLocalId) return;` within effects
+  // - Auto-save, data loading, and other operations safely skip if localId missing
+  // - Component renders but doesn't perform operations requiring localId
+  //
+  // IF YOU NEED TO HANDLE MISSING localId:
+  // - Add checks WITHIN effects/handlers, not as early returns
+  // - Use conditional rendering in the JSX return, not before hooks
+  // - Consider if the edge case is worth the complexity
+  //
+  // ============================================================================
+
   // NEW: Inline excerpt selection state (will be loaded from backend storage)
   const [selectedExcerptId, setSelectedExcerptId] = useState(null);
   // availableExcerpts state removed - now managed by React Query
