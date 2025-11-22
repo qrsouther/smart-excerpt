@@ -33,11 +33,19 @@ import { logPhase, logSuccess, logWarning, logFailure } from '../utils/forge-log
  * Also updates usage tracking to keep it synchronized
  */
 export async function saveVariableValues(req) {
+  const functionStartTime = Date.now();
   try {
     const { localId, excerptId, variableValues, toggleStates, customInsertions, internalNotes, pageId: explicitPageId } = req.payload;
+    
+    const functionStartTime = Date.now();
+    logPhase('saveVariableValues', 'Function started', { localId, startTime: new Date().toISOString() });
 
     // Get the excerpt to retrieve its current contentHash and content
+    const excerptStartTime = Date.now();
     const excerpt = await storage.get(`excerpt:${excerptId}`);
+    const excerptDuration = Date.now() - excerptStartTime;
+    logPhase('saveVariableValues', 'Excerpt loaded', { localId, duration: `${excerptDuration}ms` });
+    
     const syncedContentHash = excerpt?.contentHash || null;
     const syncedContent = excerpt?.content || null;  // Store actual Source ADF for diff view
 
@@ -45,7 +53,10 @@ export async function saveVariableValues(req) {
     const now = new Date().toISOString();
 
     // Load existing config to preserve redline fields (if any)
+    const configStartTime = Date.now();
     const existingConfig = await storage.get(key);
+    const configDuration = Date.now() - configStartTime;
+    logPhase('saveVariableValues', 'Config loaded', { localId, duration: `${configDuration}ms` });
 
     // Initialize redline fields for new Embeds
     const redlineStatus = existingConfig?.redlineStatus || 'reviewable';
@@ -75,7 +86,10 @@ export async function saveVariableValues(req) {
       pageId: explicitPageId || req.context?.extension?.content?.id  // Store for redline queue
     };
 
+    const saveConfigStartTime = Date.now();
     await storage.set(key, newConfig);
+    const saveConfigDuration = Date.now() - saveConfigStartTime;
+    logPhase('saveVariableValues', 'Config saved', { localId, duration: `${saveConfigDuration}ms` });
 
     // AUTO-TRANSITION LOGIC: Check if approved Embed content has changed
     if (existingConfig && existingConfig.redlineStatus === 'approved' && existingConfig.approvedContentHash) {
@@ -120,6 +134,7 @@ export async function saveVariableValues(req) {
 
     // Also update usage tracking with the latest toggle states
     // This ensures toggle states are always current in the usage data
+    const usageTrackingStartTime = Date.now();
     try {
       // Get page context - use explicit pageId if provided (from Admin page), otherwise use context
       const pageId = explicitPageId || req.context?.extension?.content?.id;
@@ -131,8 +146,12 @@ export async function saveVariableValues(req) {
         let headingAnchor = null;
 
         try {
+          const apiCallStartTime = Date.now();
           const response = await api.asApp().requestConfluence(route`/wiki/api/v2/pages/${pageId}?body-format=atlas_doc_format`);
           const pageData = await response.json();
+          const apiCallDuration = Date.now() - apiCallStartTime;
+          logPhase('saveVariableValues', 'Confluence API call completed', { localId, duration: `${apiCallDuration}ms` });
+          
           pageTitle = pageData.title || 'Unknown Page';
 
           // Parse the ADF to find the heading above this Include macro
@@ -173,14 +192,18 @@ export async function saveVariableValues(req) {
         }
 
         await storage.set(usageKey, usageData);
+        const usageTrackingDuration = Date.now() - usageTrackingStartTime;
+        logSuccess('saveVariableValues', `Usage tracking updated for ${localId}`, { duration: `${usageTrackingDuration}ms` });
       }
     } catch (trackingError) {
       // Don't fail the save if tracking fails
-      logFailure('saveVariableValues', 'Error updating usage tracking', trackingError, { localId, excerptId });
+      const usageTrackingDuration = Date.now() - usageTrackingStartTime;
+      logFailure('saveVariableValues', 'Error updating usage tracking', trackingError, { localId, excerptId, duration: `${usageTrackingDuration}ms` });
     }
 
     // Generate and cache rendered content server-side
     // This ensures the cache is always up-to-date even if the client component unmounts
+    const cacheGenerationStartTime = Date.now();
     try {
       if (excerpt && excerpt.content) {
         let previewContent = excerpt.content;
@@ -200,20 +223,33 @@ export async function saveVariableValues(req) {
           // Note: Using current (buggy) behavior to match client-side for consistency
           // TODO: Fix for GitHub issue #2 - Insert custom paragraphs BEFORE toggle filtering
           try {
+            const adfProcessingStartTime = Date.now();
             previewContent = filterContentByToggles(previewContent, toggleStates || {});
-            logPhase('saveVariableValues', 'After filterContentByToggles', { localId });
+            const filterDuration = Date.now() - adfProcessingStartTime;
+            logPhase('saveVariableValues', 'After filterContentByToggles', { localId, duration: `${filterDuration}ms` });
             
+            const substituteStartTime = Date.now();
             previewContent = substituteVariablesInAdf(previewContent, variableValues || {});
-            logPhase('saveVariableValues', 'After substituteVariablesInAdf', { localId });
+            const substituteDuration = Date.now() - substituteStartTime;
+            logPhase('saveVariableValues', 'After substituteVariablesInAdf', { localId, duration: `${substituteDuration}ms` });
             
+            const customInsertStartTime = Date.now();
             previewContent = insertCustomParagraphsInAdf(previewContent, customInsertions || []);
-            logPhase('saveVariableValues', 'After insertCustomParagraphsInAdf', { localId });
+            const customInsertDuration = Date.now() - customInsertStartTime;
+            logPhase('saveVariableValues', 'After insertCustomParagraphsInAdf', { localId, duration: `${customInsertDuration}ms` });
             
+            const notesStartTime = Date.now();
             previewContent = insertInternalNotesInAdf(previewContent, internalNotes || []);
-            logPhase('saveVariableValues', 'After insertInternalNotesInAdf', { localId });
+            const notesDuration = Date.now() - notesStartTime;
+            logPhase('saveVariableValues', 'After insertInternalNotesInAdf', { localId, duration: `${notesDuration}ms` });
             
+            const cleanStartTime = Date.now();
             previewContent = cleanAdfForRenderer(previewContent);
-            logPhase('saveVariableValues', 'After cleanAdfForRenderer', { localId });
+            const cleanDuration = Date.now() - cleanStartTime;
+            logPhase('saveVariableValues', 'After cleanAdfForRenderer', { localId, duration: `${cleanDuration}ms` });
+            
+            const totalAdfProcessingDuration = Date.now() - adfProcessingStartTime;
+            logPhase('saveVariableValues', 'ADF processing complete', { localId, totalDuration: `${totalAdfProcessingDuration}ms` });
           } catch (processingError) {
             logFailure('saveVariableValues', 'Error during ADF processing', processingError, {
               localId,
@@ -249,13 +285,19 @@ export async function saveVariableValues(req) {
         }
 
         // Save cached content
+        const cacheSaveStartTime = Date.now();
         const cacheKey = `macro-cache:${localId}`;
         await storage.set(cacheKey, {
           content: previewContent,
           cachedAt: now
         });
-        
-        logSuccess('saveVariableValues', `Cached content saved for ${localId}`, { cachedAt: now });
+        const cacheSaveDuration = Date.now() - cacheSaveStartTime;
+        const totalCacheGenerationDuration = Date.now() - cacheGenerationStartTime;
+        logSuccess('saveVariableValues', `Cached content saved for ${localId}`, { 
+          cachedAt: now,
+          cacheSaveDuration: `${cacheSaveDuration}ms`,
+          totalCacheGenerationDuration: `${totalCacheGenerationDuration}ms`
+        });
       } else {
         logWarning('saveVariableValues', `No excerpt content to cache for ${localId}`);
       }
@@ -267,6 +309,7 @@ export async function saveVariableValues(req) {
       
       // Phase 3: Create version snapshot before modification (v7.17.0)
       if (existingVars && Object.keys(existingVars).length > 0) {
+        const versionStartTime = Date.now();
         const versionResult = await saveVersion(
           storage,
           varsKey,
@@ -278,12 +321,13 @@ export async function saveVariableValues(req) {
             localId: localId
           }
         );
+        const versionDuration = Date.now() - versionStartTime;
         if (versionResult.success) {
-          logSuccess('saveVariableValues', 'Version snapshot created', { versionId: versionResult.versionId, localId });
+          logSuccess('saveVariableValues', 'Version snapshot created', { versionId: versionResult.versionId, localId, duration: `${versionDuration}ms` });
         } else if (versionResult.skipped) {
-          logPhase('saveVariableValues', 'Version snapshot skipped (content unchanged)', { localId });
+          logPhase('saveVariableValues', 'Version snapshot skipped (content unchanged)', { localId, duration: `${versionDuration}ms` });
         } else {
-          logWarning('saveVariableValues', 'Version snapshot failed', { localId, error: versionResult.error });
+          logWarning('saveVariableValues', 'Version snapshot failed', { localId, error: versionResult.error, duration: `${versionDuration}ms` });
         }
       }
 
@@ -295,17 +339,31 @@ export async function saveVariableValues(req) {
         existingVars.syncedContent = syncedContent;
       }
 
+      const finalUpdateStartTime = Date.now();
       await storage.set(varsKey, existingVars);
+      const finalUpdateDuration = Date.now() - finalUpdateStartTime;
+      logSuccess('saveVariableValues', `Macro-vars updated for ${localId}`, { duration: `${finalUpdateDuration}ms` });
     } catch (cacheError) {
       // Don't fail the save if cache generation fails
-      logFailure('saveVariableValues', 'Error generating and caching preview content', cacheError, { localId });
+      const cacheErrorDuration = Date.now() - cacheGenerationStartTime;
+      logFailure('saveVariableValues', 'Error generating and caching preview content', cacheError, { localId, duration: `${cacheErrorDuration}ms` });
     }
 
+    const totalFunctionDuration = Date.now() - functionStartTime;
+    logSuccess('saveVariableValues', 'Function completed successfully', { 
+      localId,
+      totalDuration: `${totalFunctionDuration}ms`
+    });
+    
     return {
       success: true
     };
   } catch (error) {
-    logFailure('saveVariableValues', 'Error saving variable values', error, { localId: req.payload?.localId });
+    const totalFunctionDuration = Date.now() - functionStartTime;
+    logFailure('saveVariableValues', 'Error saving variable values', error, { 
+      localId: req.payload?.localId,
+      duration: `${totalFunctionDuration}ms`
+    });
     return {
       success: false,
       error: error.message
