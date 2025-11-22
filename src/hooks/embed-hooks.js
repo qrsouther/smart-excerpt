@@ -51,6 +51,9 @@ export const useExcerptData = (excerptId, enabled) => {
     enabled: enabled && !!excerptId,
     staleTime: 0, // Always fetch fresh data (temporarily set to 0 to bust old cache without documentationLinks)
     gcTime: 1000 * 60 * 30, // Keep in cache for 30 minutes (renamed from cacheTime in v5)
+    refetchOnMount: 'always', // Always refetch when component mounts or cache is invalidated
+    refetchOnWindowFocus: false, // Don't refetch on window focus (only refetch when explicitly invalidated)
+    refetchOnReconnect: true, // Refetch when network reconnects (helps catch updates)
   });
 };
 

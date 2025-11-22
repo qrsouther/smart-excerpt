@@ -123,6 +123,9 @@ import {
   excerptSelectorStyle
 } from './styles/embed-styles';
 
+// Import logger for structured error logging
+import { logger } from './utils/logger';
+
 // ============================================================================
 // STYLES - Imported from ./styles/embed-styles.js
 // ============================================================================
@@ -148,6 +151,37 @@ const App = () => {
   // Use context.localId directly - recovery happens lazily only when data is missing
   const effectiveLocalId = context?.localId;
 
+  // ============================================================================
+  // ⚠️ CRITICAL WARNING: DO NOT ADD EARLY RETURN FOR MISSING localId ⚠️
+  // ============================================================================
+  // 
+  // DO NOT attempt to add an early return check for missing localId (e.g., 
+  // `if (!effectiveLocalId) return <ErrorComponent />`).
+  //
+  // REASONS:
+  // 1. React Hooks Violation: Any early return BEFORE all hooks are declared
+  //    violates React's Rules of Hooks, causing error #310 and component crashes.
+  // 2. Hooks Must Be Called in Same Order: All useState, useEffect, useRef, etc.
+  //    must be called in the same order on every render. Early returns break this.
+  // 3. Rare Edge Case: Missing localId is extremely rare (only if macro is in
+  //    invalid state). The existing null checks throughout the code already
+  //    prevent crashes by returning early from effects/operations.
+  // 4. Graceful Degradation: The component already handles missing localId
+  //    gracefully - effects simply return early, preventing operations that
+  //    require localId. No explicit error message is needed.
+  //
+  // EXISTING PROTECTION:
+  // - All critical operations check `if (!effectiveLocalId) return;` within effects
+  // - Auto-save, data loading, and other operations safely skip if localId missing
+  // - Component renders but doesn't perform operations requiring localId
+  //
+  // IF YOU NEED TO HANDLE MISSING localId:
+  // - Add checks WITHIN effects/handlers, not as early returns
+  // - Use conditional rendering in the JSX return, not before hooks
+  // - Consider if the edge case is worth the complexity
+  //
+  // ============================================================================
+
   // NEW: Inline excerpt selection state (will be loaded from backend storage)
   const [selectedExcerptId, setSelectedExcerptId] = useState(null);
   // availableExcerpts state removed - now managed by React Query
@@ -155,6 +189,9 @@ const App = () => {
 
   // Track if we're in the initial data load phase to prevent auto-save during load
   const isLoadingInitialDataRef = useRef(false);
+  
+  // Track if a save operation is currently in progress to prevent overlapping saves
+  const isSavingRef = useRef(false);
 
   const [content, setContent] = useState(null);
   // excerpt state removed - now managed by React Query
@@ -195,7 +232,8 @@ const App = () => {
     data: excerptFromQuery,
     isLoading: isLoadingExcerpt,
     error: excerptError,
-    isFetching: isFetchingExcerpt
+    isFetching: isFetchingExcerpt,
+    refetch: refetchExcerpt
   } = useExcerptData(selectedExcerptId, true);
 
   // Use React Query mutation for saving variable values
@@ -240,7 +278,60 @@ const App = () => {
   // Use excerptFromQuery when available (edit mode), fallback to manual state for view mode
   const excerpt = isEditing ? excerptFromQuery : excerptForViewMode;
 
-  // Track if we've loaded initial data from React Query to prevent overwriting user edits
+  // ============================================================================
+  // STATE MANAGEMENT DOCUMENTATION
+  // ============================================================================
+  // This component uses 22 useState hooks organized into logical groups:
+  //
+  // 1. Core Configuration State:
+  //    - selectedExcerptId: Currently selected Blueprint Standard ID
+  //    - isInitializing: Whether component is still loading initial data
+  //    - content: Rendered content for display
+  //    - excerptForViewMode: Excerpt data cached for view mode
+  //
+  // 2. User Configuration State (saved to storage):
+  //    - variableValues: User-provided variable values
+  //    - toggleStates: User-selected toggle on/off states
+  //    - customInsertions: User-added custom paragraph insertions
+  //    - internalNotes: User-added internal notes
+  //
+  // 3. UI State (not saved):
+  //    - insertionType, selectedPosition, customText: Free Write tab state
+  //    - isRefreshing, saveStatus: Loading/saving indicators
+  //    - selectedTabIndex: Active tab in edit mode
+  //
+  // 4. Staleness Detection State:
+  //    - isStale, isCheckingStaleness: Update availability tracking
+  //    - sourceLastModified, includeLastSynced: Timestamp tracking
+  //    - isUpdating, showDiffView: Update UI state
+  //    - latestRenderedContent, syncedContent: Diff view data
+  //
+  // Note: State consolidation (grouping related state) is a future optimization.
+  // Current structure prioritizes clarity and maintainability.
+
+  // ============================================================================
+  // SYNC EFFECT GUARD MECHANISM
+  // ============================================================================
+  // CRITICAL: This ref prevents React Query refetches from overwriting user edits.
+  //
+  // Problem: When React Query refetches variableValuesData (e.g., after cache
+  // invalidation), the sync effect would run again and overwrite any user edits
+  // that happened since the initial load.
+  //
+  // Solution: The hasLoadedInitialDataRef guard ensures the sync effect only
+  // runs ONCE per embed instance. After the first sync, subsequent React Query
+  // updates are ignored, preserving user edits.
+  //
+  // Flow:
+  // 1. Component mounts → hasLoadedInitialDataRef.current = false
+  // 2. React Query loads data → sync effect runs → sets state → flag = true
+  // 3. User makes edits → state updates → auto-save saves to storage
+  // 4. Auto-save invalidates cache → React Query refetches → sync effect runs
+  // 5. Guard check: hasLoadedInitialDataRef.current === true → return early
+  // 6. User edits preserved! ✅
+  //
+  // Reset: Flag resets to false when effectiveLocalId or selectedExcerptId
+  // changes (new embed instance), allowing initial data to load for new instances.
   const hasLoadedInitialDataRef = useRef(false);
 
   // Load excerptId from React Query data
@@ -253,44 +344,92 @@ const App = () => {
     }
   }, [variableValuesData, isLoadingVariableValues]);
 
-  // Sync variableValuesData from React Query to component state in edit mode
-  // This ensures saved data is loaded when the component mounts or when data changes
-  // CRITICAL: This must run before the loadContent effect to ensure state is set correctly
+  // ============================================================================
+  // SYNC EFFECT: React Query → Component State (READ operation)
+  // ============================================================================
+  // Purpose: Load saved data from storage (via React Query) into component state
+  // on initial mount. This is a ONE-TIME operation per embed instance.
+  //
+  // Guard Mechanism: The hasLoadedInitialDataRef prevents this effect from
+  // overwriting user edits when React Query refetches after auto-save.
+  //
+  // Execution Flow:
+  // 1. Runs when: variableValuesData changes (React Query loads/refetches)
+  // 2. Checks: Edit mode, data available, not loading, has localId
+  // 3. Guard: If already synced once, return early (protect user edits)
+  // 4. Sync: Copy React Query data to component state (only non-empty values)
+  // 5. Flag: Mark as synced (prevents future overwrites)
+  //
+  // CRITICAL: This must run before the loadContent effect to ensure state
+  // is set correctly before content generation.
   useEffect(() => {
     // Only sync in edit mode and when we have data
     if (!isEditing || !variableValuesData || isLoadingVariableValues || !effectiveLocalId) {
       return;
     }
 
-    // Only sync on initial load to avoid overwriting user edits
-    // Reset the flag when switching excerpts or when localId changes
+    // GUARD: Only sync on initial load to avoid overwriting user edits
+    // After first sync, this effect will return early even if React Query refetches
     if (hasLoadedInitialDataRef.current) {
       return;
     }
 
-    // Mark that we've loaded initial data
+    // Mark that we've loaded initial data (prevents future overwrites)
     hasLoadedInitialDataRef.current = true;
 
     // Sync React Query data to component state
-    // Only set if the data exists (don't overwrite with empty objects)
+    // Only set if the data exists AND is different from current state (prevent unnecessary updates)
+    // Deep equality check prevents infinite loops when object references change but values don't
     if (variableValuesData.variableValues && Object.keys(variableValuesData.variableValues).length > 0) {
-      setVariableValues(variableValuesData.variableValues);
+      const currentKeys = Object.keys(variableValues);
+      const newKeys = Object.keys(variableValuesData.variableValues);
+      const valuesChanged = currentKeys.length !== newKeys.length ||
+        currentKeys.some(key => variableValues[key] !== variableValuesData.variableValues[key]);
+      if (valuesChanged) {
+        setVariableValues(variableValuesData.variableValues);
+      }
     }
     if (variableValuesData.toggleStates && Object.keys(variableValuesData.toggleStates).length > 0) {
-      setToggleStates(variableValuesData.toggleStates);
+      const currentKeys = Object.keys(toggleStates);
+      const newKeys = Object.keys(variableValuesData.toggleStates);
+      const statesChanged = currentKeys.length !== newKeys.length ||
+        currentKeys.some(key => toggleStates[key] !== variableValuesData.toggleStates[key]);
+      if (statesChanged) {
+        setToggleStates(variableValuesData.toggleStates);
+      }
     }
     if (variableValuesData.customInsertions && Array.isArray(variableValuesData.customInsertions) && variableValuesData.customInsertions.length > 0) {
-      setCustomInsertions(variableValuesData.customInsertions);
+      const insertionsChanged = JSON.stringify(customInsertions) !== JSON.stringify(variableValuesData.customInsertions);
+      if (insertionsChanged) {
+        setCustomInsertions(variableValuesData.customInsertions);
+      }
     }
     if (variableValuesData.internalNotes && Array.isArray(variableValuesData.internalNotes) && variableValuesData.internalNotes.length > 0) {
-      setInternalNotes(variableValuesData.internalNotes);
+      const notesChanged = JSON.stringify(internalNotes) !== JSON.stringify(variableValuesData.internalNotes);
+      if (notesChanged) {
+        setInternalNotes(variableValuesData.internalNotes);
+      }
     }
   }, [variableValuesData, isEditing, isLoadingVariableValues, effectiveLocalId]);
 
-  // Reset the loaded flag when localId or excerptId changes (new embed instance)
+  // Reset the sync guard flag when switching to a new embed instance
+  // This allows initial data to load for new instances while protecting
+  // edits in the current instance
   useEffect(() => {
     hasLoadedInitialDataRef.current = false;
   }, [effectiveLocalId, selectedExcerptId]);
+
+  // Force refetch excerpt when excerptId changes (e.g., when Source is updated)
+  // This ensures we get the latest excerpt data even if React Query cache is stale
+  useEffect(() => {
+    if (selectedExcerptId && refetchExcerpt) {
+      // Small delay to ensure any cache invalidation from Source updates has completed
+      const timeoutId = setTimeout(() => {
+        refetchExcerpt();
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [selectedExcerptId, refetchExcerpt]);
 
   // Set content from React Query cached content data (view mode)
   useEffect(() => {
@@ -392,7 +531,7 @@ const App = () => {
               pageTitle = titleResult.title;
             }
           } catch (err) {
-            console.error('Error fetching page title:', err);
+            logger.errors('[EmbedContainer] Error fetching page title:', err);
           }
         }
 
@@ -461,7 +600,7 @@ const App = () => {
 
         setContent(freshContent);
       } catch (err) {
-        console.error('Error loading content:', err);
+        logger.errors('[EmbedContainer] Error loading content:', err);
       } finally {
         setIsRefreshing(false);
 
@@ -476,10 +615,30 @@ const App = () => {
     loadContent();
   }, [excerptFromQuery, effectiveLocalId, isEditing, isFetchingExcerpt]);
 
-  // Auto-save effect with debouncing (saves variable values AND caches rendered content)
-  // Now uses React Query mutation for better state management
+  // ============================================================================
+  // AUTO-SAVE EFFECT: Component State → Storage (WRITE operation)
+  // ============================================================================
+  // Purpose: Automatically save user edits to storage with debouncing.
+  // This is an ONGOING operation that runs whenever user configuration changes.
+  //
+  // Flow:
+  // 1. User edits: variableValues, toggleStates, customInsertions, or internalNotes
+  // 2. Effect triggers: Detects state change
+  // 3. Debounce: Waits 500ms for user to finish typing/editing
+  // 4. Save: Uses React Query mutation to save to storage
+  // 5. Cache: Also caches rendered content for view mode
+  // 6. Invalidate: Marks React Query cache as stale (triggers refetch)
+  //
+  // Guard: isLoadingInitialDataRef prevents auto-save during initial data load,
+  // avoiding false version history entries when Edit Mode first opens.
+  //
+  // Note: The sync effect guard (hasLoadedInitialDataRef) ensures that when
+  // React Query refetches after this invalidation, it won't overwrite user edits.
   useEffect(() => {
-    if (!isEditing || !effectiveLocalId || !selectedExcerptId || !excerpt) {
+    // CRITICAL: Only run in edit mode with all required data
+    // Check excerptFromQuery exists (but don't include in dependencies to avoid infinite loops)
+    // excerptFromQuery changes reference when queries are invalidated, which would retrigger this effect
+    if (!isEditing || !effectiveLocalId || !selectedExcerptId || !excerptFromQuery) {
       return;
     }
 
@@ -489,10 +648,26 @@ const App = () => {
       return;
     }
 
+    // CRITICAL: Skip if a save is already in progress
+    // This prevents overlapping saves and infinite loops when multiple embeds are on the page
+    if (isSavingRef.current) {
+      return;
+    }
+
     setSaveStatus('saving');
+    isSavingRef.current = true;
+
+    const saveStartTime = performance.now();
+    logger.saves('[EmbedContainer] Auto-save started', { localId: effectiveLocalId });
 
     const timeoutId = setTimeout(async () => {
       try {
+        const mutationStartTime = performance.now();
+        logger.saves('[EmbedContainer] Mutation call starting', { 
+          localId: effectiveLocalId,
+          debounceTime: Math.round(mutationStartTime - saveStartTime)
+        });
+
         // Use React Query mutation to save variable values
         saveVariableValuesMutation({
           localId: effectiveLocalId,
@@ -503,35 +678,67 @@ const App = () => {
           internalNotes
         }, {
           onSuccess: async () => {
-            // Also cache the rendered content for view mode
-            const previewContent = getPreviewContent();
-            await invoke('saveCachedContent', {
+            const mutationEndTime = performance.now();
+            const mutationDuration = Math.round(mutationEndTime - mutationStartTime);
+            logger.saves('[EmbedContainer] Mutation completed', { 
               localId: effectiveLocalId,
-              renderedContent: previewContent,
-              syncedContentHash: excerpt?.contentHash,
-              syncedContent: excerpt?.content
+              mutationDuration: `${mutationDuration}ms`
             });
 
+            const invalidationStartTime = performance.now();
+            // Cache generation and saving is now handled server-side in saveVariableValues
+            // This ensures the cache is always up-to-date even if the component unmounts
+            // (e.g., if user clicks Publish before save completes)
+            
             // Invalidate queries to ensure fresh data on next load
             // This ensures that when the component re-renders or re-opens, it gets the latest saved data
+            // NOTE: We invalidate with specific localId to avoid affecting other embeds on the page
             await queryClient.invalidateQueries({ queryKey: ['cachedContent', effectiveLocalId] });
             await queryClient.invalidateQueries({ queryKey: ['variableValues', effectiveLocalId] });
 
+            const invalidationEndTime = performance.now();
+            const invalidationDuration = Math.round(invalidationEndTime - invalidationStartTime);
+            const totalDuration = Math.round(invalidationEndTime - saveStartTime);
+            
+            logger.saves('[EmbedContainer] Auto-save complete', { 
+              localId: effectiveLocalId,
+              mutationDuration: `${mutationDuration}ms`,
+              invalidationDuration: `${invalidationDuration}ms`,
+              totalDuration: `${totalDuration}ms`
+            });
+
             setSaveStatus('saved');
+            isSavingRef.current = false;
           },
           onError: (error) => {
-            console.error('[REACT-QUERY-MUTATION] Auto-save failed:', error);
+            const errorTime = performance.now();
+            const totalDuration = Math.round(errorTime - saveStartTime);
+            logger.errors('[EmbedContainer] React Query mutation auto-save failed:', error, {
+              localId: effectiveLocalId,
+              totalDuration: `${totalDuration}ms`
+            });
             setSaveStatus('error');
+            isSavingRef.current = false;
           }
         });
       } catch (error) {
-        console.error('Error during auto-save:', error);
+        logger.errors('[EmbedContainer] Error during auto-save:', error);
         setSaveStatus('error');
+        isSavingRef.current = false;
       }
     }, 500); // 500ms debounce
 
-    return () => clearTimeout(timeoutId);
-  }, [variableValues, toggleStates, customInsertions, internalNotes, isEditing, effectiveLocalId, selectedExcerptId, excerpt]);
+    return () => {
+      clearTimeout(timeoutId);
+      // Reset saving flag if effect is cleaned up before mutation completes
+      // This prevents the "Saving..." state from getting stuck
+      isSavingRef.current = false;
+    };
+    // CRITICAL: Do NOT include excerptFromQuery or excerpt in dependencies
+    // They change reference when queries are invalidated, causing infinite loops
+    // We only check if they exist, we don't need to track their changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variableValues, toggleStates, customInsertions, internalNotes, isEditing, effectiveLocalId, selectedExcerptId]);
 
   // Check for staleness in view mode immediately after render, with jitter for performance
   // Starts as soon as content is available, jitter spreads out requests across multiple Embeds
@@ -600,7 +807,7 @@ const App = () => {
 
         setIsCheckingStaleness(false); // Check complete
       } catch (err) {
-        console.error('[Include] Staleness check error:', err);
+        logger.errors('[EmbedContainer] Staleness check error:', err);
         setIsCheckingStaleness(false); // Check complete (with error)
       }
     };
@@ -663,6 +870,46 @@ const App = () => {
   // Instead, we always render EmbedEditMode when isEditing is true, which handles:
   // - Shows Select dropdown + Textfield fallback
   // This ensures editing always gets the full EmbedEditMode UI
+
+  // Show error message if excerpt failed to load
+  if (excerptError && selectedExcerptId) {
+    return (
+      <SectionMessage
+        title="Failed to Load Blueprint Standard"
+        appearance="error"
+      >
+        <Text>
+          Unable to load the Blueprint Standard content. This may happen if:
+        </Text>
+        <Text>
+          • The Blueprint Standard was deleted
+        </Text>
+        <Text>
+          • There was an error accessing storage
+        </Text>
+        <Text>
+          • The data is corrupted
+        </Text>
+        <Text>
+          <Strong>To fix this:</Strong>
+        </Text>
+        <Text>
+          1. Click Edit on this Embed macro
+        </Text>
+        <Text>
+          2. Select a different Blueprint Standard from the dropdown, or
+        </Text>
+        <Text>
+          3. Delete this Embed and add a new one
+        </Text>
+        {excerptError.message && (
+          <Text>
+            <Em>Error details: {excerptError.message}</Em>
+          </Text>
+        )}
+      </SectionMessage>
+    );
+  }
 
   // Show spinner while loading in view mode
   if (!content && !isEditing) {
@@ -852,7 +1099,7 @@ const App = () => {
 
       alert('Successfully updated! Click the Edit button to customize variables, toggles, and other settings.');
     } catch (err) {
-      console.error('Error updating to latest:', err);
+      logger.errors('[EmbedContainer] Error updating to latest:', err);
       alert('Error updating to latest version');
     } finally {
       setIsUpdating(false);
