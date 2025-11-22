@@ -212,10 +212,12 @@ export async function saveVariableValues(req) {
     });
 
     // Generate and cache rendered content server-side
-    // This ensures the cache is always up-to-date even if the client component unmounts
-    const cacheGenerationStartTime = Date.now();
-    try {
-      if (excerpt && excerpt.content) {
+    // OPTIMIZATION: Run cache generation asynchronously in the background to avoid blocking the save
+    // The config is already saved, so cache generation can happen after the response is sent
+    const cacheGenerationPromise = (async () => {
+      const cacheGenerationStartTime = Date.now();
+      try {
+        if (excerpt && excerpt.content) {
         let previewContent = excerpt.content;
         const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
@@ -333,11 +335,11 @@ export async function saveVariableValues(req) {
         );
         const versionDuration = Date.now() - versionStartTime;
         if (versionResult.success) {
-          logSuccess('saveVariableValues', 'Version snapshot created', { versionId: versionResult.versionId, localId, duration: `${versionDuration}ms` });
+          logSuccess('saveVariableValues', 'Version snapshot created (async)', { versionId: versionResult.versionId, localId, duration: `${versionDuration}ms` });
         } else if (versionResult.skipped) {
-          logPhase('saveVariableValues', 'Version snapshot skipped (content unchanged)', { localId, duration: `${versionDuration}ms` });
+          logPhase('saveVariableValues', 'Version snapshot skipped (content unchanged, async)', { localId, duration: `${versionDuration}ms` });
         } else {
-          logWarning('saveVariableValues', 'Version snapshot failed', { localId, error: versionResult.error, duration: `${versionDuration}ms` });
+          logWarning('saveVariableValues', 'Version snapshot failed (async)', { localId, error: versionResult.error, duration: `${versionDuration}ms` });
         }
       }
 
@@ -352,15 +354,27 @@ export async function saveVariableValues(req) {
       const finalUpdateStartTime = Date.now();
       await storage.set(varsKey, existingVars);
       const finalUpdateDuration = Date.now() - finalUpdateStartTime;
-      logSuccess('saveVariableValues', `Macro-vars updated for ${localId}`, { duration: `${finalUpdateDuration}ms` });
-    } catch (cacheError) {
-      // Don't fail the save if cache generation fails
-      const cacheErrorDuration = Date.now() - cacheGenerationStartTime;
-      logFailure('saveVariableValues', 'Error generating and caching preview content', cacheError, { localId, duration: `${cacheErrorDuration}ms` });
-    }
+      const totalCacheGenerationDuration = Date.now() - cacheGenerationStartTime;
+      logSuccess('saveVariableValues', `Macro-vars updated for ${localId} (async)`, { 
+        duration: `${finalUpdateDuration}ms`,
+        totalCacheGenerationDuration: `${totalCacheGenerationDuration}ms`
+      });
+      } catch (cacheError) {
+        // Don't fail the save if cache generation fails
+        const cacheErrorDuration = Date.now() - cacheGenerationStartTime;
+        logFailure('saveVariableValues', 'Error generating and caching preview content (async)', cacheError, { localId, duration: `${cacheErrorDuration}ms` });
+      }
+    })();
+    
+    // Don't await - let cache generation run in the background
+    // Fire and forget, but log if it fails
+    cacheGenerationPromise.catch(error => {
+      logFailure('saveVariableValues', 'Unhandled error in async cache generation', error, { localId, excerptId });
+    });
 
+    // Return immediately after saving config - don't wait for cache generation
     const totalFunctionDuration = Date.now() - functionStartTime;
-    logSuccess('saveVariableValues', 'Function completed successfully', { 
+    logSuccess('saveVariableValues', 'Function completed successfully (config saved, cache generation in background)', { 
       localId,
       totalDuration: `${totalFunctionDuration}ms`
     });
