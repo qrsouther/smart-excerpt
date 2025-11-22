@@ -654,6 +654,32 @@ modules:
 - More complex coordination
 - Depends on postMessage reliability
 
+### Design System & UI Considerations
+
+#### SeatGeek Uniform Design System
+
+When implementing the Custom UI Compositor, consideration should be given to utilizing a well-established design system to ensure consistent styling, modern UI components, and streamlined development. **SeatGeek Uniform** (https://uniform.seatgeek.com/) presents a compelling option for this purpose.
+
+**Potential Benefits:**
+- **Consistent Styling:** Pre-defined design tokens, typography, colors, and spacing ensure visual consistency across the compositor interface
+- **Pre-built Components:** Ready-to-use UI components (buttons, forms, panels, etc.) can accelerate development of the Edit Mode compositor interface
+- **Modern Design Standards:** Established design patterns and best practices that align with contemporary user expectations
+- **Reduced Custom Development:** Less time spent on building and maintaining custom UI components from scratch
+- **Accessibility:** Design systems typically include accessibility considerations built into their components
+
+**Implementation Considerations:**
+- Evaluate Uniform's component library against the specific needs of the compositor interface (source selection panels, drag-and-drop builders, variable configuration forms)
+- Assess compatibility with Forge Custom UI constraints and React framework requirements
+- Consider customization needs vs. design system constraints
+- Review licensing and usage terms for commercial applications
+
+**Alternative Approaches:**
+- Build custom components aligned with Confluence's design language
+- Use Atlassian Design System (ADS) if available for Custom UI
+- Hybrid approach: Uniform for compositor interface, native styles for embedded content
+
+This design system consideration should be evaluated during the prototype phase to determine if it provides sufficient value to justify integration.
+
 ### Migration Path
 
 1. **Phase 1: Prototype** (1-2 weeks)
