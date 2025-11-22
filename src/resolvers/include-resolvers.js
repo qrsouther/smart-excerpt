@@ -183,6 +183,14 @@ export async function saveVariableValues(req) {
         let previewContent = excerpt.content;
         const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
+        // Debug logging to verify variable values are being passed
+        console.log(`[saveVariableValues] Generating cache for ${localId}:`, {
+          hasVariableValues: !!variableValues,
+          variableCount: variableValues ? Object.keys(variableValues).length : 0,
+          variableKeys: variableValues ? Object.keys(variableValues) : [],
+          isAdf
+        });
+
         if (isAdf) {
           // Process ADF content: filter toggles, substitute variables, insert custom content
           // Note: Using current (buggy) behavior to match client-side for consistency
@@ -221,6 +229,11 @@ export async function saveVariableValues(req) {
           content: previewContent,
           cachedAt: now
         });
+        
+        console.log(`[saveVariableValues] ✅ Cached content saved for ${localId} at ${now}`);
+      } else {
+        console.log(`[saveVariableValues] ⚠️  No excerpt content to cache for ${localId}`);
+      }
 
         // Also update lastSynced, syncedContentHash, and syncedContent in macro-vars
         // (This was previously done in saveCachedContent, now consolidated here)
