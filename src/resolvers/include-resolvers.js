@@ -239,43 +239,42 @@ export async function saveVariableValues(req) {
         logWarning('saveVariableValues', `No excerpt content to cache for ${localId}`);
       }
 
-        // Also update lastSynced, syncedContentHash, and syncedContent in macro-vars
-        // (This was previously done in saveCachedContent, now consolidated here)
-        const varsKey = `macro-vars:${localId}`;
-        const existingVars = await storage.get(varsKey) || {};
-        
-        // Phase 3: Create version snapshot before modification (v7.17.0)
-        if (existingVars && Object.keys(existingVars).length > 0) {
-          const versionResult = await saveVersion(
-            storage,
-            varsKey,
-            existingVars,
-            {
-              changeType: 'UPDATE',
-              changedBy: 'saveVariableValues',
-              userAccountId: req.context?.accountId,
-              localId: localId
-            }
-          );
-          if (versionResult.success) {
-            logSuccess('saveVariableValues', 'Version snapshot created', { versionId: versionResult.versionId, localId });
-          } else if (versionResult.skipped) {
-            logPhase('saveVariableValues', 'Version snapshot skipped (content unchanged)', { localId });
-          } else {
-            logWarning('saveVariableValues', 'Version snapshot failed', { localId, error: versionResult.error });
+      // Also update lastSynced, syncedContentHash, and syncedContent in macro-vars
+      // (This was previously done in saveCachedContent, now consolidated here)
+      const varsKey = `macro-vars:${localId}`;
+      const existingVars = await storage.get(varsKey) || {};
+      
+      // Phase 3: Create version snapshot before modification (v7.17.0)
+      if (existingVars && Object.keys(existingVars).length > 0) {
+        const versionResult = await saveVersion(
+          storage,
+          varsKey,
+          existingVars,
+          {
+            changeType: 'UPDATE',
+            changedBy: 'saveVariableValues',
+            userAccountId: req.context?.accountId,
+            localId: localId
           }
+        );
+        if (versionResult.success) {
+          logSuccess('saveVariableValues', 'Version snapshot created', { versionId: versionResult.versionId, localId });
+        } else if (versionResult.skipped) {
+          logPhase('saveVariableValues', 'Version snapshot skipped (content unchanged)', { localId });
+        } else {
+          logWarning('saveVariableValues', 'Version snapshot failed', { localId, error: versionResult.error });
         }
-
-        existingVars.lastSynced = now;
-        if (syncedContentHash !== undefined) {
-          existingVars.syncedContentHash = syncedContentHash;
-        }
-        if (syncedContent !== undefined) {
-          existingVars.syncedContent = syncedContent;
-        }
-
-        await storage.set(varsKey, existingVars);
       }
+
+      existingVars.lastSynced = now;
+      if (syncedContentHash !== undefined) {
+        existingVars.syncedContentHash = syncedContentHash;
+      }
+      if (syncedContent !== undefined) {
+        existingVars.syncedContent = syncedContent;
+      }
+
+      await storage.set(varsKey, existingVars);
     } catch (cacheError) {
       // Don't fail the save if cache generation fails
       logFailure('saveVariableValues', 'Error generating and caching preview content', cacheError, { localId });
