@@ -838,6 +838,46 @@ const App = () => {
   // - Shows Select dropdown + Textfield fallback
   // This ensures editing always gets the full EmbedEditMode UI
 
+  // Show error message if excerpt failed to load
+  if (excerptError && selectedExcerptId) {
+    return (
+      <SectionMessage
+        title="Failed to Load Blueprint Standard"
+        appearance="error"
+      >
+        <Text>
+          Unable to load the Blueprint Standard content. This may happen if:
+        </Text>
+        <Text>
+          • The Blueprint Standard was deleted
+        </Text>
+        <Text>
+          • There was an error accessing storage
+        </Text>
+        <Text>
+          • The data is corrupted
+        </Text>
+        <Text>
+          <Strong>To fix this:</Strong>
+        </Text>
+        <Text>
+          1. Click Edit on this Embed macro
+        </Text>
+        <Text>
+          2. Select a different Blueprint Standard from the dropdown, or
+        </Text>
+        <Text>
+          3. Delete this Embed and add a new one
+        </Text>
+        {excerptError.message && (
+          <Text>
+            <Em>Error details: {excerptError.message}</Em>
+          </Text>
+        )}
+      </SectionMessage>
+    );
+  }
+
   // Show spinner while loading in view mode
   if (!content && !isEditing) {
     return <Spinner />;
