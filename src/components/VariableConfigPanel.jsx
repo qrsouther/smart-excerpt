@@ -69,6 +69,11 @@ const textfieldWrapperStyle = xcss({
  * @returns {JSX.Element}
  */
 export const VariableConfigPanel = ({ excerpt, variableValues, setVariableValues }) => {
+  // Handle null excerpt (template context where user hasn't selected a source yet)
+  if (!excerpt) {
+    return <Text>Please select a Source first to configure variables.</Text>;
+  }
+  
   // If no variables defined, show empty state
   if (!excerpt.variables || excerpt.variables.length === 0) {
     return <Text>No variables defined for this standard.</Text>;

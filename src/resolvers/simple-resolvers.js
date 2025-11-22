@@ -11,6 +11,9 @@ import { storage, startsWith } from '@forge/api';
 import api, { route } from '@forge/api';
 import { detectVariables, detectToggles } from '../utils/detection-utils.js';
 import { saveVersion } from '../utils/version-manager.js';
+import { validateExcerptData, safeStorageSet } from '../utils/storage-validator.js';
+import { updateExcerptIndex } from '../utils/storage-utils.js';
+import { calculateContentHash } from '../utils/hash-utils.js';
 
 /**
  * Detect variables from content (for UI to call)
@@ -686,6 +689,51 @@ export async function getCurrentUser(req) {
  * @returns {Object} Storage data or error
  */
 /**
+ * Get the current Forge environment (development or production)
+ * This is useful for distinguishing between environments in the UI
+ */
+export async function getForgeEnvironment(req) {
+  try {
+    // Check process.env first (available in deployed environments)
+    const envFromProcess = typeof process !== 'undefined' && process.env?.FORGE_ENV;
+    
+    // Also check installContext which contains environment info
+    const installContext = req.context?.installContext;
+    
+    // Log what we're detecting for debugging
+    console.log('[getForgeEnvironment] process.env.FORGE_ENV:', envFromProcess);
+    console.log('[getForgeEnvironment] installContext:', installContext);
+    
+    // In Forge, when using tunnel, the environment might not be set
+    // We can detect tunnel by checking if we're in a local development context
+    // For now, return 'development' if FORGE_ENV is 'development', otherwise 'production'
+    const environment = envFromProcess === 'development' ? 'development' : 'production';
+    
+    console.log('[getForgeEnvironment] Determined environment:', environment);
+    
+    return {
+      success: true,
+      environment,
+      installContext: installContext || null,
+      envFromProcess: envFromProcess || null,
+      debug: {
+        hasProcessEnv: typeof process !== 'undefined',
+        processEnvKeys: typeof process !== 'undefined' && process.env ? Object.keys(process.env).filter(k => k.includes('FORGE') || k.includes('ENV')) : []
+      }
+    };
+  } catch (error) {
+    console.error('Error getting Forge environment:', error);
+    // Default to production for safety
+    return {
+      success: true,
+      environment: 'production',
+      installContext: null,
+      error: error.message
+    };
+  }
+}
+
+/**
  * Get the stored Admin page URL
  * Returns the URL stored when the admin page first loads
  */
@@ -770,6 +818,233 @@ export async function queryStorage(req) {
     return {
       success: false,
       error: error.message
+    };
+  }
+}
+
+/**
+ * Query multiple storage keys by prefix with optional field filtering
+ * 
+ * @param {Object} req.payload
+ * @param {string} req.payload.prefix - Storage key prefix (e.g., 'excerpt:', 'macro-vars:')
+ * @param {string} req.payload.filterField - Optional field path to filter by (e.g., 'name')
+ * @param {string} req.payload.filterValue - Optional filter value (contains match, case-insensitive)
+ * @returns {Object} { success: boolean, results: Array, count: number, error?: string }
+ */
+export async function queryStorageMultiple(req) {
+  try {
+    const { prefix, filterField, filterValue } = req.payload;
+
+    if (!prefix) {
+      return {
+        success: false,
+        error: 'Prefix is required'
+      };
+    }
+
+    console.log(`[queryStorageMultiple] Querying prefix: ${prefix}, filter: ${filterField} contains "${filterValue}"`);
+
+    // Query all keys matching the prefix with pagination
+    // Forge storage query has a default limit, so we need to paginate through all results
+    const allEntries = [];
+    let cursor = undefined;
+
+    do {
+      const batch = await storage.query()
+        .where('key', startsWith(prefix))
+        .limit(100)
+        .cursor(cursor)
+        .getMany();
+
+      allEntries.push(...(batch.results || []));
+      cursor = batch.nextCursor;
+    } while (cursor);
+
+    console.log(`[queryStorageMultiple] Fetched ${allEntries.length} total entries from storage`);
+
+    let results = allEntries.map(entry => ({
+      key: entry.key,
+      value: entry.value,
+      dataType: typeof entry.value,
+      dataSize: JSON.stringify(entry.value).length
+    }));
+
+    // Apply field filter if provided
+    if (filterField && filterValue) {
+      results = results.filter(entry => {
+        const value = entry.value;
+        if (!value || typeof value !== 'object') {
+          return false;
+        }
+
+        // Support nested field paths (e.g., 'metadata.name')
+        const fieldParts = filterField.split('.');
+        let fieldValue = value;
+        for (const part of fieldParts) {
+          if (fieldValue && typeof fieldValue === 'object' && part in fieldValue) {
+            fieldValue = fieldValue[part];
+          } else {
+            return false;
+          }
+        }
+
+        // Case-insensitive contains match
+        if (typeof fieldValue === 'string') {
+          return fieldValue.toLowerCase().includes(filterValue.toLowerCase());
+        }
+        return false;
+      });
+    }
+
+    console.log(`[queryStorageMultiple] Found ${results.length} matching entries after filtering`);
+
+    return {
+      success: true,
+      results,
+      count: results.length
+    };
+  } catch (error) {
+    console.error('[queryStorageMultiple] Error:', error);
+    return {
+      success: false,
+      error: error.message,
+      results: [],
+      count: 0
+    };
+  }
+}
+
+/**
+ * Bulk update multiple storage entries with validation
+ * 
+ * @param {Object} req.payload
+ * @param {Array<{key: string, value: Object}>} req.payload.updates - Array of key-value pairs to update
+ * @returns {Object} { success: boolean, updated: number, failed: number, errors: Array }
+ */
+export async function bulkUpdateStorage(req) {
+  try {
+    const { updates } = req.payload;
+
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return {
+        success: false,
+        error: 'Updates array is required and must not be empty',
+        updated: 0,
+        failed: 0,
+        errors: []
+      };
+    }
+
+    console.log(`[bulkUpdateStorage] Starting bulk update of ${updates.length} entries`);
+
+    const results = {
+      updated: 0,
+      failed: 0,
+      errors: []
+    };
+
+    // Track original excerpt names for index updates
+    const excerptNameChanges = new Map();
+
+    // Process each update
+    for (const { key, value } of updates) {
+      try {
+        if (!key || !value) {
+          results.failed++;
+          results.errors.push({
+            key: key || 'unknown',
+            error: 'Missing key or value'
+          });
+          continue;
+        }
+
+        // Determine if this is an excerpt that needs validation
+        const isExcerpt = key.startsWith('excerpt:');
+        
+        if (isExcerpt) {
+          // Get original excerpt to check if name changed
+          const originalExcerpt = await storage.get(key);
+          if (originalExcerpt && originalExcerpt.name !== value.name) {
+            excerptNameChanges.set(key, {
+              original: originalExcerpt,
+              updated: value
+            });
+          }
+
+          // Recalculate contentHash if content or other hashable fields changed
+          // This ensures contentHash is always correct after JSON editing
+          if (value.content !== undefined || value.name !== undefined || 
+              value.category !== undefined || value.variables !== undefined || 
+              value.toggles !== undefined || value.documentationLinks !== undefined) {
+            value.contentHash = calculateContentHash(value);
+            // Update timestamp to reflect modification
+            if (value.metadata) {
+              value.metadata.updatedAt = new Date().toISOString();
+            } else {
+              value.metadata = {
+                ...(originalExcerpt?.metadata || {}),
+                updatedAt: new Date().toISOString()
+              };
+            }
+            console.log(`[bulkUpdateStorage] Recalculated contentHash for ${key}: ${value.contentHash.substring(0, 16)}...`);
+          }
+
+          // Validate excerpt data
+          const validation = validateExcerptData(value);
+          if (!validation.valid) {
+            results.failed++;
+            results.errors.push({
+              key,
+              error: `Validation failed: ${validation.errors.join(', ')}`
+            });
+            continue;
+          }
+
+          // Use safeStorageSet for excerpts
+          await safeStorageSet(storage, key, value, validateExcerptData);
+        } else {
+          // For non-excerpts, save directly (no validation)
+          await storage.set(key, value);
+        }
+
+        results.updated++;
+      } catch (error) {
+        console.error(`[bulkUpdateStorage] Error updating ${key}:`, error);
+        results.failed++;
+        results.errors.push({
+          key,
+          error: error.message
+        });
+      }
+    }
+
+    // Update excerpt-index for any name changes
+    for (const [key, { updated }] of excerptNameChanges) {
+      try {
+        await updateExcerptIndex(updated);
+        console.log(`[bulkUpdateStorage] Updated excerpt-index for ${key}`);
+      } catch (error) {
+        console.error(`[bulkUpdateStorage] Error updating index for ${key}:`, error);
+        // Don't fail the whole operation if index update fails
+      }
+    }
+
+    console.log(`[bulkUpdateStorage] Completed: ${results.updated} updated, ${results.failed} failed`);
+
+    return {
+      success: results.failed === 0,
+      updated: results.updated,
+      failed: results.failed,
+      errors: results.errors
+    };
+  } catch (error) {
+    console.error('[bulkUpdateStorage] Error:', error);
+    return {
+      success: false,
+      error: error.message,
+      updated: 0,
+      failed: 0,
+      errors: []
     };
   }
 }

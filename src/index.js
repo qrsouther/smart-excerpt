@@ -34,8 +34,11 @@ import {
   setLastVerificationTime as setLastVerificationTimeResolver,
   getCurrentUser as getCurrentUserResolver,
   queryStorage as queryStorageResolver,
+  queryStorageMultiple as queryStorageMultipleResolver,
+  bulkUpdateStorage as bulkUpdateStorageResolver,
   getAdminUrl as getAdminUrlResolver,
-  setAdminUrl as setAdminUrlResolver
+  setAdminUrl as setAdminUrlResolver,
+  getForgeEnvironment as getForgeEnvironmentResolver
 } from './resolvers/simple-resolvers.js';
 
 // Import excerpt CRUD resolver functions (Phase 3 modularization)
@@ -112,6 +115,19 @@ import {
   getRedlineStats as getRedlineStatsResolver,
   postRedlineComment as postRedlineCommentResolver
 } from './resolvers/redline-resolvers.js';
+
+// Import storage export/import resolver functions
+import {
+  exportAllStorageData as exportAllStorageDataResolver,
+  getExportMetadata as getExportMetadataResolver,
+  getExportChunk as getExportChunkResolver
+} from './resolvers/storage-export-resolvers.js';
+import {
+  initImportStorage as initImportStorageResolver,
+  storeImportChunk as storeImportChunkResolver,
+  getImportData as getImportDataResolver,
+  importStorageData as importStorageDataResolver
+} from './resolvers/storage-import-resolvers.js';
 
 // Import redline migration utilities
 import {
@@ -246,6 +262,27 @@ resolver.define('startCheckAllIncludes', startCheckAllIncludesResolver);
 
 // Get storage usage (calculate total storage used across all keys)
 resolver.define('getStorageUsage', getStorageUsageResolver);
+
+// Export all storage data to JSON (for production to dev copy)
+resolver.define('exportAllStorageData', exportAllStorageDataResolver);
+
+// Get export metadata (chunk count, etc.)
+resolver.define('getExportMetadata', getExportMetadataResolver);
+
+// Get a single chunk of exported data (for large exports)
+resolver.define('getExportChunk', getExportChunkResolver);
+
+// Initialize import storage (create metadata)
+resolver.define('initImportStorage', initImportStorageResolver);
+
+// Store a single chunk of import data
+resolver.define('storeImportChunk', storeImportChunkResolver);
+
+// Get stored import data from storage
+resolver.define('getImportData', getImportDataResolver);
+
+// Import storage data from JSON export stored in storage (overwrites all existing data)
+resolver.define('importStorageData', importStorageDataResolver);
 
 // Get progress for checkAllIncludes operation
 resolver.define('getCheckProgress', getCheckProgressResolver);
@@ -876,9 +913,18 @@ resolver.define('getCurrentUser', getCurrentUserResolver);
 // Query Forge storage by key (debugging tool)
 resolver.define('queryStorage', queryStorageResolver);
 
+// Query multiple storage keys by prefix with filtering (Edit Mode)
+resolver.define('queryStorageMultiple', queryStorageMultipleResolver);
+
+// Bulk update multiple storage entries with validation (Edit Mode)
+resolver.define('bulkUpdateStorage', bulkUpdateStorageResolver);
+
 // Get/Set Admin page URL (stored dynamically on first admin page load)
 resolver.define('getAdminUrl', getAdminUrlResolver);
 resolver.define('setAdminUrl', setAdminUrlResolver);
+
+// Get Forge environment (development or production)
+resolver.define('getForgeEnvironment', getForgeEnvironmentResolver);
 
 // ============================================================================
 // RESTORE AND RECOVERY RESOLVERS (Phase 8 modularization)

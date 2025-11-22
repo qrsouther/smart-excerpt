@@ -62,7 +62,7 @@ resources:
     path: src/source-config.jsx
 
   - key: embed-display
-    path: src/EmbedContainer.jsx
+    path: src/embed-display.jsx
 
   - key: admin-page
     path: src/admin-page.jsx

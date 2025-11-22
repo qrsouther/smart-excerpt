@@ -36,7 +36,10 @@ import {
   Box,
   AdfRenderer,
   Stack,
-  xcss
+  Lozenge,
+  Inline,
+  xcss,
+  Heading
 } from '@forge/react';
 
 // Subtle border wrapper that appears only when stale
@@ -101,7 +104,7 @@ export function EmbedViewMode({
   // ADF content
   if (isAdf) {
     // Apply internal notes if they exist (cached content might be stale)
-    // Check if content already has internal note markers by looking for purple text nodes
+    // Check if content already has internal note markers by looking for #505258 color text nodes
     let contentWithNotes = content;
     if (internalNotes && internalNotes.length > 0) {
       // Check if markers already exist by searching for light gray-colored text nodes
@@ -159,6 +162,11 @@ export function EmbedViewMode({
               toggleStates={toggleStates}
             />
           )}
+          {/* Hidden from rendering within Embed itself for now as Confluence's Table of Contents macro cannot detect/parse content within iframes, which the Embed macro is.
+          <Inline space="space.100" alignBlock="center"> <Lozenge appearance="success">Standard</Lozenge>
+            <Heading level={2}>{excerpt?.name || excerpt?.category}</Heading>
+          </Inline>
+          */}
           <DocumentationLinksDisplay
             documentationLinks={excerpt?.documentationLinks}
             isCheckingStaleness={isCheckingStaleness}
@@ -201,6 +209,11 @@ export function EmbedViewMode({
             toggleStates={toggleStates}
           />
         )}
+        {/* Hidden from rendering within Embed itself for now as Confluence's Table of Contents macro cannot detect/parse content within iframes, which the Embed macro is.
+        <Inline space="space.100" alignBlock="center"> <Lozenge appearance="success">Standard</Lozenge>
+          <Heading level={2}>{excerpt?.name || excerpt?.category}</Heading>
+        </Inline>
+        */}
         <DocumentationLinksDisplay
           documentationLinks={excerpt?.documentationLinks}
           isCheckingStaleness={isCheckingStaleness}

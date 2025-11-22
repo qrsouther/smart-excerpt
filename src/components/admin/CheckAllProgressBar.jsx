@@ -23,35 +23,104 @@ import {
   Button,
   SectionMessage,
   ProgressBar,
-  xcss
+  xcss,
+  Heading,
+  Lozenge
 } from '@forge/react';
 
 export function CheckAllProgressBar({
   includesProgress,
   onCleanUpNow,
-  calculateETA
+  calculateETA,
+  onSelectOrphanedItem,
+  cardStyles
 }) {
   if (!includesProgress) return null;
 
+  // For auto-verification: hide results if all clear (no orphaned, broken, or stale embeds)
+  if (includesProgress.phase === 'complete' && includesProgress.isAutoVerification) {
+    const summary = includesProgress.results?.summary;
+    if (summary) {
+      const hasIssues = (summary.orphanedCount > 0) || 
+                        (summary.brokenReferenceCount > 0) || 
+                        (summary.staleCount > 0);
+      if (!hasIssues) {
+        // All clear - don't show results for auto-verification
+        return null;
+      }
+    }
+  }
+
   return (
     <Box xcss={xcss({ marginBlockEnd: 'space.300' })}>
-      <SectionMessage appearance={includesProgress.phase === 'complete' ? 'success' : 'information'}>
+      <SectionMessage appearance={includesProgress.phase === 'complete' ? 'information' : 'information'}>
         <Stack space="space.200">
           {includesProgress.phase === 'complete' ? (
             /* COMPLETE PHASE - Show results summary */
             <Fragment>
-              <Text><Strong>✅ Check Complete</Strong></Text>
+              <Text><Heading level={4}>Check Complete</Heading></Text>
               {includesProgress.results && includesProgress.results.summary && (
                 <Fragment>
-                  <Box xcss={xcss({ marginBlockStart: 'space.100' })}>
-                    <Text><Strong>Summary:</Strong></Text>
-                    <Stack space="space.050" xcss={xcss({ marginBlockStart: 'space.050' })}>
-                      <Text>• {includesProgress.results.summary.activeCount} active Embed(s) - working correctly</Text>
-                      <Text>• {includesProgress.results.summary.orphanedCount} orphaned Embed(s) - need cleanup</Text>
-                      <Text>• {includesProgress.results.summary.brokenReferenceCount} broken reference(s) - auto-repaired</Text>
-                      <Text>• {includesProgress.results.summary.staleCount} stale Embed(s) - updates available</Text>
-                    </Stack>
-                  </Box>
+                  <Inline space="space.300" alignBlock="start" shouldWrap>
+                    <Box xcss={xcss({ marginBlockStart: 'space.100', flex: '0 0 auto' })}>
+                      <Text><Strong>Summary:</Strong></Text>
+                      <Stack space="space.050" xcss={xcss({ marginBlockStart: 'space.050' })}>
+                        <Text>• {includesProgress.results.summary.activeCount} active Embed(s) - working correctly</Text>
+                        <Text>• {includesProgress.results.summary.orphanedCount} orphaned Embed(s) - need cleanup</Text>
+                        <Text>• {includesProgress.results.summary.brokenReferenceCount} broken reference(s) - auto-repaired</Text>
+                        <Text>• {includesProgress.results.summary.staleCount} stale Embed(s) - updates available</Text>
+                      </Stack>
+                    </Box>
+
+                    {/* Orphaned Embed Cards */}
+                    {includesProgress.results.orphanedIncludes && includesProgress.results.orphanedIncludes.length > 0 && (
+                      <Box xcss={xcss({ marginBlockStart: 'space.100', flex: '1 1 auto', minWidth: '300px' })}>
+                        <Text>{' '}</Text>
+                        <Inline space="space.200" shouldWrap xcss={xcss({ marginBlockStart: 'space.100' })}>
+                          {includesProgress.results.orphanedIncludes.map((orphaned) => (
+                            <Box key={orphaned.localId} xcss={cardStyles || xcss({
+                              padding: 'space.200',
+                              borderColor: 'color.border',
+                              borderStyle: 'solid',
+                              borderWidth: 'border.width',
+                              borderRadius: 'border.radius',
+                              boxShadow: 'elevation.shadow.raised',
+                              backgroundColor: 'color.background.neutral.subtle',
+                              minWidth: '250px',
+                              flexGrow: 1,
+                              flexShrink: 1,
+                              flexBasis: '250px'
+                            })}>
+                              <Lozenge appearance="removed" isBold>ORPHANED</Lozenge>
+                              <Text>{' '}</Text>
+                              <Text><Strong>{orphaned.excerptName || orphaned.excerptId || 'Unknown Embed'}</Strong></Text>
+                              <Text>{' '}</Text>
+                              {orphaned.pageTitle && (
+                                <Fragment>
+                                  <Text><Em>Page: {orphaned.pageTitle}</Em></Text>
+                                  <Text>{' '}</Text>
+                                </Fragment>
+                              )}
+                              {orphaned.reason && (
+                                <Fragment>
+                                  <Text><Em>{orphaned.reason}</Em></Text>
+                                  <Text>{' '}</Text>
+                                </Fragment>
+                              )}
+                              {onSelectOrphanedItem && (
+                                <Button
+                                  appearance="warning"
+                                  onClick={() => onSelectOrphanedItem(orphaned)}
+                                >
+                                  View Details
+                                </Button>
+                              )}
+                            </Box>
+                          ))}
+                        </Inline>
+                      </Box>
+                    )}
+                  </Inline>
 
                   {/* Dry-run mode: Show "Clean Up Now" button if orphans found */}
                   {includesProgress.dryRun && includesProgress.results.summary.orphanedCount > 0 && (
@@ -85,7 +154,7 @@ export function CheckAllProgressBar({
             /* IN PROGRESS PHASE - Show progress bar and stats */
             <Fragment>
               <Text><Strong>Checking All Embeds...</Strong></Text>
-              <Text><Em>⚠️ Please stay on this page until the check completes. Navigating away will cancel the operation.</Em></Text>
+              <Text><Em>Please stay on this page until the check completes. Navigating away will cancel the operation.</Em></Text>
               {includesProgress ? (
                 <Fragment>
                   <Text>{includesProgress.status || 'Processing...'}</Text>

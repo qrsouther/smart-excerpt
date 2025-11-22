@@ -95,14 +95,26 @@ export const selectStyles = xcss({
 /**
  * Left sidebar layout
  * Takes up 15% of viewport width for category navigation and filters
+ * Height grows and shrinks to match sibling MiddleSection (flex container row)
  * Fixed width to prevent expansion when table content is wide
  */
+/**
+ * Left sidebar layout
+ * Initially (when no excerpt is selected and MiddleSection is not rendered), sidebar should have minimal height.
+ * When Main/MiddleSection is shown, the sidebar expands to match sibling's height.
+ * Uses a small minHeight on load and grows with content/flex parent after selection.
+ */
 export const leftSidebarStyles = xcss({
-  width: '15%',
-  minWidth: '200px',
-  maxWidth: '15%', // Prevent expansion
-  flexShrink: 0, // Don't shrink below content size
-  flexGrow: 0, // Don't grow beyond allocated width
+  width: '20%',
+  minWidth: '20%',
+  flexShrink: 0, // Don't shrink below content size (width)
+  flexGrow: 0,    // Don't grow beyond allocated width
+  display: 'flex',
+  flexDirection: 'column',
+  // The key here: Set a small minHeight for initial render before MiddleSection is shown,
+  // but let flexbox grow it once its parent is taller.
+  minHeight: '1vh',    // Minimal height for initial (page load) render
+  height: '100%',      // Will fill parent's height as soon as possible (when flex parent sets height)
   paddingInlineEnd: 'space.200',
   padding: 'space.200',
   borderColor: 'color.border',
@@ -114,23 +126,27 @@ export const leftSidebarStyles = xcss({
 
 /**
  * Scrollable excerpt list container
- * Height constrained to fit within viewport without requiring page scroll
- * Used in: ExcerptListSidebar for the main excerpt list
+ * ExcerptList grows to fill sidebar height but scrolls if content is long
  */
 export const scrollableListStyle = xcss({
-  maxHeight: '400px',  // Fixed size to try and fit within viewport without page scroll on initial load
-  overflowY: 'auto'
+  flex: 1,         // Fill vertical available space in LeftSidebar
+  minHeight: 0,    // Allow shrinking to fit container if content is small
+  overflowY: 'auto',
+  padding: 'space.200'
 });
 
 /**
  * Middle section layout
  * Takes up remaining space after sidebar (flex: 1)
  * Constrained to prevent horizontal overflow - only child table should scroll
+ * Maintains consistent width regardless of content visibility
  */
 export const middleSectionStyles = xcss({
   flex: '1 1 0%', // Take remaining space, can shrink, don't grow beyond
   minWidth: 0, // Critical: Allow flex item to shrink below its content size
+  width: '100%', // Maintain full width of available space
   maxWidth: '100%', // Never exceed container width
+  height: '100%', // Fill parent flex row's height, matches LeftSidebar
   overflow: 'hidden', // Prevent container from expanding horizontally (xcss doesn't support overflowX separately)
   boxSizing: 'border-box', // Include padding in width calculation
   paddingInlineEnd: 'space.200',

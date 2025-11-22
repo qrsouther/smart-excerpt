@@ -624,6 +624,43 @@ Align internal code (variable names, comments, JSDoc) with the new Blueprint Sta
 
 ## Future Enhancements
 
+### Development Environment Visual Distinction (Nice-to-Have)
+**Status:** Attempted - Not Working
+**Priority:** Low (nice-to-have UX improvement)
+**Estimated Effort:** Medium (requires research into Forge environment detection)
+
+**Goal:**
+Add a unique background color to the Admin page when running in Development environment to visually distinguish it from Production when both are open in different browser tabs.
+
+**Attempted Implementation:**
+- Created `getForgeEnvironment` resolver to detect environment from backend
+- Added frontend URL detection for tunnel indicators (localhost, 127.0.0.1, tunnel, ngrok, loca.lt)
+- Applied light yellow/amber background (`#fff8e1`) when `forgeEnvironment === 'development'`
+- Code is in place but doesn't work reliably
+
+**Why It Doesn't Work:**
+- `process.env.FORGE_ENV` may not be available in `forge tunnel` mode
+- Environment detection is inconsistent between tunnel and deployed versions
+- Forge may not expose environment information in a way accessible to frontend/backend
+
+**Future Research Options:**
+1. Check if Forge provides environment info in `req.context` or other request properties
+2. Explore using `installContext` to differentiate environments (may contain environment ID)
+3. Consider using a manual toggle/flag stored in storage as a workaround
+4. Investigate if Forge tunnel exposes environment differently than deployed versions
+5. Check Forge documentation/community for environment detection patterns
+6. Consider using URL-based detection (check if admin URL contains environment-specific patterns)
+7. Explore using Forge Custom UI instead of UI Kit 2 for more direct DOM/CSS control
+
+**Current Code Location:**
+- `src/resolvers/simple-resolvers.js` - `getForgeEnvironment()` resolver (lines 691-730)
+- `src/admin-page.jsx` - Environment fetching and background color application (lines 357-395, 1274-1287)
+- `src/index.js` - Resolver registration (line 927)
+
+**Note:** Code is kept in place for future exploration but currently non-functional. See TODO comments in `admin-page.jsx` for details.
+
+---
+
 ### Redlining System (Status Management & Review Workflow)
 **Status:** Requirements gathering
 **Priority:** TBD

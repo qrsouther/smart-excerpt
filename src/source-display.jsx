@@ -1,15 +1,59 @@
-import React, { Fragment, useEffect, useMemo, useRef } from 'react';
-import ForgeReconciler, { Text, useConfig, useProductContext, AdfRenderer } from '@forge/react';
+import React, { 
+  Fragment, 
+  useEffect, 
+  useRef
+} 
+from 'react';
+import ForgeReconciler, { 
+  Box,
+  Text,
+  useConfig,
+  useProductContext,
+  Inline, 
+  Lozenge,
+  Heading,
+  Stack, 
+  AdfRenderer,
+  Spinner,
+  xcss
+} from '@forge/react';
 import { invoke } from '@forge/bridge';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
+import { DocumentationLinksDisplay } from './components/embed/DocumentationLinksDisplay';
+
+// Create a client for React Query
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      gcTime: 1000 * 60 * 30, // 30 minutes
+      refetchOnWindowFocus: false,
+      retry: 1
+    }
+  }
+});
 
 // Memoized AdfRenderer to prevent re-renders
 const MemoizedAdfRenderer = React.memo(({ document }) => {
   return <AdfRenderer document={document} />;
 });
 
+// Loading container style - centers spinner and prevents scrollbar flicker
+const loadingContainerStyle = xcss({
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  minHeight: '200px', // Fixed height to prevent size changes
+  width: '100%',
+  overflow: 'hidden', // Hide scrollbars
+  padding: 'space.400'
+});
+
 const App = () => {
   const config = useConfig();
   const context = useProductContext();
+  const queryClient = useQueryClient();
 
   // Access the macro body (rich text content)
   const macroBody = context?.extension?.macro?.body;
@@ -22,6 +66,34 @@ const App = () => {
   const lastContentHashRef = useRef(null);
   // Track if update is in progress to prevent duplicates
   const updateInProgressRef = useRef(false);
+  
+  // Use React Query to fetch excerpt data with aggressive caching for source-display
+  // This caches the entire unit (Lozenges, Heading, body content) aggressively
+  const {
+    data: excerptData,
+    isLoading: isLoadingExcerpt,
+    error: excerptError
+  } = useQuery({
+    queryKey: ['excerpt', config?.excerptId],
+    queryFn: async () => {
+      if (!config?.excerptId) {
+        return null;
+      }
+
+      const result = await invoke('getExcerpt', { excerptId: config.excerptId });
+
+      if (!result.success || !result.excerpt) {
+        throw new Error('Failed to load excerpt');
+      }
+
+      return result.excerpt;
+    },
+    enabled: !!config?.excerptId,
+    staleTime: 1000 * 60 * 60, // 1 hour - aggressive caching
+    gcTime: 1000 * 60 * 60 * 24, // 24 hours - keep in cache for a long time
+    refetchOnWindowFocus: false,
+    retry: 1
+  });
 
   React.useEffect(() => {
     if (macroBody && !hasInitialized.current) {
@@ -62,11 +134,22 @@ const App = () => {
         if (result.success) {
           // Update our hash tracker
           lastContentHashRef.current = currentHash;
-        } else {
-          console.error('[Source] Update failed:', result.error);
+          
+          // If content actually changed (not just a re-render), invalidate the cache
+          // This forces a re-fetch with the new contentHash
+          if (!result.unchanged) {
+            console.log('[Source] Content changed, invalidating excerpt cache');
+            await queryClient.invalidateQueries({ 
+              queryKey: ['excerpt', config.excerptId] 
+            });
+          }
         }
+        // Silently handle failures - don't spam console for expected errors
       } catch (err) {
-        console.error('[Source] Error:', err);
+        // Only log unexpected errors
+        if (err && err.message && !err.message.includes('not found')) {
+          console.error('[Source] Error:', err);
+        }
       } finally {
         updateInProgressRef.current = false;
       }
@@ -75,34 +158,70 @@ const App = () => {
     // Debounce: wait 1 second after content settles before checking
     const timeoutId = setTimeout(checkAndUpdateContent, 1000);
     return () => clearTimeout(timeoutId);
-  }, [config?.excerptId, macroBody, context?.extension?.isEditing]);
+  }, [config?.excerptId, macroBody, context?.extension?.isEditing, queryClient]);
+
+  // Track the last known contentHash to detect changes
+  const lastKnownContentHashRef = useRef(null);
+  
+  // Update lastKnownContentHash when excerptData loads
+  useEffect(() => {
+    if (excerptData?.contentHash) {
+      lastKnownContentHashRef.current = excerptData.contentHash;
+    }
+  }, [excerptData?.contentHash]);
 
   // If no configuration yet, show placeholder
   if (!config || !config.excerptName) {
     return (
-      <Fragment>
-        <Text>Blueprint Standard not configured. Click Edit to set up this standard.</Text>
-      </Fragment>
+      <Box xcss={loadingContainerStyle}>
+        <Spinner size="large" label="Loading source..." />
+      </Box>
     );
   }
 
   // Use frozen body to prevent re-renders with normalized ADF
   const bodyToRender = frozenMacroBody || macroBody;
 
-  // Show loading until we have content
-  if (!bodyToRender) {
-    return <Text>Loading...</Text>;
+  // Show loading state while fetching excerpt data or if no body content
+  if (isLoadingExcerpt || !bodyToRender) {
+    return (
+      <Box xcss={loadingContainerStyle}>
+        <Spinner size="large" label="Loading source..." />
+      </Box>
+    );
+  }
+
+  // Show error state if excerpt fetch failed
+  if (excerptError) {
+    console.error('[Source] Error loading excerpt:', excerptError);
+    // Still render body content even if metadata failed
   }
 
   return (
     <Fragment>
-      {typeof bodyToRender === 'object' ? (
-        <MemoizedAdfRenderer document={bodyToRender} />
-      ) : (
-        <Text>{bodyToRender || 'No content yet. Edit the macro body to add content.'}</Text>
-      )}
+      <Box paddingBlockEnd="space.100">
+        <Stack space="space.100">
+          {excerptData && (
+            <Inline space="space.100" alignBlock="baseline">
+              <Lozenge appearance="success" isBold>Standard</Lozenge>
+              <Heading level={3}>{excerptData.name || excerptData.category}</Heading>
+              <Lozenge appearance="default">{excerptData.category}</Lozenge>
+            </Inline>
+          )}
+          <DocumentationLinksDisplay documentationLinks={excerptData?.documentationLinks} />
+          {typeof bodyToRender === 'object' ? (
+              <MemoizedAdfRenderer document={bodyToRender} />
+          ) : (
+            <Text>{bodyToRender || 'No content yet. Edit the macro body to add content.'}</Text>
+          )}
+        </Stack>
+      </Box>
     </Fragment>
   );
 };
 
-ForgeReconciler.render(<App />);
+ForgeReconciler.render(
+  <QueryClientProvider client={queryClient}>
+    <App />
+  </QueryClientProvider>
+);

@@ -373,7 +373,7 @@ export function ExcerptPreviewModal({
       <Modal width="75%" onClose={() => setShowPreviewModal(null)}>
         <ModalHeader>
           <Inline space="space.100" alignBlock="center" spread="space-between">
-            <ModalTitle>Edit: {excerpt.name || 'Blueprint Standard'}</ModalTitle>
+            <ModalTitle>{excerpt.name || 'Blueprint Standard'}</ModalTitle>
             {excerptData?.sourcePageId && (
               <Button
                 appearance="default"
@@ -448,7 +448,7 @@ export function ExcerptPreviewModal({
                       />
                     </Box>
 
-                    <Box paddingTop="space.300">
+                    <Box paddingTop="space.200">
                       <Label>
                         Content Preview
                       </Label>

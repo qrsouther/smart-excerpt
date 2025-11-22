@@ -27,6 +27,7 @@ import {
   Box,
   Code,
   Inline,
+  Stack,
   Icon,
   Button,
   Text,
@@ -133,17 +134,41 @@ export function DocumentationLinksDisplay({
       padding="space.100"
       backgroundColor="color.background.neutral"
       xcss={{
-        borderRadius: 'border.radius.200',
+        borderRadius: 'border.radius.500',
         width: '100%'
       }}
     >
       <Inline space="space.200" alignBlock="center" spread="space-between">
-        {(documentationLinks && documentationLinks.length > 0) ? (
-          <Inline space="space.200" alignBlock="center">
-            <Icon glyph="page" size="medium" label="Documentation" />
-            {documentationLinks.map((link, index) => (
+        <Stack space="space.100" alignBlock="start">
+          {documentationLinks.map((link, index) => (
+            <Inline key={index} space="space.050" alignBlock="center">
               <Button
-                key={index}
+                appearance="subtle"
+                spacing="none"
+                aria-label="Open documentation"
+                onClick={async () => {
+                  try {
+                    await router.open(link.url);
+                  } catch (err) {
+                    console.error('[DOCUMENTATION-LINK] Navigation error:', err);
+                  }
+                }}
+                style={{
+                  padding: 0,
+                  minWidth: 32,
+                  minHeight: 32,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                {Icon ? (
+                  <Icon glyph="page" size="small" label="Documentation" />
+                ) : (
+                  <Text>📄</Text>
+                )}
+              </Button>
+              <Button
                 appearance="default"
                 onClick={async () => {
                   try {
@@ -155,11 +180,9 @@ export function DocumentationLinksDisplay({
               >
                 {link.anchor}
               </Button>
-            ))}
-          </Inline>
-        ) : (
-          <Box></Box>
-        )}
+            </Inline>
+          ))}
+        </Stack>
         {isCheckingStaleness ? (
           <Inline space="space.050" alignBlock="center">
             <Text size="small" color="color.text.disabled">Checking for Source updates... ⟳</Text>

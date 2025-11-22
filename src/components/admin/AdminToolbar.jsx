@@ -21,6 +21,8 @@
  * @param {Function} props.onOpenEmergencyRecovery - Handler for Emergency Recovery button
  * @param {string|null} props.lastVerificationTime - ISO timestamp of last verification
  * @param {Function} props.formatTimestamp - Function to format timestamp for display
+ * @param {Function} props.onOpenStorageExport - Handler for Export Production Data button
+ * @param {Function} props.onOpenStorageImport - Handler for Import Production Data button
  * @returns {JSX.Element}
  */
 
@@ -41,7 +43,7 @@ const buttonStyles = xcss({
 
 export function AdminToolbar({
   onOpenMigrationModal,
-  showMigrationTools = false,
+  showMigrationTools = true,
   onOpenCategoryModal,
   onCheckAllSources,
   isCheckingAllSources,
@@ -52,7 +54,9 @@ export function AdminToolbar({
   formatTimestamp,
   onCreateTestPage,
   isCreatingTestPage,
-  onCreateSource
+  onCreateSource,
+  onOpenStorageExport,
+  onOpenStorageImport
 }) {
   const verificationTooltip = lastVerificationTime
     ? `Last verified: ${formatTimestamp(lastVerificationTime)}`
@@ -116,6 +120,26 @@ export function AdminToolbar({
           xcss={buttonStyles}
         >
           ⤴️ Restore Version
+        </Button>
+      </Tooltip>
+
+      <Tooltip content="Export all storage data from this environment (production) to a JSON file for import into development.">
+        <Button
+          appearance="default"
+          onClick={onOpenStorageExport}
+          xcss={buttonStyles}
+        >
+          📤 Export Data
+        </Button>
+      </Tooltip>
+
+      <Tooltip content="Import storage data from a production export file. This will overwrite ALL existing data in this environment (development).">
+        <Button
+          appearance="default"
+          onClick={onOpenStorageImport}
+          xcss={buttonStyles}
+        >
+          📥 Import Data
         </Button>
       </Tooltip>
 

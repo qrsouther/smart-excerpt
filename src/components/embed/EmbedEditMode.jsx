@@ -176,14 +176,15 @@ export function EmbedEditMode({
               value: ex.id
             })).find(opt => opt.value === selectedExcerptId)}
             onChange={handleExcerptSelection}
-            placeholder="Choose a standard..."
+            placeholder="Select a Source to Embed..."
           />
         )}
       </Box>
 
       <Inline space="space.300" alignBlock="center" spread="space-between">
         <Inline space="space.100" alignBlock="center">
-          <Heading size="large">{excerpt.name}</Heading>
+          <Heading size="large">{excerpt?.name || 'Select a Source'}</Heading>
+          {/* // Hidden for now as Embed workflow doesn't need this, but wired up for future use
           <Button
             appearance="link"
             onClick={async () => {
@@ -212,6 +213,7 @@ export function EmbedEditMode({
           >
             View Source
           </Button>
+          */}
           {localId && (
             <Button
               appearance="subtle"
@@ -231,7 +233,7 @@ export function EmbedEditMode({
           )}
           {saveStatus === 'saved' && (
             <Fragment>
-              <Icon glyph="check-circle" size="small" label="Saved" />
+              <Icon glyph="check-circle" color="success" size="small" label="Saved" />
               <Text><Em>Saved</Em></Text>
             </Fragment>
           )}

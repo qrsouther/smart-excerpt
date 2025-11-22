@@ -64,98 +64,108 @@ export function ExcerptListSidebar({
   scrollableListStyle
 }) {
   return (
-    <Box xcss={containerStyle}>
-      <Stack space="space.200">
-        {/* Search and Filter Controls */}
-        <Stack space="space.100">
-          <StableTextfield
-            stableKey="excerpt-search-input"
-            placeholder="Search by name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-
-          <Box xcss={selectStyles}>
-            <Select
-              options={[
-                { label: 'All Categories', value: 'All' },
-                ...categories.map(cat => ({ label: cat, value: cat }))
-              ]}
-              value={{ label: categoryFilter === 'All' ? 'All Categories' : categoryFilter, value: categoryFilter }}
-              onChange={(e) => setCategoryFilter(e.value)}
-            />
-          </Box>
-
-          <Box xcss={selectStyles}>
-            <Select
-              options={[
-                { label: 'Sort: Name (A-Z)', value: 'name-asc' },
-                { label: 'Sort: Name (Z-A)', value: 'name-desc' },
-                { label: 'Sort: Most Used', value: 'usage-high' },
-                { label: 'Sort: Least Used', value: 'usage-low' },
-                { label: 'Sort: Category', value: 'category' }
-              ]}
-              value={{
-                label: sortBy === 'name-asc' ? 'Sort: Name (A-Z)' :
-                       sortBy === 'name-desc' ? 'Sort: Name (Z-A)' :
-                       sortBy === 'usage-high' ? 'Sort: Most Used' :
-                       sortBy === 'usage-low' ? 'Sort: Least Used' :
-                       'Sort: Category',
-                value: sortBy
-              }}
-              onChange={(e) => setSortBy(e.value)}
-            />
-          </Box>
-        </Stack>
-
-        {/* Filtered Results Indicator */}
-        {totalExcerptCount > 0 && (searchTerm || categoryFilter !== 'All') && sortedExcerpts.length < totalExcerptCount && (
-          <Box>
-            <Text>
-              <Em>Showing {sortedExcerpts.length} of {totalExcerptCount} Sources</Em>
-            </Text>
-          </Box>
-        )}
-
-        {/* Empty State - No Matches */}
-        {sortedExcerpts.length === 0 && (searchTerm || categoryFilter !== 'All') && (
-          <Text>No Blueprint Standards match your filters</Text>
-        )}
-
-        {/* Empty State - No Excerpts */}
-        {sortedExcerpts.length === 0 && !searchTerm && categoryFilter === 'All' && (
-          <Fragment>
-            <Text>No Blueprint Standard Sources found.</Text>
-            <Text>Create a Blueprint Standard - Source macro on a page to get started.</Text>
-          </Fragment>
-        )}
-
-        {/* Excerpt List - Scrollable */}
-        <Box xcss={scrollableListStyle}>
+    <Box xcss={xcss({
+      ...containerStyle,
+      display: 'flex',
+      flexDirection: 'column',
+      height: '50em',
+      width: '20%',
+      minWidth: '20%',
+      overflow: 'scroll'
+    })}>
+      <Box xcss={xcss({ flexShrink: 0 })}>
+        <Stack space="space.200">
+          {/* Search and Filter Controls */}
           <Stack space="space.100">
-            {sortedExcerpts.map((excerpt) => {
-              const category = String(excerpt.category || 'General');
-              const isSelected = selectedExcerptForDetails?.id === excerpt.id;
+            <StableTextfield
+              stableKey="excerpt-search-input"
+              placeholder="Search by name..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
 
-              return (
-                <Pressable
-                  key={excerpt.id}
-                  onClick={() => {
-                    console.log('[ExcerptListSidebar] Row clicked for:', excerpt.name);
-                    setSelectedExcerptForDetails(excerpt);
-                  }}
-                  xcss={excerptItemStyle(isSelected)}
-                >
-                  <Inline space="space.100" alignBlock="center" shouldWrap>
-                    <Text><Strong>{excerpt.name}</Strong></Text>
-                    <Lozenge isBold>{category}</Lozenge>
-                  </Inline>
-                </Pressable>
-              );
-            })}
+            <Box xcss={selectStyles}>
+              <Select
+                options={[
+                  { label: 'All Categories', value: 'All' },
+                  ...categories.map(cat => ({ label: cat, value: cat }))
+                ]}
+                value={{ label: categoryFilter === 'All' ? 'All Categories' : categoryFilter, value: categoryFilter }}
+                onChange={(e) => setCategoryFilter(e.value)}
+              />
+            </Box>
+
+            <Box xcss={selectStyles}>
+              <Select
+                options={[
+                  { label: 'Sort: Name (A-Z)', value: 'name-asc' },
+                  { label: 'Sort: Name (Z-A)', value: 'name-desc' },
+                  { label: 'Sort: Most Used', value: 'usage-high' },
+                  { label: 'Sort: Least Used', value: 'usage-low' },
+                  { label: 'Sort: Category', value: 'category' }
+                ]}
+                value={{
+                  label: sortBy === 'name-asc' ? 'Sort: Name (A-Z)' :
+                         sortBy === 'name-desc' ? 'Sort: Name (Z-A)' :
+                         sortBy === 'usage-high' ? 'Sort: Most Used' :
+                         sortBy === 'usage-low' ? 'Sort: Least Used' :
+                         'Sort: Category',
+                  value: sortBy
+                }}
+                onChange={(e) => setSortBy(e.value)}
+              />
+            </Box>
           </Stack>
-        </Box>
-      </Stack>
+
+          {/* Filtered Results Indicator */}
+          {totalExcerptCount > 0 && (searchTerm || categoryFilter !== 'All') && sortedExcerpts.length < totalExcerptCount && (
+            <Box>
+              <Text>
+                <Em>Showing {sortedExcerpts.length} of {totalExcerptCount} Sources</Em>
+              </Text>
+            </Box>
+          )}
+
+          {/* Empty State - No Matches */}
+          {sortedExcerpts.length === 0 && (searchTerm || categoryFilter !== 'All') && (
+            <Text>No Blueprint Standards match your filters</Text>
+          )}
+
+          {/* Empty State - No Excerpts */}
+          {sortedExcerpts.length === 0 && !searchTerm && categoryFilter === 'All' && (
+            <Fragment>
+              <Text>No Blueprint Standard Sources found.</Text>
+              <Text>Create a Blueprint Standard - Source macro on a page to get started.</Text>
+            </Fragment>
+          )}
+        </Stack>
+      </Box>
+
+      {/* Excerpt List - Scrollable */}
+      <Box xcss={scrollableListStyle}>
+        <Stack space="space.100">
+          {sortedExcerpts.map((excerpt) => {
+            const category = String(excerpt.category || 'General');
+            const isSelected = selectedExcerptForDetails?.id === excerpt.id;
+
+            return (
+              <Pressable
+                key={excerpt.id}
+                onClick={() => {
+                  console.log('[ExcerptListSidebar] Row clicked for:', excerpt.name);
+                  setSelectedExcerptForDetails(excerpt);
+                }}
+                xcss={excerptItemStyle(isSelected)}
+              >
+                <Inline space="space.100" alignBlock="center" shouldWrap>
+                  <Text><Strong>{excerpt.name}</Strong></Text>
+                  <Lozenge isBold>{category}</Lozenge>
+                </Inline>
+              </Pressable>
+            );
+          })}
+        </Stack>
+      </Box>
     </Box>
   );
 }

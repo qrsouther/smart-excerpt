@@ -36,10 +36,10 @@ import {
   Stack,
   Inline,
   Button,
-  Textfield,
   Icon,
   DynamicTable
 } from '@forge/react';
+import { StableTextfield } from '../common/StableTextfield';
 
 export function CategoryManager({
   isOpen,
@@ -59,7 +59,7 @@ export function CategoryManager({
   const [hasChanges, setHasChanges] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
   
-  // Ref to maintain Textfield reference and prevent cursor jumping
+  // Ref to maintain StableTextfield reference and prevent cursor jumping
   const textfieldRef = useRef(null);
   
   // Stabilize onChange handler to prevent cursor jumping
@@ -189,8 +189,8 @@ export function CategoryManager({
               <Box>
                 <Stack space="space.100">
                   <Inline space="space.100" alignBlock="center">
-                    <Textfield
-                      key="new-category-input"
+                    <StableTextfield
+                      stableKey="new-category-input"
                       ref={textfieldRef}
                       placeholder="Add a new Category..."
                       value={newCategoryName}

@@ -35,6 +35,7 @@ import {
   logFailure,
   logSuccess
 } from './forge-logger.js';
+import { calculateContentHash } from './hash-utils.js';
 
 /**
  * Validates Blueprint Standard Source (excerpt) data structure and integrity
@@ -130,11 +131,11 @@ export function validateExcerptData(excerpt) {
     }
 
     // Verify contentHash matches actual content
-    if (excerpt.content && typeof excerpt.content === 'object') {
-      const crypto = require('crypto');
-      const actualHash = crypto.createHash('sha256').update(JSON.stringify(excerpt.content)).digest('hex');
+    // Use calculateContentHash to ensure consistency with how hashes are calculated elsewhere
+    if (excerpt.content !== undefined) {
+      const actualHash = calculateContentHash(excerpt);
       if (excerpt.contentHash !== actualHash) {
-        errors.push(`contentHash mismatch (expected ${actualHash.substring(0, 16)}..., got ${excerpt.contentHash.substring(0, 16)}...)`);
+        errors.push(`contentHash mismatch (expected ${actualHash.substring(0, 16)}..., got ${excerpt.contentHash?.substring(0, 16) || 'missing'}...)`);
       }
     }
   }

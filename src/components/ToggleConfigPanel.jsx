@@ -41,6 +41,11 @@ const variableBoxStyle = xcss({
  * @returns {JSX.Element}
  */
 export const ToggleConfigPanel = ({ excerpt, toggleStates, setToggleStates }) => {
+  // Handle null excerpt (template context where user hasn't selected a source yet)
+  if (!excerpt) {
+    return <Text>Please select a Source first to configure toggles.</Text>;
+  }
+  
   // If no toggles defined, show empty state
   if (!excerpt.toggles || excerpt.toggles.length === 0) {
     return <Text>No toggles defined for this standard.</Text>;

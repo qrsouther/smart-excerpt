@@ -30,6 +30,8 @@ import ForgeReconciler, {
   Pressable,
   ProgressBar,
   Heading,
+  Toggle,
+  Label,
   xcss
 } from '@forge/react';
 import { invoke, router } from '@forge/bridge';
@@ -79,6 +81,8 @@ import { VersionHistoryModal } from './components/admin/VersionHistoryModal';
 import { StorageUsageFooter } from './components/admin/StorageUsageFooter';
 import { RedlineQueuePage } from './components/admin/RedlineQueuePage';
 import { StorageBrowser } from './components/admin/StorageBrowser';
+import { StorageExportModal } from './components/admin/StorageExportModal';
+import { StorageImportModal } from './components/admin/StorageImportModal';
 
 // Import admin styles
 import {
@@ -123,7 +127,7 @@ const queryClient = new QueryClient({
 // 2. Delete this flag
 // 3. Delete migration state variables below (lines ~127-138)
 // 4. Delete migration handler functions (search for "handleScanMultiExcerpt", "handleBulkImport", etc.)
-const SHOW_MIGRATION_TOOLS = true; // TEMPORARILY ENABLED FOR ONE-TIME BULK IMPORT
+const SHOW_MIGRATION_TOOLS = false; // TEMPORARILY DISABLED FOR ONE-TIME BULK IMPORT
 
 // App version (imported from utils/version.js - keep in sync with package.json)
 
@@ -203,6 +207,7 @@ const App = () => {
   const [selectedExcerptForDetails, setSelectedExcerptForDetails] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [orphanedSources, setOrphanedSources] = useState([]);
+  const [showContentPreview, setShowContentPreview] = useState(true);
 
   // Lazy load full usage data using React Query when excerpt selected
   const { data: selectedExcerptUsage, isLoading: isLoadingUsage, error: usageError } = useExcerptUsageQuery(
@@ -245,6 +250,10 @@ const App = () => {
 
   // Emergency Recovery Modal UI (Phase 1 Safety Patch - v7.16.0)
   const [isEmergencyRecoveryOpen, setIsEmergencyRecoveryOpen] = useState(false);
+
+  // Storage Export/Import Modal UI
+  const [isStorageExportOpen, setIsStorageExportOpen] = useState(false);
+  const [isStorageImportOpen, setIsStorageImportOpen] = useState(false);
   const [versionHistoryEmbedUuid, setVersionHistoryEmbedUuid] = useState(null);
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const [versionHistoryUuid, setVersionHistoryUuid] = useState(null);
@@ -254,8 +263,16 @@ const App = () => {
   const [storageUsageLoading, setStorageUsageLoading] = useState(true);
   const [storageUsageError, setStorageUsageError] = useState(null);
 
+  // Forge environment state (for development background color)
+  const [forgeEnvironment, setForgeEnvironment] = useState(null);
+
   // Convert excerptsError to string for display
   const error = excerptsError ? String(excerptsError.message || 'Unknown error') : null;
+
+  // Reset content preview toggle when a different excerpt is selected
+  useEffect(() => {
+    setShowContentPreview(true);
+  }, [selectedExcerptForDetails?.id]);
 
   // Auto-discover categories from excerpts (when new ones added via import)
   useEffect(() => {
@@ -292,7 +309,7 @@ const App = () => {
           if (hoursSinceVerification > 24) {
             console.log('[AUTO-VERIFY] Data is stale, running Check All Includes automatically...');
             setIsAutoVerifying(true);
-            await handleCheckAllIncludes();
+            await handleCheckAllIncludes(true);
             setIsAutoVerifying(false);
           } else {
             console.log('[AUTO-VERIFY] Data is fresh, skipping auto-verification');
@@ -301,7 +318,7 @@ const App = () => {
           // No previous verification, run it now
           console.log('[AUTO-VERIFY] No previous verification found, running Check All Includes...');
           setIsAutoVerifying(true);
-          await handleCheckAllIncludes();
+          await handleCheckAllIncludes(true);
           setIsAutoVerifying(false);
         }
       } catch (error) {
@@ -335,6 +352,56 @@ const App = () => {
     };
 
     fetchStorageUsage();
+  }, []); // Only run once on mount
+
+  // TODO: Development Environment Background Color (Nice-to-have)
+  // Attempted to add a unique background color to distinguish Development Admin from Production Admin.
+  // Current implementation doesn't work reliably - process.env.FORGE_ENV may not be available in tunnels
+  // and environment detection is inconsistent. Future research needed:
+  // - Check if Forge provides environment info in req.context or other request properties
+  // - Explore using installContext to differentiate environments
+  // - Consider using a manual toggle/flag stored in storage as a workaround
+  // - Investigate if Forge tunnel exposes environment differently than deployed versions
+  // For now, this code is kept for future exploration but doesn't function as intended.
+  
+  // Fetch Forge environment on mount (for development background color)
+  useEffect(() => {
+    const fetchEnvironment = async () => {
+      try {
+        const result = await invoke('getForgeEnvironment');
+        console.log('[ADMIN] getForgeEnvironment result:', result);
+        
+        if (result.success) {
+          setForgeEnvironment(result.environment);
+          console.log('[ADMIN] Forge environment set to:', result.environment);
+          
+          // Also check URL for tunnel indicators as a fallback
+          if (typeof window !== 'undefined' && window.location) {
+            const url = window.location.href;
+            const isTunnelUrl = url.includes('localhost') || 
+                               url.includes('127.0.0.1') || 
+                               url.includes('tunnel') ||
+                               url.includes('ngrok') ||
+                               url.includes('loca.lt');
+            
+            if (isTunnelUrl && result.environment === 'production') {
+              console.log('[ADMIN] Detected tunnel URL, treating as development');
+              setForgeEnvironment('development');
+            }
+          }
+        } else {
+          // Default to production if we can't determine
+          console.warn('[ADMIN] Failed to get environment, defaulting to production');
+          setForgeEnvironment('production');
+        }
+      } catch (error) {
+        console.warn('[ADMIN] Could not fetch Forge environment:', error);
+        // Default to production for safety
+        setForgeEnvironment('production');
+      }
+    };
+
+    fetchEnvironment();
   }, []); // Only run once on mount
 
   // Force scrollbars to always be visible (override OS behavior)
@@ -631,14 +698,15 @@ const App = () => {
   };
 
   // Handle Check All Includes button click (Async Events API version)
-  const handleCheckAllIncludes = async () => {
+  const handleCheckAllIncludes = async (isAutoVerification = false) => {
     // Show initial progress
     setIncludesProgress({
       phase: 'queuing',
       total: 0,
       processed: 0,
       percent: 0,
-      status: 'Queuing job...'
+      status: 'Queuing job...',
+      isAutoVerification: isAutoVerification
     });
 
     let isComplete = false;
@@ -669,7 +737,8 @@ const App = () => {
             const progressResult = await invoke('getCheckProgress', { progressId });
             if (progressResult.success && progressResult.progress) {
               const progress = progressResult.progress;
-              setIncludesProgress(progress);
+              // Preserve isAutoVerification flag from initial state
+              setIncludesProgress({ ...progress, isAutoVerification: isAutoVerification });
               console.log(`[ADMIN] Progress: ${progress.percent}% - ${progress.status}`);
 
               // Check if complete
@@ -1214,36 +1283,32 @@ const App = () => {
   const filteredExcerpts = filterExcerpts(excerpts, searchTerm, categoryFilter);
   const sortedExcerpts = sortExcerpts(filteredExcerpts, sortBy, usageCounts);
 
-  return (
-    <Fragment>
-      {/* Top Toolbar - Action Buttons */}
-      <Box xcss={xcss({ marginBlockEnd: 'space.100' })}>
-        <AdminToolbar
-          onOpenMigrationModal={() => setIsMigrationModalOpen(true)}
-          showMigrationTools={SHOW_MIGRATION_TOOLS}
-          onOpenCategoryModal={() => setIsCategoryModalOpen(true)}
-          onCheckAllSources={handleCheckAllSources}
-          isCheckingAllSources={checkAllSourcesMutation.isPending}
-          onCheckAllIncludes={handleCheckAllIncludes}
-          isCheckingIncludes={includesProgress !== null}
-          onOpenEmergencyRecovery={() => setIsEmergencyRecoveryOpen(true)}
-          lastVerificationTime={lastVerificationTime}
-          formatTimestamp={formatTimestamp}
-          onCreateTestPage={handleCreateTestPage}
-          isCreatingTestPage={createTestPageMutation.isPending}
-          onCreateSource={() => {
-            // Create Source functionality removed - users should create sources on Confluence pages
-            // where source-config.jsx (the stable, tested component) handles editing
-            alert('To create a Source, add a Blueprint Standard - Source macro to a Confluence page and configure it there.');
-          }}
-        />
-      </Box>
+  // Check if we're in development environment
+  // TODO: This currently doesn't work - see TODO comment above about environment detection
+  // Use the environment fetched from the backend resolver
+  const isDevelopment = forgeEnvironment === 'development';
 
+  return (
+    <Box
+      xcss={isDevelopment ? xcss({
+        backgroundColor: '#fff8e1', // Light yellow/amber tint for development (currently not applied)
+        minHeight: '100vh',
+        padding: 'space.200'
+      }) : xcss({
+        minHeight: '100vh'
+      })}
+    >
+      <Fragment>
       {/* Progress Bar for Check All Includes */}
       <CheckAllProgressBar
         includesProgress={includesProgress}
         onCleanUpNow={handleCleanUpNow}
         calculateETA={calculateETA}
+        onSelectOrphanedItem={(item) => {
+          setSelectedExcerpt(item);
+          setIsModalOpen(true);
+        }}
+        cardStyles={cardStyles}
       />
 
       {/* Progress Bar for MultiExcerpt Scan (hidden via feature flag) */}
@@ -1300,29 +1365,70 @@ const App = () => {
       )}
 
       {/* Tabbed Navigation - Sources and Redline Queue */}
-      <Box xcss={xcss({ width: '100%', maxWidth: '100%' })}>
-        <Tabs 
-          space="space.200"
-          id="admin-tabs"
-          onChange={(index) => {
-            setSelectedTab(index);
-            // Clear selections when switching tabs
-            setSelectedExcerpt(null);
-            setSelectedExcerptForDetails(null);
-          }}
-          selected={selectedTab}
-        >
-        <TabList space="space.100">
-          <Tab>📦 Sources</Tab>
-          <Tab>🧑🏻‍🏫 Redlines</Tab>
-          <Tab>💾 Storage</Tab>
-        </TabList>
-
-        <TabPanel>
+      <Box xcss={xcss({ width: '100%', maxWidth: '100%'})}>
+        <Box>
+          <Tabs
+            space="space.200"
+            id="admin-tabs"
+            onChange={(index) => {
+              setSelectedTab(index);
+              // Clear selections when switching tabs
+              setSelectedExcerpt(null);
+              setSelectedExcerptForDetails(null);
+            }}
+            selected={selectedTab}
+          >
+            <Box xcss={xcss({ width: '100%', borderBottomWidth: 'border.width', borderBottomStyle: 'solid', borderColor: 'color.border', paddingBottom: 'space.100' })}>
+              <Inline alignInline="space-between" alignBlock="center">
+                  <TabList>
+                    <Tab>
+                      <Heading size='small'>📦 Sources</Heading>
+                    </Tab>
+                    <Tab>
+                      <Heading size='small'>🧑🏻‍🏫 Redlines</Heading>
+                    </Tab>
+                    <Tab>
+                      <Heading size='small'>💾 Storage</Heading>
+                    </Tab>
+                  </TabList>
+                  <AdminToolbar
+                    onOpenMigrationModal={() => setIsMigrationModalOpen(true)}
+                    showMigrationTools={SHOW_MIGRATION_TOOLS}
+                    onOpenCategoryModal={() => setIsCategoryModalOpen(true)}
+                    onCheckAllSources={handleCheckAllSources}
+                    isCheckingAllSources={checkAllSourcesMutation.isPending}
+                    onCheckAllIncludes={handleCheckAllIncludes}
+                    isCheckingIncludes={includesProgress !== null}
+                    onOpenEmergencyRecovery={() => setIsEmergencyRecoveryOpen(true)}
+                    lastVerificationTime={lastVerificationTime}
+                    formatTimestamp={formatTimestamp}
+                    onOpenStorageExport={() => setIsStorageExportOpen(true)}
+                    onOpenStorageImport={() => setIsStorageImportOpen(true)}
+                    onCreateTestPage={handleCreateTestPage}
+                    isCreatingTestPage={createTestPageMutation.isPending}
+                    onCreateSource={() => {}}
+                  />
+              </Inline>
+            </Box>
+            <TabPanel>
           {/* Main Content Area - Split into sidebar and main */}
           <Box xcss={xcss({ width: '100%', maxWidth: '100%', overflow: 'hidden' })}>
             <Box xcss={tabPanelContentStyles}>
-              <Inline space="space.200" alignBlock="start" shouldWrap={false} xcss={xcss({ width: '100%', maxWidth: '100%', minWidth: 0, overflow: 'hidden' })}>
+              <Inline 
+                space="space.200" 
+                alignBlock={selectedExcerptForDetails ? 'stretch' : 'start'} 
+                shouldWrap={false} 
+                xcss={xcss({ 
+                  width: '100%', 
+                  maxWidth: '100%', 
+                  minWidth: 0, 
+                  overflow: 'hidden',
+                  // When excerpt is selected, both children should stretch to match heights
+                  // The middleSection will determine the height, and sidebar will match it
+                  alignItems: selectedExcerptForDetails ? 'stretch' : 'flex-start'
+                })}
+              >
+                
         {/* Left Sidebar - Excerpt List */}
         <ExcerptListSidebar
           sortedExcerpts={sortedExcerpts}
@@ -1336,7 +1442,25 @@ const App = () => {
           categories={categories}
           selectedExcerptForDetails={selectedExcerptForDetails}
           setSelectedExcerptForDetails={setSelectedExcerptForDetails}
-          xcss={leftSidebarStyles}
+          xcss={xcss({
+            width: '20%',
+            maxWidth: '20%',
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            // Static height of 50em regardless of selection state
+            height: '50em',
+            minHeight: '50em',
+            maxHeight: '50em',
+            overflow: 'hidden', // Prevent sidebar from expanding beyond its container
+            paddingInlineEnd: 'space.200',
+            padding: 'space.200',
+            borderColor: 'color.border',
+            borderStyle: 'solid',
+            borderWidth: 'border.width',
+            borderRadius: 'border.radius',
+            boxSizing: 'border-box'
+          })}
           selectStyles={selectStyles}
           scrollableListStyle={scrollableListStyle}
         />
@@ -1346,7 +1470,7 @@ const App = () => {
           {(() => {
             if (!selectedExcerptForDetails) {
               return (
-                <Box>
+                <Box xcss={xcss({ width: '100%', maxWidth: '100%' })}>
                   <Text><Em>Select a Blueprint Standard from the list to view its usage details</Em></Text>
                 </Box>
               );
@@ -1500,7 +1624,7 @@ const App = () => {
                   <Box>
                     <Inline space="space.100" alignBlock="center" spread="space-between">
                       <Inline space="space.100" alignBlock="center">
-                        <Heading size="small">Source excerpt: {selectedExcerptForDetails.name}</Heading>
+                        <Heading size="medium">{selectedExcerptForDetails.name}</Heading>
                         <Lozenge>{selectedExcerptForDetails.category || 'General'}</Lozenge>
                       </Inline>
                       <Inline space="space.100" alignBlock="center">
@@ -1508,7 +1632,7 @@ const App = () => {
                           appearance="subtle"
                           onClick={() => setShowPreviewModal(selectedExcerptForDetails.id)}
                         >
-                          Preview Content
+                          Edit Source Metadata
                         </Button>
                         
                         {/* Hidden but wired up for future use */}
@@ -1538,7 +1662,7 @@ const App = () => {
                             }}
                             iconAfter={() => <Icon glyph="shortcut" label="Opens in new tab" />}
                           >
-                            View Source
+                            Edit Source Content
                           </Button>
                         )}
                         <Button
@@ -1580,7 +1704,7 @@ const App = () => {
                           }}
                           iconBefore={() => <Icon glyph="download" label="Export" />}
                         >
-                          Export to CSV
+                          Export Usage Details (CSV)
                         </Button>
                         <Button
                           appearance="danger"
@@ -1661,6 +1785,30 @@ const App = () => {
                       </Text>
                     </Stack>
                   </SectionMessage>
+
+                  {/* Content Preview */}
+                  <Box xcss={xcss({ width: '100%', marginTop: 'space.100' })}>
+                    <Inline space="space.050" alignBlock="center">
+                      <Toggle
+                        size="large"
+                        id="content-preview-toggle"
+                        isChecked={showContentPreview}
+                        onChange={(e) => setShowContentPreview(e.target.checked)}
+                      />
+                      <Label labelFor='content-preview-toggle'>
+                        Content Preview
+                      </Label>
+                    </Inline>
+                    {showContentPreview && (
+                      <Box paddingTop="space.100" xcss={previewBoxStyle}>
+                        {selectedExcerptForDetails?.content && typeof selectedExcerptForDetails.content === 'object' ? (
+                          <AdfRenderer document={selectedExcerptForDetails.content} />
+                        ) : (
+                          <Text>{selectedExcerptForDetails?.content || 'No content stored'}</Text>
+                        )}
+                      </Box>
+                    )}
+                  </Box>
 
                   {/* Usage Table */}
                   {uniqueUsage.length === 0 ? (
@@ -1852,7 +2000,8 @@ const App = () => {
         <TabPanel>
           <StorageBrowser />
         </TabPanel>
-      </Tabs>
+          </Tabs>
+        </Box>
       </Box>
 
       {/* Orphaned items sections */}
@@ -1965,7 +2114,7 @@ const App = () => {
                 </ModalFooter>
               </Fragment>
             ) : selectedExcerpt.referenceCount !== undefined ? (
-              // Orphaned Embed
+              // Orphaned Embed (from usage tracking - Source deleted but Embeds still reference it)
               <Fragment>
                 <ModalHeader>
                   <Inline space="space.100" alignBlock="center">
@@ -2001,6 +2150,56 @@ const App = () => {
                       isDisabled={isDeletingOrphanedRefs}
                     >
                       {isDeletingOrphanedRefs ? 'Deleting...' : 'Force Delete Orphaned References'}
+                    </Button>
+                  </Inline>
+                </ModalFooter>
+              </Fragment>
+            ) : selectedExcerpt.localId && selectedExcerpt.reason ? (
+              // Orphaned Embed (from Check All Embeds - macro not found on page)
+              <Fragment>
+                <ModalHeader>
+                  <Inline space="space.100" alignBlock="center">
+                    <ModalTitle>{selectedExcerpt.excerptName || selectedExcerpt.excerptId || 'Orphaned Embed'}</ModalTitle>
+                    <Lozenge appearance="removed" isBold>ORPHANED EMBED</Lozenge>
+                  </Inline>
+                </ModalHeader>
+
+                <ModalBody>
+                  <Stack space="space.200">
+                    <SectionMessage appearance="warning">
+                      <Text>This Embed macro was not found on its page or the page no longer exists.</Text>
+                    </SectionMessage>
+
+                    <Text><Strong>Details:</Strong></Text>
+                    <Text>• Local ID: {selectedExcerpt.localId}</Text>
+                    {selectedExcerpt.excerptId && (
+                      <Text>• Source ID: {selectedExcerpt.excerptId}</Text>
+                    )}
+                    {selectedExcerpt.pageTitle && (
+                      <Text>• Page: {selectedExcerpt.pageTitle}</Text>
+                    )}
+                    {selectedExcerpt.pageId && (
+                      <Text>• Page ID: {selectedExcerpt.pageId}</Text>
+                    )}
+                    {selectedExcerpt.reason && (
+                      <Text>• Reason: {selectedExcerpt.reason}</Text>
+                    )}
+                    <Text>• Page Exists: {selectedExcerpt.pageExists ? 'Yes' : 'No'}</Text>
+
+                    <Text><Strong>What happened?</Strong></Text>
+                    <Text>The Embed macro was likely deleted from the page, or the page itself was deleted or is no longer accessible.</Text>
+
+                    <Text><Strong>Options:</Strong></Text>
+                    <Text>  1. Check if the page still exists and restore the Embed macro</Text>
+                    <Text>  2. Use Emergency Recovery to restore from backup (if available)</Text>
+                    <Text>  3. The storage entry will be preserved for 90 days for manual recovery</Text>
+                  </Stack>
+                </ModalBody>
+
+                <ModalFooter>
+                  <Inline space="space.100">
+                    <Button onClick={() => setIsModalOpen(false)}>
+                      Close
                     </Button>
                   </Inline>
                 </ModalFooter>
@@ -2352,6 +2551,17 @@ const App = () => {
         autoLoadEmbedUuid={versionHistoryEmbedUuid}
       />
 
+      {/* Storage Export/Import Modals */}
+      <StorageExportModal
+        isOpen={isStorageExportOpen}
+        onClose={() => setIsStorageExportOpen(false)}
+      />
+
+      <StorageImportModal
+        isOpen={isStorageImportOpen}
+        onClose={() => setIsStorageImportOpen(false)}
+      />
+
       {/* Version History Modal (Phase 4 - v7.18.8) */}
       <VersionHistoryModal
         isOpen={isVersionHistoryOpen}
@@ -2372,7 +2582,8 @@ const App = () => {
         isLoading={storageUsageLoading}
         error={storageUsageError}
       />
-    </Fragment>
+      </Fragment>
+    </Box>
   );
 };
 
