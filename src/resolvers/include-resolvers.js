@@ -92,44 +92,62 @@ export async function saveVariableValues(req) {
     logPhase('saveVariableValues', 'Config saved', { localId, duration: `${saveConfigDuration}ms` });
 
     // AUTO-TRANSITION LOGIC: Check if approved Embed content has changed
+    // OPTIMIZATION: Run asynchronously in background to avoid blocking the save response
+    // This status transition is not critical for the save to complete
     if (existingConfig && existingConfig.redlineStatus === 'approved' && existingConfig.approvedContentHash) {
-      // Query version system for latest contentHash
-      const versionsResult = await listVersions(storage, localId);
+      const autoTransitionPromise = (async () => {
+        const autoTransitionStartTime = Date.now();
+        try {
+          // Query version system for latest contentHash
+          const versionsResult = await listVersions(storage, localId);
 
-      if (versionsResult.success && versionsResult.versions.length > 0) {
-        const latestVersion = versionsResult.versions[0];
-        const currentContentHash = latestVersion.contentHash;
+          if (versionsResult.success && versionsResult.versions.length > 0) {
+            const latestVersion = versionsResult.versions[0];
+            const currentContentHash = latestVersion.contentHash;
 
-        // Compare with approved contentHash
-        if (currentContentHash !== existingConfig.approvedContentHash) {
-          logPhase('saveVariableValues', 'AUTO-TRANSITION: Embed content changed after approval', {
-            localId,
-            previousHash: existingConfig.approvedContentHash,
-            currentHash: currentContentHash
-          });
+            // Compare with approved contentHash
+            if (currentContentHash !== existingConfig.approvedContentHash) {
+              logPhase('saveVariableValues', 'AUTO-TRANSITION: Embed content changed after approval (async)', {
+                localId,
+                previousHash: existingConfig.approvedContentHash,
+                currentHash: currentContentHash
+              });
 
-          // Auto-transition status to "needs-revision"
-          const updatedStatusHistory = existingConfig.statusHistory || [];
-          updatedStatusHistory.push({
-            status: 'needs-revision',
-            previousStatus: 'approved',
-            changedBy: 'system',
-            changedAt: now,
-            reason: 'Content modified after approval (auto-transition)'
-          });
+              // Auto-transition status to "needs-revision"
+              const updatedStatusHistory = existingConfig.statusHistory || [];
+              updatedStatusHistory.push({
+                status: 'needs-revision',
+                previousStatus: 'approved',
+                changedBy: 'system',
+                changedAt: new Date().toISOString(),
+                reason: 'Content modified after approval (auto-transition)'
+              });
 
-          // Update redline fields
-          newConfig.redlineStatus = 'needs-revision';
-          newConfig.statusHistory = updatedStatusHistory;
+              // Update redline fields
+              const updatedConfig = { ...newConfig };
+              updatedConfig.redlineStatus = 'needs-revision';
+              updatedConfig.statusHistory = updatedStatusHistory;
 
-          // Save updated config with new status
-          await storage.set(key, newConfig);
-
-          logSuccess('saveVariableValues', `Auto-transitioned Embed ${localId}: approved → needs-revision`);
-        } else {
-          logPhase('saveVariableValues', `Embed ${localId} approved and unchanged`, { contentHash: existingConfig.approvedContentHash });
+              // Save updated config with new status
+              await storage.set(key, updatedConfig);
+              
+              const autoTransitionDuration = Date.now() - autoTransitionStartTime;
+              logSuccess('saveVariableValues', `Auto-transitioned Embed ${localId}: approved → needs-revision (async)`, { duration: `${autoTransitionDuration}ms` });
+            } else {
+              const autoTransitionDuration = Date.now() - autoTransitionStartTime;
+              logPhase('saveVariableValues', `Embed ${localId} approved and unchanged (async)`, { contentHash: existingConfig.approvedContentHash, duration: `${autoTransitionDuration}ms` });
+            }
+          }
+        } catch (autoTransitionError) {
+          const autoTransitionDuration = Date.now() - autoTransitionStartTime;
+          logFailure('saveVariableValues', 'Error in auto-transition logic (async)', autoTransitionError, { localId, duration: `${autoTransitionDuration}ms` });
         }
-      }
+      })();
+      
+      // Don't await - let auto-transition run in the background
+      autoTransitionPromise.catch(error => {
+        logFailure('saveVariableValues', 'Unhandled error in async auto-transition', error, { localId });
+      });
     }
 
     // Also update usage tracking with the latest toggle states
