@@ -158,6 +158,9 @@ const App = () => {
 
   // Track if we're in the initial data load phase to prevent auto-save during load
   const isLoadingInitialDataRef = useRef(false);
+  
+  // Track if a save operation is currently in progress to prevent overlapping saves
+  const isSavingRef = useRef(false);
 
   const [content, setContent] = useState(null);
   // excerpt state removed - now managed by React Query
@@ -343,18 +346,37 @@ const App = () => {
     hasLoadedInitialDataRef.current = true;
 
     // Sync React Query data to component state
-    // Only set if the data exists (don't overwrite with empty objects)
+    // Only set if the data exists AND is different from current state (prevent unnecessary updates)
+    // Deep equality check prevents infinite loops when object references change but values don't
     if (variableValuesData.variableValues && Object.keys(variableValuesData.variableValues).length > 0) {
-      setVariableValues(variableValuesData.variableValues);
+      const currentKeys = Object.keys(variableValues);
+      const newKeys = Object.keys(variableValuesData.variableValues);
+      const valuesChanged = currentKeys.length !== newKeys.length ||
+        currentKeys.some(key => variableValues[key] !== variableValuesData.variableValues[key]);
+      if (valuesChanged) {
+        setVariableValues(variableValuesData.variableValues);
+      }
     }
     if (variableValuesData.toggleStates && Object.keys(variableValuesData.toggleStates).length > 0) {
-      setToggleStates(variableValuesData.toggleStates);
+      const currentKeys = Object.keys(toggleStates);
+      const newKeys = Object.keys(variableValuesData.toggleStates);
+      const statesChanged = currentKeys.length !== newKeys.length ||
+        currentKeys.some(key => toggleStates[key] !== variableValuesData.toggleStates[key]);
+      if (statesChanged) {
+        setToggleStates(variableValuesData.toggleStates);
+      }
     }
     if (variableValuesData.customInsertions && Array.isArray(variableValuesData.customInsertions) && variableValuesData.customInsertions.length > 0) {
-      setCustomInsertions(variableValuesData.customInsertions);
+      const insertionsChanged = JSON.stringify(customInsertions) !== JSON.stringify(variableValuesData.customInsertions);
+      if (insertionsChanged) {
+        setCustomInsertions(variableValuesData.customInsertions);
+      }
     }
     if (variableValuesData.internalNotes && Array.isArray(variableValuesData.internalNotes) && variableValuesData.internalNotes.length > 0) {
-      setInternalNotes(variableValuesData.internalNotes);
+      const notesChanged = JSON.stringify(internalNotes) !== JSON.stringify(variableValuesData.internalNotes);
+      if (notesChanged) {
+        setInternalNotes(variableValuesData.internalNotes);
+      }
     }
   }, [variableValuesData, isEditing, isLoadingVariableValues, effectiveLocalId]);
 
@@ -582,7 +604,14 @@ const App = () => {
       return;
     }
 
+    // CRITICAL: Skip if a save is already in progress
+    // This prevents overlapping saves and infinite loops when multiple embeds are on the page
+    if (isSavingRef.current) {
+      return;
+    }
+
     setSaveStatus('saving');
+    isSavingRef.current = true;
 
     const timeoutId = setTimeout(async () => {
       try {
@@ -607,15 +636,18 @@ const App = () => {
             await queryClient.invalidateQueries({ queryKey: ['variableValues', effectiveLocalId] });
 
             setSaveStatus('saved');
+            isSavingRef.current = false;
           },
           onError: (error) => {
             logger.errors('[EmbedContainer] React Query mutation auto-save failed:', error);
             setSaveStatus('error');
+            isSavingRef.current = false;
           }
         });
       } catch (error) {
         logger.errors('[EmbedContainer] Error during auto-save:', error);
         setSaveStatus('error');
+        isSavingRef.current = false;
       }
     }, 500); // 500ms debounce
 
