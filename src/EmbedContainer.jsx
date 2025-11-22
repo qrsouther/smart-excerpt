@@ -569,7 +569,10 @@ const App = () => {
   // Note: The sync effect guard (hasLoadedInitialDataRef) ensures that when
   // React Query refetches after this invalidation, it won't overwrite user edits.
   useEffect(() => {
-    if (!isEditing || !effectiveLocalId || !selectedExcerptId || !excerpt) {
+    // CRITICAL: Only run in edit mode with all required data
+    // Check excerptFromQuery exists (but don't include in dependencies to avoid infinite loops)
+    // excerptFromQuery changes reference when queries are invalidated, which would retrigger this effect
+    if (!isEditing || !effectiveLocalId || !selectedExcerptId || !excerptFromQuery) {
       return;
     }
 
@@ -599,6 +602,7 @@ const App = () => {
             
             // Invalidate queries to ensure fresh data on next load
             // This ensures that when the component re-renders or re-opens, it gets the latest saved data
+            // NOTE: We invalidate with specific localId to avoid affecting other embeds on the page
             await queryClient.invalidateQueries({ queryKey: ['cachedContent', effectiveLocalId] });
             await queryClient.invalidateQueries({ queryKey: ['variableValues', effectiveLocalId] });
 
@@ -616,7 +620,11 @@ const App = () => {
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeoutId);
-  }, [variableValues, toggleStates, customInsertions, internalNotes, isEditing, effectiveLocalId, selectedExcerptId, excerpt]);
+    // CRITICAL: Do NOT include excerptFromQuery or excerpt in dependencies
+    // They change reference when queries are invalidated, causing infinite loops
+    // We only check if they exist, we don't need to track their changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variableValues, toggleStates, customInsertions, internalNotes, isEditing, effectiveLocalId, selectedExcerptId]);
 
   // Check for staleness in view mode immediately after render, with jitter for performance
   // Starts as soon as content is available, jitter spreads out requests across multiple Embeds
