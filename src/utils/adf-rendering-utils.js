@@ -326,15 +326,20 @@ export const substituteVariablesInAdf = (adfNode, variableValues) => {
       } else {
         // Variable is unset - keep as code/monospace, merged with original marks
         // CRITICAL: Check if code mark already exists to avoid duplicates
+        // If text is already in a code block, preserve existing marks; otherwise add code mark
         const hasCodeMark = adfNode.marks && adfNode.marks.some(mark => mark.type === 'code');
         const part = {
           type: 'text',
-          text: match[0],
-          marks: hasCodeMark ? [...adfNode.marks] : [{ type: 'code' }]
+          text: match[0]
         };
-        // Merge original marks with code mark (only if code mark doesn't already exist)
-        if (adfNode.marks && adfNode.marks.length > 0 && !hasCodeMark) {
-          part.marks = [...adfNode.marks, { type: 'code' }];
+        if (hasCodeMark) {
+          // Already in code block - preserve existing marks without adding duplicate
+          part.marks = [...adfNode.marks];
+        } else {
+          // Not in code block - add code mark, merging with any existing marks
+          part.marks = adfNode.marks && adfNode.marks.length > 0
+            ? [...adfNode.marks, { type: 'code' }]
+            : [{ type: 'code' }];
         }
         parts.push(part);
       }
