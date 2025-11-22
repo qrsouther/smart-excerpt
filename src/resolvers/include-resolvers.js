@@ -18,7 +18,14 @@
 import { storage } from '@forge/api';
 import api, { route } from '@forge/api';
 import { findHeadingBeforeMacro } from '../utils/adf-utils.js';
-import { listVersions } from '../utils/version-manager.js';
+import { listVersions, saveVersion } from '../utils/version-manager.js';
+import {
+  cleanAdfForRenderer,
+  filterContentByToggles,
+  substituteVariablesInAdf,
+  insertCustomParagraphsInAdf,
+  insertInternalNotesInAdf
+} from '../utils/adf-rendering-utils.js';
 
 /**
  * Save variable values, toggle states, and custom insertions for a specific Include instance
@@ -167,6 +174,94 @@ export async function saveVariableValues(req) {
     } catch (trackingError) {
       // Don't fail the save if tracking fails
       console.error('Error updating usage tracking:', trackingError);
+    }
+
+    // Generate and cache rendered content server-side
+    // This ensures the cache is always up-to-date even if the client component unmounts
+    try {
+      if (excerpt && excerpt.content) {
+        let previewContent = excerpt.content;
+        const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
+
+        if (isAdf) {
+          // Process ADF content: filter toggles, substitute variables, insert custom content
+          // Note: Using current (buggy) behavior to match client-side for consistency
+          // TODO: Fix for GitHub issue #2 - Insert custom paragraphs BEFORE toggle filtering
+          previewContent = filterContentByToggles(previewContent, toggleStates || {});
+          previewContent = substituteVariablesInAdf(previewContent, variableValues || {});
+          previewContent = insertCustomParagraphsInAdf(previewContent, customInsertions || []);
+          previewContent = insertInternalNotesInAdf(previewContent, internalNotes || []);
+          previewContent = cleanAdfForRenderer(previewContent);
+        } else {
+          // For plain text, filter toggles first
+          const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;
+          previewContent = previewContent.replace(toggleRegex, (match, toggleName, content) => {
+            const trimmedName = toggleName.trim();
+            return (toggleStates || {})[trimmedName] === true ? content : '';
+          });
+
+          // Strip any remaining markers
+          previewContent = previewContent.replace(/\{\{toggle:[^}]+\}\}/g, '');
+          previewContent = previewContent.replace(/\{\{\/toggle:[^}]+\}\}/g, '');
+
+          // Then substitute variables
+          const escapeRegex = (string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          if (excerpt.variables) {
+            excerpt.variables.forEach(variable => {
+              const value = (variableValues || {})[variable.name] || `{{${variable.name}}}`;
+              const regex = new RegExp(`\\{\\{${escapeRegex(variable.name)}\\}\\}`, 'g');
+              previewContent = previewContent.replace(regex, value);
+            });
+          }
+        }
+
+        // Save cached content
+        const cacheKey = `macro-cache:${localId}`;
+        await storage.set(cacheKey, {
+          content: previewContent,
+          cachedAt: now
+        });
+
+        // Also update lastSynced, syncedContentHash, and syncedContent in macro-vars
+        // (This was previously done in saveCachedContent, now consolidated here)
+        const varsKey = `macro-vars:${localId}`;
+        const existingVars = await storage.get(varsKey) || {};
+        
+        // Phase 3: Create version snapshot before modification (v7.17.0)
+        if (existingVars && Object.keys(existingVars).length > 0) {
+          const versionResult = await saveVersion(
+            storage,
+            varsKey,
+            existingVars,
+            {
+              changeType: 'UPDATE',
+              changedBy: 'saveVariableValues',
+              userAccountId: req.context?.accountId,
+              localId: localId
+            }
+          );
+          if (versionResult.success) {
+            console.log('[saveVariableValues] ✅ Version snapshot created:', versionResult.versionId);
+          } else if (versionResult.skipped) {
+            console.log('[saveVariableValues] ⏭️  Version snapshot skipped (content unchanged)');
+          } else {
+            console.warn('[saveVariableValues] ⚠️  Version snapshot failed:', versionResult.error);
+          }
+        }
+
+        existingVars.lastSynced = now;
+        if (syncedContentHash !== undefined) {
+          existingVars.syncedContentHash = syncedContentHash;
+        }
+        if (syncedContent !== undefined) {
+          existingVars.syncedContent = syncedContent;
+        }
+
+        await storage.set(varsKey, existingVars);
+      }
+    } catch (cacheError) {
+      // Don't fail the save if cache generation fails
+      console.error('Error generating and caching preview content:', cacheError);
     }
 
     return {

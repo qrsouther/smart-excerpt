@@ -593,15 +593,10 @@ const App = () => {
           internalNotes
         }, {
           onSuccess: async () => {
-            // Also cache the rendered content for view mode
-            const previewContent = getPreviewContent();
-            await invoke('saveCachedContent', {
-              localId: effectiveLocalId,
-              renderedContent: previewContent,
-              syncedContentHash: excerpt?.contentHash,
-              syncedContent: excerpt?.content
-            });
-
+            // Cache generation and saving is now handled server-side in saveVariableValues
+            // This ensures the cache is always up-to-date even if the component unmounts
+            // (e.g., if user clicks Publish before save completes)
+            
             // Invalidate queries to ensure fresh data on next load
             // This ensures that when the component re-renders or re-opens, it gets the latest saved data
             await queryClient.invalidateQueries({ queryKey: ['cachedContent', effectiveLocalId] });
