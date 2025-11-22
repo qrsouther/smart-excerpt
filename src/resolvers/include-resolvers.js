@@ -199,11 +199,32 @@ export async function saveVariableValues(req) {
           // Process ADF content: filter toggles, substitute variables, insert custom content
           // Note: Using current (buggy) behavior to match client-side for consistency
           // TODO: Fix for GitHub issue #2 - Insert custom paragraphs BEFORE toggle filtering
-          previewContent = filterContentByToggles(previewContent, toggleStates || {});
-          previewContent = substituteVariablesInAdf(previewContent, variableValues || {});
-          previewContent = insertCustomParagraphsInAdf(previewContent, customInsertions || []);
-          previewContent = insertInternalNotesInAdf(previewContent, internalNotes || []);
-          previewContent = cleanAdfForRenderer(previewContent);
+          try {
+            previewContent = filterContentByToggles(previewContent, toggleStates || {});
+            logPhase('saveVariableValues', 'After filterContentByToggles', { localId });
+            
+            previewContent = substituteVariablesInAdf(previewContent, variableValues || {});
+            logPhase('saveVariableValues', 'After substituteVariablesInAdf', { localId });
+            
+            previewContent = insertCustomParagraphsInAdf(previewContent, customInsertions || []);
+            logPhase('saveVariableValues', 'After insertCustomParagraphsInAdf', { localId });
+            
+            previewContent = insertInternalNotesInAdf(previewContent, internalNotes || []);
+            logPhase('saveVariableValues', 'After insertInternalNotesInAdf', { localId });
+            
+            previewContent = cleanAdfForRenderer(previewContent);
+            logPhase('saveVariableValues', 'After cleanAdfForRenderer', { localId });
+          } catch (processingError) {
+            logFailure('saveVariableValues', 'Error during ADF processing', processingError, {
+              localId,
+              step: 'ADF processing',
+              hasVariableValues: !!variableValues,
+              variableCount: variableValues ? Object.keys(variableValues).length : 0
+            });
+            // Don't re-throw - allow save to continue even if cache generation fails
+            // The config will still be saved, just without cached content
+            previewContent = excerpt.content; // Use original content as fallback
+          }
         } else {
           // For plain text, filter toggles first
           const toggleRegex = /\{\{toggle:([^}]+)\}\}([\s\S]*?)\{\{\/toggle:\1\}\}/g;

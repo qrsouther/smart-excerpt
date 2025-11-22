@@ -651,7 +651,12 @@ const App = () => {
       }
     }, 500); // 500ms debounce
 
-    return () => clearTimeout(timeoutId);
+    return () => {
+      clearTimeout(timeoutId);
+      // Reset saving flag if effect is cleaned up before mutation completes
+      // This prevents the "Saving..." state from getting stuck
+      isSavingRef.current = false;
+    };
     // CRITICAL: Do NOT include excerptFromQuery or excerpt in dependencies
     // They change reference when queries are invalidated, causing infinite loops
     // We only check if they exist, we don't need to track their changes
