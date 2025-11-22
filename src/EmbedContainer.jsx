@@ -201,7 +201,8 @@ const App = () => {
     data: excerptFromQuery,
     isLoading: isLoadingExcerpt,
     error: excerptError,
-    isFetching: isFetchingExcerpt
+    isFetching: isFetchingExcerpt,
+    refetch: refetchExcerpt
   } = useExcerptData(selectedExcerptId, true);
 
   // Use React Query mutation for saving variable values
@@ -386,6 +387,18 @@ const App = () => {
   useEffect(() => {
     hasLoadedInitialDataRef.current = false;
   }, [effectiveLocalId, selectedExcerptId]);
+
+  // Force refetch excerpt when excerptId changes (e.g., when Source is updated)
+  // This ensures we get the latest excerpt data even if React Query cache is stale
+  useEffect(() => {
+    if (selectedExcerptId && refetchExcerpt) {
+      // Small delay to ensure any cache invalidation from Source updates has completed
+      const timeoutId = setTimeout(() => {
+        refetchExcerpt();
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [selectedExcerptId, refetchExcerpt]);
 
   // Set content from React Query cached content data (view mode)
   useEffect(() => {
