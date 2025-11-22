@@ -243,20 +243,15 @@ const App = () => {
   // Track if we've loaded initial data from React Query to prevent overwriting user edits
   const hasLoadedInitialDataRef = useRef(false);
 
-  // Load excerptId from React Query data or config (for templates)
+  // Load excerptId from React Query data
   useEffect(() => {
-    // First try to load from saved variable values
     if (variableValuesData && variableValuesData.excerptId) {
       setSelectedExcerptId(variableValuesData.excerptId);
-    } 
-    // Fallback: Check config for excerptId (useful in template context)
-    else if (config?.excerptId && !selectedExcerptId) {
-      setSelectedExcerptId(config.excerptId);
     }
     if (!isLoadingVariableValues) {
       setIsInitializing(false);
     }
-  }, [variableValuesData, config?.excerptId, isLoadingVariableValues, selectedExcerptId]);
+  }, [variableValuesData, isLoadingVariableValues]);
 
   // Sync variableValuesData from React Query to component state in edit mode
   // This ensures saved data is loaded when the component mounts or when data changes
@@ -621,7 +616,7 @@ const App = () => {
 
   // Handler for excerpt selection from Select (must be defined before early returns)
   const handleExcerptSelection = async (selectedOption) => {
-    if (!selectedOption) return;
+    if (!selectedOption || !effectiveLocalId) return;
 
     // Select component passes the entire option object
     const newExcerptId = selectedOption.value;
@@ -632,15 +627,7 @@ const App = () => {
     setSelectedExcerptId(newExcerptId);
     setIsRefreshing(true);
 
-    // In template context (no effectiveLocalId), just set the state - don't try to save
-    // The excerptId will be saved via macro config when the template is created
-    if (!effectiveLocalId) {
-      // Template context: just update state, invalidate excerpt cache to load the new excerpt
-      await queryClient.invalidateQueries({ queryKey: ['excerpt', newExcerptId] });
-      return;
-    }
-
-    // Regular page context: save to backend storage
+    // Save to backend storage
     const pageId = context?.contentId || context?.extension?.content?.id;
 
     // Use mutation to save the selection
@@ -674,9 +661,8 @@ const App = () => {
   
   // Note: We no longer have an early return for edit mode with no selectedExcerptId
   // Instead, we always render EmbedEditMode when isEditing is true, which handles:
-  // - Regular pages: Shows Select dropdown + Textfield fallback
-  // - Template context: Shows Select dropdown (may be unclickable) + Textfield fallback (works)
-  // This ensures template editing always gets the full EmbedEditMode UI with Textfield option
+  // - Shows Select dropdown + Textfield fallback
+  // This ensures editing always gets the full EmbedEditMode UI
 
   // Show spinner while loading in view mode
   if (!content && !isEditing) {
@@ -874,10 +860,6 @@ const App = () => {
   };
 
   // EDIT MODE: Show variable inputs and preview
-  // EDIT MODE: Show EmbedEditMode
-  // This includes both regular pages and template context
-  // In template context (no effectiveLocalId), EmbedEditMode will show the Textfield fallback
-  // In regular pages, EmbedEditMode will show the Select dropdown
   if (isEditing) {
     return (
       <EmbedEditMode
