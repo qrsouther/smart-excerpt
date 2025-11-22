@@ -123,6 +123,9 @@ import {
   excerptSelectorStyle
 } from './styles/embed-styles';
 
+// Import logger for structured error logging
+import { logger } from './utils/logger';
+
 // ============================================================================
 // STYLES - Imported from ./styles/embed-styles.js
 // ============================================================================
@@ -240,7 +243,60 @@ const App = () => {
   // Use excerptFromQuery when available (edit mode), fallback to manual state for view mode
   const excerpt = isEditing ? excerptFromQuery : excerptForViewMode;
 
-  // Track if we've loaded initial data from React Query to prevent overwriting user edits
+  // ============================================================================
+  // STATE MANAGEMENT DOCUMENTATION
+  // ============================================================================
+  // This component uses 22 useState hooks organized into logical groups:
+  //
+  // 1. Core Configuration State:
+  //    - selectedExcerptId: Currently selected Blueprint Standard ID
+  //    - isInitializing: Whether component is still loading initial data
+  //    - content: Rendered content for display
+  //    - excerptForViewMode: Excerpt data cached for view mode
+  //
+  // 2. User Configuration State (saved to storage):
+  //    - variableValues: User-provided variable values
+  //    - toggleStates: User-selected toggle on/off states
+  //    - customInsertions: User-added custom paragraph insertions
+  //    - internalNotes: User-added internal notes
+  //
+  // 3. UI State (not saved):
+  //    - insertionType, selectedPosition, customText: Free Write tab state
+  //    - isRefreshing, saveStatus: Loading/saving indicators
+  //    - selectedTabIndex: Active tab in edit mode
+  //
+  // 4. Staleness Detection State:
+  //    - isStale, isCheckingStaleness: Update availability tracking
+  //    - sourceLastModified, includeLastSynced: Timestamp tracking
+  //    - isUpdating, showDiffView: Update UI state
+  //    - latestRenderedContent, syncedContent: Diff view data
+  //
+  // Note: State consolidation (grouping related state) is a future optimization.
+  // Current structure prioritizes clarity and maintainability.
+
+  // ============================================================================
+  // SYNC EFFECT GUARD MECHANISM
+  // ============================================================================
+  // CRITICAL: This ref prevents React Query refetches from overwriting user edits.
+  //
+  // Problem: When React Query refetches variableValuesData (e.g., after cache
+  // invalidation), the sync effect would run again and overwrite any user edits
+  // that happened since the initial load.
+  //
+  // Solution: The hasLoadedInitialDataRef guard ensures the sync effect only
+  // runs ONCE per embed instance. After the first sync, subsequent React Query
+  // updates are ignored, preserving user edits.
+  //
+  // Flow:
+  // 1. Component mounts → hasLoadedInitialDataRef.current = false
+  // 2. React Query loads data → sync effect runs → sets state → flag = true
+  // 3. User makes edits → state updates → auto-save saves to storage
+  // 4. Auto-save invalidates cache → React Query refetches → sync effect runs
+  // 5. Guard check: hasLoadedInitialDataRef.current === true → return early
+  // 6. User edits preserved! ✅
+  //
+  // Reset: Flag resets to false when effectiveLocalId or selectedExcerptId
+  // changes (new embed instance), allowing initial data to load for new instances.
   const hasLoadedInitialDataRef = useRef(false);
 
   // Load excerptId from React Query data
@@ -253,22 +309,37 @@ const App = () => {
     }
   }, [variableValuesData, isLoadingVariableValues]);
 
-  // Sync variableValuesData from React Query to component state in edit mode
-  // This ensures saved data is loaded when the component mounts or when data changes
-  // CRITICAL: This must run before the loadContent effect to ensure state is set correctly
+  // ============================================================================
+  // SYNC EFFECT: React Query → Component State (READ operation)
+  // ============================================================================
+  // Purpose: Load saved data from storage (via React Query) into component state
+  // on initial mount. This is a ONE-TIME operation per embed instance.
+  //
+  // Guard Mechanism: The hasLoadedInitialDataRef prevents this effect from
+  // overwriting user edits when React Query refetches after auto-save.
+  //
+  // Execution Flow:
+  // 1. Runs when: variableValuesData changes (React Query loads/refetches)
+  // 2. Checks: Edit mode, data available, not loading, has localId
+  // 3. Guard: If already synced once, return early (protect user edits)
+  // 4. Sync: Copy React Query data to component state (only non-empty values)
+  // 5. Flag: Mark as synced (prevents future overwrites)
+  //
+  // CRITICAL: This must run before the loadContent effect to ensure state
+  // is set correctly before content generation.
   useEffect(() => {
     // Only sync in edit mode and when we have data
     if (!isEditing || !variableValuesData || isLoadingVariableValues || !effectiveLocalId) {
       return;
     }
 
-    // Only sync on initial load to avoid overwriting user edits
-    // Reset the flag when switching excerpts or when localId changes
+    // GUARD: Only sync on initial load to avoid overwriting user edits
+    // After first sync, this effect will return early even if React Query refetches
     if (hasLoadedInitialDataRef.current) {
       return;
     }
 
-    // Mark that we've loaded initial data
+    // Mark that we've loaded initial data (prevents future overwrites)
     hasLoadedInitialDataRef.current = true;
 
     // Sync React Query data to component state
@@ -287,7 +358,9 @@ const App = () => {
     }
   }, [variableValuesData, isEditing, isLoadingVariableValues, effectiveLocalId]);
 
-  // Reset the loaded flag when localId or excerptId changes (new embed instance)
+  // Reset the sync guard flag when switching to a new embed instance
+  // This allows initial data to load for new instances while protecting
+  // edits in the current instance
   useEffect(() => {
     hasLoadedInitialDataRef.current = false;
   }, [effectiveLocalId, selectedExcerptId]);
@@ -392,7 +465,7 @@ const App = () => {
               pageTitle = titleResult.title;
             }
           } catch (err) {
-            console.error('Error fetching page title:', err);
+            logger.errors('[EmbedContainer] Error fetching page title:', err);
           }
         }
 
@@ -461,7 +534,7 @@ const App = () => {
 
         setContent(freshContent);
       } catch (err) {
-        console.error('Error loading content:', err);
+        logger.errors('[EmbedContainer] Error loading content:', err);
       } finally {
         setIsRefreshing(false);
 
@@ -476,8 +549,25 @@ const App = () => {
     loadContent();
   }, [excerptFromQuery, effectiveLocalId, isEditing, isFetchingExcerpt]);
 
-  // Auto-save effect with debouncing (saves variable values AND caches rendered content)
-  // Now uses React Query mutation for better state management
+  // ============================================================================
+  // AUTO-SAVE EFFECT: Component State → Storage (WRITE operation)
+  // ============================================================================
+  // Purpose: Automatically save user edits to storage with debouncing.
+  // This is an ONGOING operation that runs whenever user configuration changes.
+  //
+  // Flow:
+  // 1. User edits: variableValues, toggleStates, customInsertions, or internalNotes
+  // 2. Effect triggers: Detects state change
+  // 3. Debounce: Waits 500ms for user to finish typing/editing
+  // 4. Save: Uses React Query mutation to save to storage
+  // 5. Cache: Also caches rendered content for view mode
+  // 6. Invalidate: Marks React Query cache as stale (triggers refetch)
+  //
+  // Guard: isLoadingInitialDataRef prevents auto-save during initial data load,
+  // avoiding false version history entries when Edit Mode first opens.
+  //
+  // Note: The sync effect guard (hasLoadedInitialDataRef) ensures that when
+  // React Query refetches after this invalidation, it won't overwrite user edits.
   useEffect(() => {
     if (!isEditing || !effectiveLocalId || !selectedExcerptId || !excerpt) {
       return;
@@ -520,12 +610,12 @@ const App = () => {
             setSaveStatus('saved');
           },
           onError: (error) => {
-            console.error('[REACT-QUERY-MUTATION] Auto-save failed:', error);
+            logger.errors('[EmbedContainer] React Query mutation auto-save failed:', error);
             setSaveStatus('error');
           }
         });
       } catch (error) {
-        console.error('Error during auto-save:', error);
+        logger.errors('[EmbedContainer] Error during auto-save:', error);
         setSaveStatus('error');
       }
     }, 500); // 500ms debounce
@@ -600,7 +690,7 @@ const App = () => {
 
         setIsCheckingStaleness(false); // Check complete
       } catch (err) {
-        console.error('[Include] Staleness check error:', err);
+        logger.errors('[EmbedContainer] Staleness check error:', err);
         setIsCheckingStaleness(false); // Check complete (with error)
       }
     };
@@ -852,7 +942,7 @@ const App = () => {
 
       alert('Successfully updated! Click the Edit button to customize variables, toggles, and other settings.');
     } catch (err) {
-      console.error('Error updating to latest:', err);
+      logger.errors('[EmbedContainer] Error updating to latest:', err);
       alert('Error updating to latest version');
     } finally {
       setIsUpdating(false);
