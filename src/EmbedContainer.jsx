@@ -151,6 +151,36 @@ const App = () => {
   // Use context.localId directly - recovery happens lazily only when data is missing
   const effectiveLocalId = context?.localId;
 
+  // Early return with error message if localId is missing
+  // This can happen if the macro is in an invalid state (rare but possible)
+  if (!effectiveLocalId) {
+    return (
+      <SectionMessage
+        title="Embed Macro Error"
+        appearance="error"
+      >
+        <Text>
+          This Embed macro is missing its unique identifier. This can happen if the macro was created in an invalid state.
+        </Text>
+        <Text>
+          <Strong>To fix this:</Strong>
+        </Text>
+        <Text>
+          1. Delete this Embed macro from the page
+        </Text>
+        <Text>
+          2. Add a new Embed macro using the macro browser (type <Code>/Blueprint Standard Embed</Code>)
+        </Text>
+        <Text>
+          3. Configure the new Embed macro as needed
+        </Text>
+        <Text>
+          If this problem persists, please contact your administrator.
+        </Text>
+      </SectionMessage>
+    );
+  }
+
   // NEW: Inline excerpt selection state (will be loaded from backend storage)
   const [selectedExcerptId, setSelectedExcerptId] = useState(null);
   // availableExcerpts state removed - now managed by React Query
