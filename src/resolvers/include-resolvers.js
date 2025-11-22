@@ -40,23 +40,20 @@ export async function saveVariableValues(req) {
     const functionStartTime = Date.now();
     logPhase('saveVariableValues', 'Function started', { localId, startTime: new Date().toISOString() });
 
-    // Get the excerpt to retrieve its current contentHash and content
-    const excerptStartTime = Date.now();
-    const excerpt = await storage.get(`excerpt:${excerptId}`);
-    const excerptDuration = Date.now() - excerptStartTime;
-    logPhase('saveVariableValues', 'Excerpt loaded', { localId, duration: `${excerptDuration}ms` });
-    
-    const syncedContentHash = excerpt?.contentHash || null;
-    const syncedContent = excerpt?.content || null;  // Store actual Source ADF for diff view
-
     const key = `macro-vars:${localId}`;
     const now = new Date().toISOString();
 
-    // Load existing config to preserve redline fields (if any)
-    const configStartTime = Date.now();
-    const existingConfig = await storage.get(key);
-    const configDuration = Date.now() - configStartTime;
-    logPhase('saveVariableValues', 'Config loaded', { localId, duration: `${configDuration}ms` });
+    // OPTIMIZATION: Load excerpt and existing config in parallel (they're independent)
+    const loadStartTime = Date.now();
+    const [excerpt, existingConfig] = await Promise.all([
+      storage.get(`excerpt:${excerptId}`),
+      storage.get(key)
+    ]);
+    const loadDuration = Date.now() - loadStartTime;
+    logPhase('saveVariableValues', 'Excerpt and config loaded in parallel', { localId, duration: `${loadDuration}ms` });
+    
+    const syncedContentHash = excerpt?.contentHash || null;
+    const syncedContent = excerpt?.content || null;  // Store actual Source ADF for diff view
 
     // Initialize redline fields for new Embeds
     const redlineStatus = existingConfig?.redlineStatus || 'reviewable';
