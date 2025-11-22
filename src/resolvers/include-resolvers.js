@@ -26,6 +26,7 @@ import {
   insertCustomParagraphsInAdf,
   insertInternalNotesInAdf
 } from '../utils/adf-rendering-utils.js';
+import { logPhase, logSuccess, logWarning, logFailure } from '../utils/forge-logger.js';
 
 /**
  * Save variable values, toggle states, and custom insertions for a specific Include instance
@@ -87,9 +88,11 @@ export async function saveVariableValues(req) {
 
         // Compare with approved contentHash
         if (currentContentHash !== existingConfig.approvedContentHash) {
-          console.log(`[saveVariableValues] AUTO-TRANSITION: Embed ${localId} content changed after approval`);
-          console.log(`[saveVariableValues] Previous hash: ${existingConfig.approvedContentHash}`);
-          console.log(`[saveVariableValues] Current hash: ${currentContentHash}`);
+          logPhase('saveVariableValues', 'AUTO-TRANSITION: Embed content changed after approval', {
+            localId,
+            previousHash: existingConfig.approvedContentHash,
+            currentHash: currentContentHash
+          });
 
           // Auto-transition status to "needs-revision"
           const updatedStatusHistory = existingConfig.statusHistory || [];
@@ -108,9 +111,9 @@ export async function saveVariableValues(req) {
           // Save updated config with new status
           await storage.set(key, newConfig);
 
-          console.log(`[saveVariableValues] ✅ Auto-transitioned Embed ${localId}: approved → needs-revision`);
+          logSuccess('saveVariableValues', `Auto-transitioned Embed ${localId}: approved → needs-revision`);
         } else {
-          console.log(`[saveVariableValues] Embed ${localId} approved and unchanged (contentHash match)`);
+          logPhase('saveVariableValues', `Embed ${localId} approved and unchanged`, { contentHash: existingConfig.approvedContentHash });
         }
       }
     }
@@ -142,7 +145,7 @@ export async function saveVariableValues(req) {
             }
           }
         } catch (apiError) {
-          console.error('Error fetching page data:', apiError);
+          logFailure('saveVariableValues', 'Error fetching page data', apiError, { localId, pageId });
           pageTitle = req.context?.extension?.content?.title || 'Unknown Page';
         }
 
@@ -173,7 +176,7 @@ export async function saveVariableValues(req) {
       }
     } catch (trackingError) {
       // Don't fail the save if tracking fails
-      console.error('Error updating usage tracking:', trackingError);
+      logFailure('saveVariableValues', 'Error updating usage tracking', trackingError, { localId, excerptId });
     }
 
     // Generate and cache rendered content server-side
@@ -184,7 +187,8 @@ export async function saveVariableValues(req) {
         const isAdf = previewContent && typeof previewContent === 'object' && previewContent.type === 'doc';
 
         // Debug logging to verify variable values are being passed
-        console.log(`[saveVariableValues] Generating cache for ${localId}:`, {
+        logPhase('saveVariableValues', 'Generating cache', {
+          localId,
           hasVariableValues: !!variableValues,
           variableCount: variableValues ? Object.keys(variableValues).length : 0,
           variableKeys: variableValues ? Object.keys(variableValues) : [],
@@ -230,9 +234,9 @@ export async function saveVariableValues(req) {
           cachedAt: now
         });
         
-        console.log(`[saveVariableValues] ✅ Cached content saved for ${localId} at ${now}`);
+        logSuccess('saveVariableValues', `Cached content saved for ${localId}`, { cachedAt: now });
       } else {
-        console.log(`[saveVariableValues] ⚠️  No excerpt content to cache for ${localId}`);
+        logWarning('saveVariableValues', `No excerpt content to cache for ${localId}`);
       }
 
         // Also update lastSynced, syncedContentHash, and syncedContent in macro-vars
@@ -254,11 +258,11 @@ export async function saveVariableValues(req) {
             }
           );
           if (versionResult.success) {
-            console.log('[saveVariableValues] ✅ Version snapshot created:', versionResult.versionId);
+            logSuccess('saveVariableValues', 'Version snapshot created', { versionId: versionResult.versionId, localId });
           } else if (versionResult.skipped) {
-            console.log('[saveVariableValues] ⏭️  Version snapshot skipped (content unchanged)');
+            logPhase('saveVariableValues', 'Version snapshot skipped (content unchanged)', { localId });
           } else {
-            console.warn('[saveVariableValues] ⚠️  Version snapshot failed:', versionResult.error);
+            logWarning('saveVariableValues', 'Version snapshot failed', { localId, error: versionResult.error });
           }
         }
 
@@ -274,14 +278,14 @@ export async function saveVariableValues(req) {
       }
     } catch (cacheError) {
       // Don't fail the save if cache generation fails
-      console.error('Error generating and caching preview content:', cacheError);
+      logFailure('saveVariableValues', 'Error generating and caching preview content', cacheError, { localId });
     }
 
     return {
       success: true
     };
   } catch (error) {
-    console.error('Error saving variable values:', error);
+    logFailure('saveVariableValues', 'Error saving variable values', error, { localId: req.payload?.localId });
     return {
       success: false,
       error: error.message
