@@ -658,16 +658,9 @@ const App = () => {
     isSavingRef.current = true;
 
     const saveStartTime = performance.now();
-    logger.saves('[EmbedContainer] Auto-save started', { localId: effectiveLocalId });
 
     const timeoutId = setTimeout(async () => {
       try {
-        const mutationStartTime = performance.now();
-        logger.saves('[EmbedContainer] Mutation call starting', { 
-          localId: effectiveLocalId,
-          debounceTime: Math.round(mutationStartTime - saveStartTime)
-        });
-
         // Use React Query mutation to save variable values
         saveVariableValuesMutation({
           localId: effectiveLocalId,
@@ -678,14 +671,6 @@ const App = () => {
           internalNotes
         }, {
           onSuccess: async () => {
-            const mutationEndTime = performance.now();
-            const mutationDuration = Math.round(mutationEndTime - mutationStartTime);
-            logger.saves('[EmbedContainer] Mutation completed', { 
-              localId: effectiveLocalId,
-              mutationDuration: `${mutationDuration}ms`
-            });
-
-            const invalidationStartTime = performance.now();
             // Cache generation and saving is now handled server-side in saveVariableValues
             // This ensures the cache is always up-to-date even if the component unmounts
             // (e.g., if user clicks Publish before save completes)
@@ -696,26 +681,20 @@ const App = () => {
             await queryClient.invalidateQueries({ queryKey: ['cachedContent', effectiveLocalId] });
             await queryClient.invalidateQueries({ queryKey: ['variableValues', effectiveLocalId] });
 
-            const invalidationEndTime = performance.now();
-            const invalidationDuration = Math.round(invalidationEndTime - invalidationStartTime);
-            const totalDuration = Math.round(invalidationEndTime - saveStartTime);
-            
+            const totalDuration = Math.round(performance.now() - saveStartTime);
             logger.saves('[EmbedContainer] Auto-save complete', { 
               localId: effectiveLocalId,
-              mutationDuration: `${mutationDuration}ms`,
-              invalidationDuration: `${invalidationDuration}ms`,
-              totalDuration: `${totalDuration}ms`
+              duration: `${totalDuration}ms`
             });
 
             setSaveStatus('saved');
             isSavingRef.current = false;
           },
           onError: (error) => {
-            const errorTime = performance.now();
-            const totalDuration = Math.round(errorTime - saveStartTime);
-            logger.errors('[EmbedContainer] React Query mutation auto-save failed:', error, {
+            const totalDuration = Math.round(performance.now() - saveStartTime);
+            logger.errors('[EmbedContainer] Auto-save failed:', error, {
               localId: effectiveLocalId,
-              totalDuration: `${totalDuration}ms`
+              duration: `${totalDuration}ms`
             });
             setSaveStatus('error');
             isSavingRef.current = false;
